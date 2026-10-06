@@ -1511,7 +1511,7 @@ function pbMatch(pkg, form) {
 // v across the field (the sidelines at about +-26.7). Field spots: offense 0-4 the line (left to right), 5 quarterback,
 // 6 back, 7 tight end, 8 and 9 wide receivers, 10 the third receiver (or second tight end, or fullback); defense 0-3 the
 // line, 4-6 linebackers (or nickel and dime backs), 7 and 8 corners, 9 and 10 safeties.
-let FX_BRK = 0.3, FX_SPREAD = 0.6; const fxH = (x, y) => Math.sqrt(x * x + y * y); const FLD_V = 19, FX_DT = 0.1, FX_SIDE = 26.6, FX_DBG = {};
+let FX_BRK = 0.3, FX_SPREAD = 0.6, FX_RSHED = 0.15, FX_SY_SHED = 2, FX_SY_PUSH = 0.4; const fxH = (x, y) => Math.sqrt(x * x + y * y); const FLD_V = 20, FX_DT = 0.1, FX_SIDE = 26.6, FX_DBG = {};
 function fxRng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 const fxGauss = r => { let u = 0; while (!u) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); };
 
@@ -1669,6 +1669,9 @@ function fxGo(a, u, v, spd = a.top, stop = false) {
 
 // ---- the snap ----
 // X: the snap as the sim called it (see fxDesc). Returns the world: 22 players with their jobs, the ball, the clock
+// short yardage and the goal line: third or fourth and 1-2, or inside the 5, the defense sells out against the run (its
+// linemen fire low into the gaps and its linebackers fill downhill), so blockers get less push and runners less room
+const fxShort = X => X.los >= 95 || (X.tg <= 2 && X.dn >= 3);
 function fxSetup(X, r) {
   const L = X.los, fl = X.fl, formK = FX_FORMS[X.form] ? X.form : 'gun', F = FX_FORMS[formK], ucQ = F[5][0] > -2;
   const pkg = X.pkg || 'base', cov = X.cov || 'c3', dc = X.dc || null, run = X.kind === 'run';
@@ -1688,7 +1691,7 @@ function fxSetup(X, r) {
   }
   const O = O0.map(([u, v], i) => fxAgent('o', i, X.O[i], u, v)), D = D0.map(([u, v], i) => fxAgent('d', i, X.D[i], u, v));
   // (every field a snap can pick up exists from the start, as on the players: one shape for every snap keeps the lookups fast)
-  const W = { X, r, L, fl, form: formK, front, ucQ, pkg, cov, run, O, D, all: [...O, ...D], t: 0, ball: null, car: null, ev: [], over: null, qb: O[5], fr: [], st: {}, fam: undefined, kick: undefined, esc: undefined, caught: undefined, scram: undefined, hole: undefined, hist: undefined, hc: undefined, gen: undefined, toss: undefined, sv: undefined, scr: undefined, scheme: undefined, rv: undefined, readOpt: undefined, raDone: undefined, mesh: undefined, keep: undefined, kb: undefined, hotB: undefined, hand: undefined, good: undefined, freeR: undefined, flights: undefined, drill: undefined, drawD: undefined, downU: undefined, downC: undefined, bV: undefined, bU: undefined, awayOk: undefined, escRun: undefined, bail: undefined, prd: undefined, zr: undefined };
+  const W = { X, r, L, fl, form: formK, front, ucQ, pkg, cov, run, sy: fxShort(X), O, D, all: [...O, ...D], t: 0, ball: null, car: null, ev: [], over: null, qb: O[5], fr: [], st: {}, fam: undefined, kick: undefined, esc: undefined, caught: undefined, scram: undefined, hole: undefined, hist: undefined, hc: undefined, gen: undefined, toss: undefined, sv: undefined, scr: undefined, scheme: undefined, rv: undefined, readOpt: undefined, raDone: undefined, mesh: undefined, keep: undefined, kb: undefined, hotB: undefined, hand: undefined, good: undefined, freeR: undefined, flights: undefined, drill: undefined, drawD: undefined, downU: undefined, downC: undefined, bV: undefined, bU: undefined, awayOk: undefined, escRun: undefined, bail: undefined, prd: undefined, zr: undefined };
   // the edge for this snap (home field, coaching, chemistry) nudges everyone's ratings a touch
   const e = clamp(X.edge || 0, -6, 6) * 0.5; for (const a of O) fxNudge(a, e); for (const a of D) fxNudge(a, -e);
   return W;
@@ -2458,10 +2461,10 @@ function fxBlocks(W) {
       const bk = pass ? 'PBK' : 'RBK', dp = pass ? d.c.PRS * 0.6 + d.c.STR * 0.4 : d.c.RST * 0.55 + d.c.STR * 0.45;
       let b1 = -1e9, b2 = null; for (const b of bl) { const v = b.c[bk] * 0.7 + b.c.STR * 0.3; if (v > b1) { if (b1 > -1e9) b2 = b1; b1 = v; } else if (b2 === null || v > b2) b2 = v; }
       const bp = b1 + (b2 ? (b2 - 40) * 0.35 : 0) + ((bl[0].role === 'escort' || bl[0].role === 'stalk') && W.kick !== 'kr' ? -8 : 0), net = dp - bp;
-      let push = pass ? clamp(0.3 + net * 0.03, -0.3, 1.3) : clamp(-0.15 + net * 0.05, -1.6, 1.6);
+      let push = pass ? clamp(0.3 + net * 0.03, -0.3, 1.3) : clamp(-0.15 + (W.sy ? FX_SY_PUSH : 0) + net * 0.05, -1.6, 1.6);
       if (bl.length > 1) push = Math.min(push, pass ? 0.1 : -0.3);
       // Copy the lineup: fxEngage can append a helper to the live list before the next tick.
-      bc = d.bcalc = { pass, role: bl[0].role, bl: bl.slice(), push, rate: (pass ? 0.6 : 0.135) * Math.exp(net / (pass ? 16 : 9)), chances: [] };
+      bc = d.bcalc = { pass, role: bl[0].role, bl: bl.slice(), push, rate: (pass ? 0.6 : FX_RSHED * (W.sy ? FX_SY_SHED : 1)) * Math.exp(net / (pass ? 16 : 9)), chances: [] };
     }
     const push = bc.push;
     d.vu = eu * push; d.vv = ev * push;
@@ -2849,7 +2852,7 @@ const topSpd = (p, pos) => (!p ? (pos === 'OL' ? 7.4 : pos === 'DL' ? 8 : 9.6) :
 // jersey numbers per field spot, two base-36 characters each ('--' when unknown), same order as the speeds
 const numCode = ps => ps.map(p => (p && p.num != null && p.num >= 0 && p.num <= 99 ? p.num.toString(36).padStart(2, '0') : '--')).join('');
 const spdCode = (ps, pos) => ps.map((p, i) => clamp(Math.round((topSpd(p, pos[i]) - 6) * 6), 0, 35).toString(36)).join('');
-function blankTS() { return { fd: 0, py: 0, ry: 0, pa: 0, pc: 0, ra: 0, to: 0, sk: 0, top: 0, c3: 0, a3: 0, pl: 0, epa: 0, sp: 0, su: 0, pe: 0, pp: 0, ps: 0, re: 0, rp: 0, rs: 0, db: 0, prs: 0 }; }
+function blankTS() { return { fd: 0, py: 0, ry: 0, pa: 0, pc: 0, ra: 0, to: 0, sk: 0, top: 0, c3: 0, a3: 0, pl: 0, epa: 0, sp: 0, su: 0, pe: 0, pp: 0, ps: 0, re: 0, rp: 0, rs: 0, db: 0, prs: 0, rzt: 0, rztd: 0 }; }
 
 // Run a game to the end. AI answers every coaching decision.
 function simGame(ht, at, opt = {}) { const it = gameGen(ht, at, opt); let r = it.next(); while (!r.done) r = it.next(r.value.auto); return r.value; }
@@ -3018,7 +3021,9 @@ function* gameGen(ht, at, opt = {}) {
   };
   let drv = null, EPX = { qb: null, rec: null, car: null };
   const startDrive = () => { if (st.qtr >= 5) (st.otDr || (st.otDr = [0, 0]))[st.poss]++; drv = { t: st.poss, q: st.qtr, c: st.clock, s: st.yl, pl: 0, y: 0, tm: 0, r: '', k: '', kv: -99 }; };
-  const endDrive = res => { if (!drv) return; drv.r = res; drv.e = st.yl; drv.sc = [g.score[0], g.score[1]]; g.drives.push(drv); drv = null; if (st.qtr >= 5 && R().ot === 'both' && st.otDr && st.otDr[0] > 0 && st.otDr[1] > 0 && g.score[0] !== g.score[1]) st.over = true; };
+  // a red zone trip, as the NFL counts it: a drive with a snap inside the opponent's 20
+  const rzSnap = () => { if (!drv.rz && st.yl >= 80) { drv.rz = true; g.ts[st.poss].rzt++; } };
+  const endDrive = res => { if (!drv) return; drv.r = res; if (drv.rz && res === 'TD') g.ts[drv.t].rztd++; drv.e = st.yl; drv.sc = [g.score[0], g.score[1]]; g.drives.push(drv); drv = null; if (st.qtr >= 5 && R().ot === 'both' && st.otDr && st.otDr[0] > 0 && st.otDr[1] > 0 && g.score[0] !== g.score[1]) st.over = true; };
 
   // ---- clock ----
   const advance = sec => {
@@ -3154,7 +3159,7 @@ function* gameGen(ht, at, opt = {}) {
     let pm = fe <= 30 ? 0.99 : 0.99 - (fe - 30) * 0.013; if (fe > 54) pm -= (fe - 54) * 0.03;
     if (hasT(k, 'clutch') && st.qtr >= 4 && Math.abs(g.score[o] - g.score[d]) <= 8) pm += 0.06;
     pm = clamp(pm + (k.a.KAC - 70) * 0.004 + (k.a.KPW - 70) * (fe > 45 ? 0.004 : 0), 0.03, 0.995);
-    inc(kl, 'fga'); drv.pl++;
+    inc(kl, 'fga'); drv.pl++; rzSnap();
     const ev = tick(5, 0);
     // blocked kicks: long, low kicks and a better special-teams unit on the other side
     if (rnd() < clamp(0.011 + (fe > 45 ? 0.008 : 0) + (stE[d] - stE[o]) * 0.003, 0.003, 0.04)) {
@@ -3171,7 +3176,7 @@ function* gameGen(ht, at, opt = {}) {
   function punt(o, d) {
     const p = LU[o].P[0], pl = sl(p, o);
     const gross = clamp(Math.round(gauss(47.8 + (p.a.KPW - 70) * 0.22 - WE.punt, 6)), 22, 72);
-    inc(pl, 'pn'); inc(pl, 'pny', Math.min(gross, 100 - st.yl)); drv.pl++;
+    inc(pl, 'pn'); inc(pl, 'pny', Math.min(gross, 100 - st.yl)); drv.pl++; rzSnap();
     const ev = tick(8, 0);
     if (rnd() < clamp(0.004 + (stE[d] - stE[o]) * 0.0015, 0.001, 0.015)) {
       const bl = wpick([...LU[d].LB, LU[d].S[0], ...LU[d].DL.slice(0, 2)], [1, 1, 1, 1.2, 0.8, 0.8]); inc(sl(bl, d), 'blk'); drv.k = `${nm(p)} punt blocked`;
@@ -3205,7 +3210,7 @@ function* gameGen(ht, at, opt = {}) {
   // a fake punt or field goal: works best on short yardage, and less well once a team has shown one this season
   function fakeKick(o, d, fg, was3) {
     const t = TM[o], seen = t.fk && t.fk.s === S.season ? t.fk.n : 0; t.fk = { s: S.season, n: seen + 1 };
-    drv.pl++; g.ts[o].pl++;
+    drv.pl++; rzSnap(); g.ts[o].pl++;
     const pOk = clamp(0.55 - (st.togo - 1) * 0.06 + stE[o] * 0.05 - stE[d] * 0.05 - seen * 0.12, 0.12, 0.72), ok = rnd() < pOk;
     const who = fg ? LU[o].P[0] : (rnd() < 0.5 ? LU[o].P[0] : LU[o].RB[1] || LU[o].RB[0]);
     let yds = ok ? st.togo + Math.round(expR(6)) : randInt(-3, Math.max(-1, st.togo - 1)); yds = Math.min(yds, 100 - st.yl);
@@ -3215,14 +3220,14 @@ function* gameGen(ht, at, opt = {}) {
     return result(yds, 6, 30, `${kind}: ${nm(who)} ${yds} yds`, was3, false);
   }
   function kneel(o) {
-    const qb = LU[o].QB[0], ql = sl(qb, o); drv.pl++; g.ts[o].pl++;
+    const qb = LU[o].QB[0], ql = sl(qb, o); drv.pl++; rzSnap(); g.ts[o].pl++;
     const loss = st.yl > 1 ? 1 : 0;
     inc(ql, 'ra'); inc(ql, 'ry', -loss); g.ts[o].ra++; g.ts[o].ry -= loss;
     note('kneel', `${nm(qb)} takes a knee`, -loss);
     return result(-loss, 2, 40, `${nm(qb)} kneels`, false, false);
   }
   function spike(o) {
-    const qb = LU[o].QB[0], ql = sl(qb, o); drv.pl++; g.ts[o].pl++;
+    const qb = LU[o].QB[0], ql = sl(qb, o); drv.pl++; rzSnap(); g.ts[o].pl++;
     inc(ql, 'pa'); g.ts[o].pa++; st.spikeNext = false;
     note('spike', `${nm(qb)} spikes the ball to stop the clock`, 0);
     return result(0, 2, 0, `${nm(qb)} spike`, false, false);
@@ -3230,7 +3235,7 @@ function* gameGen(ht, at, opt = {}) {
   const GO = [null, null]; // each offense's best receiver this game: the quarterback leans on him
   function passPlay(o, d, hurry, protect, h, was3) {
     const Lo = LU[o], Ld = LU[d], qb = Lo.QB[0], ql = sl(qb, o);
-    const dist = 100 - st.yl; drv.pl++; g.ts[o].pl++; snapInj(o, d); EPX.qb = qb; pbSnap('pass', hurry); snapSpd(o, d);
+    const dist = 100 - st.yl; drv.pl++; rzSnap(); g.ts[o].pl++; snapInj(o, d); EPX.qb = qb; pbSnap('pass', hurry); snapSpd(o, d);
     { const pe = penaltyCheck('pass', o, d); if (pe) return pe.ev; }
     if (FXON) return passField(o, d, hurry, protect, h, was3);
     const base = protect ? 36 : hurry ? 12 : 31;
@@ -3382,7 +3387,7 @@ function* gameGen(ht, at, opt = {}) {
       const p1 = clamp(w1 / (w1 + w2), 0.35, 0.6) - (n1 >= 22 ? 0.25 : n1 >= 18 ? 0.1 : 0) - (st.yl >= 90 ? 0.1 : 0) - clamp((ypg - 95) * 0.004, 0, 0.12); // a committee near the goal line
       return rnd() < p1 ? Lo.RB[0] : Lo.RB[1]; })();
     EPX.car = car; lastRole = car === Lo.QB[0] ? 5 : 6; pbSnap('run', hurry, qbRun); snapSpd(o, d, { [lastRole]: car });
-    const cl = sl(car, o); drv.pl++; g.ts[o].pl++;
+    const cl = sl(car, o); drv.pl++; rzSnap(); g.ts[o].pl++;
     { const pe = penaltyCheck('run', o, d); if (pe) return pe.ev; }
     if (FXON) return runField(o, d, car, qbRun, hurry, protect, h, was3);
     const spd = qbRun ? (car.a.MOB ?? 50) : (car.a.SPD ?? 58), eff = qbRun ? 20 + (car.a.MOB ?? 50) * 0.6 : spd * 0.35 + (car.a.AGI ?? spd) * 0.3 + (car.a.POW ?? 55) * 0.35;
@@ -8355,7 +8360,7 @@ function teamAdvanced(season = S.season) {
     for (const [i, tid] of [[0, g.home], [1, g.away]]) { const A = T[tid]; if (!A) continue; A.g++; for (const k in g.ts[i]) { A.off[k] = (A.off[k] || 0) + (g.ts[i][k] || 0); A.def[k] = (A.def[k] || 0) + (g.ts[1 - i][k] || 0); } }
   }
   return S.teams.map(t => { const A = T[t.tid], o = A.off, d = A.def, pr = (x, y) => (y ? x / y : null);
-    return { tid: t.tid, g: A.g, offEpa: pr(o.epa, o.sp), offSr: pr(o.su, o.sp), passEpa: pr(o.pe, o.pp), rushEpa: pr(o.re, o.rp), defEpa: pr(d.epa, d.sp), defSr: pr(d.su, d.sp), prsRate: pr(o.prs, d.pp), prsAllowed: pr(d.prs, o.pp), passRate: pr(o.pp, o.sp) };
+    return { tid: t.tid, g: A.g, offEpa: pr(o.epa, o.sp), offSr: pr(o.su, o.sp), passEpa: pr(o.pe, o.pp), rushEpa: pr(o.re, o.rp), defEpa: pr(d.epa, d.sp), defSr: pr(d.su, d.sp), prsRate: pr(o.prs, d.pp), prsAllowed: pr(d.prs, o.pp), passRate: pr(o.pp, o.sp), offRz: pr(o.rztd, o.rzt), defRz: pr(d.rztd, d.rzt) };
   }).filter(x => x.g);
 }
 
@@ -10267,7 +10272,7 @@ function cInjury(X, side, p, e, mult = 1) {
 function cFirstDownStop(X) { return (X.q === 2 || X.q === 4) && X.clk < 120; }
 function cAdvance(X, y, U, e) {
   const s = X.st; s.yl += y; if (X.drv) X.drv.n++;
-  if (s.yl >= 80 && X.drv && !X.drv.rz && X.adv) { X.drv.rz = true; X.adv[s.o].rzt++; }
+  if (s.yl >= 80 && s.yl < 100 && X.drv && !X.drv.rz && X.adv) { X.drv.rz = true; X.adv[s.o].rzt++; }
   X.g.ts[s.o].pl++;
   if (s.yl >= s.lineTo) { s.dn = 1; s.lineTo = Math.min(100, s.yl + 10); s.tg = s.lineTo - s.yl; X.g.ts[s.o].fd++; if (e) e.fd = true; return true; }
   s.dn++; s.tg = s.lineTo - s.yl; return false;
@@ -17383,9 +17388,9 @@ function teamAdvBody(season) {
   const s = S(), rows = HM.teamAdvanced(season).map(x => ({ ...x, t: T(x.tid), __me: x.tid === s.userTid }));
   const f2 = v => (v == null ? '—' : (v > 0 ? '+' : '') + v.toFixed(2)), pc = v => (v == null ? '—' : Math.round(v * 100) + '%');
   const col = (k, l, f, v) => ({ k, l, n: 1, f: r => f(r[k]), v: r => (r[k] == null ? -999 : v ? v(r[k]) : r[k]) });
-  return `<p class="muted" style="font-size:12.5px;margin:0 0 10px">EPA (expected points added) measures how much each play changed a team's expected points, based on down, distance and field position: a 3rd-and-8 completion for 12 yards is worth far more than a 12-yard run on 1st and 20. Success rate is the share of plays with positive EPA. Pressure rate is how often a defense pressures the quarterback on dropbacks; "Pressure allowed" is the offense's side. Defense columns: lower is better.</p>` + table('adv-team', [
-    { k: 'name', l: 'Team', f: r => tlink(r.t), v: r => r.t.name }, col('offEpa', 'Off EPA/play', f2), col('offSr', 'Off success', pc), col('passEpa', 'Pass EPA', f2), col('rushEpa', 'Rush EPA', f2), col('passRate', 'Pass rate', pc),
-    col('defEpa', 'Def EPA/play', f2, v => -v), col('defSr', 'Def success', pc, v => -v), col('prsRate', 'Pressure rate', pc), col('prsAllowed', 'Pressure allowed', pc, v => -v),
+  return `<p class="muted" style="font-size:12.5px;margin:0 0 10px">EPA (expected points added) measures how much each play changed a team's expected points, based on down, distance and field position: a 3rd-and-8 completion for 12 yards is worth far more than a 12-yard run on 1st and 20. Success rate is the share of plays with positive EPA. Pressure rate is how often a defense pressures the quarterback on dropbacks; "Pressure allowed" is the offense's side. Red zone TD is the share of drives with a snap inside the 20 that end in a touchdown. Defense columns: lower is better.</p>` + table('adv-team', [
+    { k: 'name', l: 'Team', f: r => tlink(r.t), v: r => r.t.name }, col('offEpa', 'Off EPA/play', f2), col('offSr', 'Off success', pc), col('passEpa', 'Pass EPA', f2), col('rushEpa', 'Rush EPA', f2), col('passRate', 'Pass rate', pc), col('offRz', 'Red zone TD', pc),
+    col('defEpa', 'Def EPA/play', f2, v => -v), col('defSr', 'Def success', pc, v => -v), col('prsRate', 'Pressure rate', pc), col('prsAllowed', 'Pressure allowed', pc, v => -v), col('defRz', 'Red zone TD allowed', pc, v => -v),
   ], rows, { sort: { k: 'offEpa', d: 'desc' }, empty: 'Advanced team stats start with the first game.' });
 }
 // ---------- play calling report (box score) ----------
