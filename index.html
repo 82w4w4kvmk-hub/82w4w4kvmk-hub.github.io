@@ -334,6 +334,9 @@ textarea{width:100%;min-height:120px;font:12px/1.4 var(--fm)}
 .start header h1 i{font-style:normal;color:var(--mark);-webkit-text-fill-color:var(--mark)}
 .start header p{max-width:58ch;color:var(--ink2);font-size:16px;line-height:1.55;margin:4px 0 0}
 .pickgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:10px}
+.pickgrid.div4{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media (min-width:1180px){.pickgrid.div4{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media (max-width:560px){.pickgrid.div4{grid-template-columns:1fr}}
 .pick{all:unset;cursor:pointer;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;transition:border-color .12s,transform .12s,background .12s}
 .pick:hover{border-color:var(--line2);background:var(--panel2);transform:translateY(-1px)}
 .pick[aria-pressed="true"]{box-shadow:inset 0 0 0 2px var(--mark),0 10px 30px -12px color-mix(in srgb,var(--mark) 50%,transparent);background:var(--panel2)}
@@ -379,7 +382,7 @@ textarea{width:100%;min-height:120px;font:12px/1.4 var(--fm)}
 .ez{position:absolute;top:0;bottom:0;width:calc(100%/12);display:flex;align-items:center;justify-content:center;overflow:hidden}
 .ez span{writing-mode:vertical-rl;font:800 clamp(14px,2.6vw,28px)/1 var(--fd);letter-spacing:.14em;color:rgba(255,255,255,.88)}
 .branded .ez span{font-size:max(9px,min(28px,calc(26vw / var(--n)),calc(290px / var(--n))));letter-spacing:.1em;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.35)}
-.fv-mid{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:clamp(46px,9.5vw,112px);opacity:.92;pointer-events:none}
+.fv-mid{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:clamp(46px,9.5vw,112px);opacity:.45;pointer-events:none}
 .fv-mid .tlogo{width:100%;height:auto}
 .ez.l{left:0;background:var(--ac)}.ez.l span{transform:rotate(180deg)}
 .ez.r{right:0;background:var(--hc)}
@@ -3098,14 +3101,16 @@ function* gameGen(ht, at, opt = {}) {
   const scoreTD = (ti, desc) => {
     if (st.qtr >= 5) { addPts(ti, 6, desc); return; }
     if (C === ti) { addPts(ti, 6, desc); st.pat = { ti }; return; }   // the coach decides after the touchdown
-    const [x, tail] = patTry(ti, patAuto(ti));
+    const choice = patAuto(ti), [x, tail] = patTry(ti, choice);
     addPts(ti, 6 + x, desc + tail);
+    later('pat', patMsg(choice, x));   // the try goes in the play-by-play after the touchdown, as a coached one does
   };
+  const patMsg = (choice, x) => choice === 'two' ? (x ? 'Two-point try is good!' : 'Two-point try fails.') : (x ? 'Extra point is good.' : 'Extra point is no good!');
   const resolvePat = (ti, choice) => {
     const [x, tail] = patTry(ti, choice), last = g.scoring[g.scoring.length - 1];
     g.score[ti] += x; g.q[ti][Math.min(st.qtr, 5) - 1] += x;
     if (last) { last.d += tail || (choice === 'two' ? '' : ''); last.s = [g.score[0], g.score[1]]; }
-    logEv('pat', choice === 'two' ? (x ? 'Two-point try is good!' : 'Two-point try fails.') : (x ? 'Extra point is good.' : 'Extra point is no good!'));
+    logEv('pat', patMsg(choice, x));
   };
   const kickoff = recv => {
     const kick = 1 - recv, kd = g.score[kick] - g.score[recv];
@@ -10686,7 +10691,7 @@ function rivalResult(g) {
   // recruits who grew up with the rivalry notice who won it
   for (const rc of recruits()) if (!rc.signed && rc.reg === wt.reg && rc.int[W] != null && rc.int[L] != null) { rc.int[W] = clamp(rc.int[W] + 3, 0, 100); rc.int[L] = clamp(rc.int[L] - 2, 0, 100); }
   const wa = r.w[W], wb = r.w[L] || 0, ser = wa === wb ? `series tied ${wa}-${wb}` : wa > wb ? `${wt.abbr} leads the series ${wa}-${wb}` : `${lt.abbr} leads the series ${wb}-${wa}`;
-  const tro = rivTrophy(i), txt = `${rivName(i)}: ${wt.name} beat ${lt.name} ${Math.max(...g.score)}-${Math.min(...g.score)}${tro ? (kept ? ` and keeps the ${tro}` : ` and takes the ${tro}`) : ''}. ${r.streak.n >= 3 ? `That's ${r.streak.n} straight. ` : ''}(${ser.charAt(0).toUpperCase() + ser.slice(1)}.)`;
+  const tro = rivTrophy(i), txt = `${rivName(i)}: ${wt.name} beat ${lt.name} ${Math.max(...g.score)}-${Math.min(...g.score)}${tro ? (kept ? ` and kept the ${tro}` : ` and took the ${tro}`) : ''}. ${r.streak.n >= 3 ? `That's ${r.streak.n} straight. ` : ''}(${ser.charAt(0).toUpperCase() + ser.slice(1)}.)`;
   cnews(txt, W === CS.userTid || L === CS.userTid);
 }
 function rivalryTable() {
@@ -11517,7 +11522,7 @@ function buildFront(games, label, before) {
     const key = mine.hl && mine.hl.length ? mine.hl.filter(x => (x.e.k === 'xp' || x.e.k === 'two' ? x.e.side : x.o) === us && (x.e.td || x.e.y >= 15 || x.e.k === 'fg')).sort((a, b) => (b.e.td ? 1 : 0) - (a.e.td ? 1 : 0) || (b.e.y || 0) - (a.e.y || 0))[0] || null : null;
     if (key) lines.push(`The play of the game: ${colPlayTxt(key.e).replace(/^[^:]*: /, '')}.`);
     (mine.inj || []).filter(x => x.side === us && x.w >= 2).forEach(x => { const p = CS.players[x.id]; if (p) lines.push(`Bad news: ${p.pos} ${p.fn} ${p.ln} (${p.injT}) is out about ${x.w} weeks.`); });
-    stories.push({ k: 'mine', head: `${w ? `${t.name} ${mine.ot ? 'survive' : Math.abs(mine.score[0] - mine.score[1]) >= 21 ? 'rout' : 'beat'}` : `${t.name} fall to`} ${rkName(opp, R0)}, ${fmt(mine)}`, body: lines.join(' '), gid: mine.gid, tids: [u, opp], mine: true });
+    stories.push({ k: 'mine', head: `${w ? `${t.name} ${mine.ot ? 'survives' : Math.abs(mine.score[0] - mine.score[1]) >= 21 ? 'routs' : 'beats'}` : `${t.name} falls to`} ${rkName(opp, R0)}, ${fmt(mine)}`, body: lines.join(' '), gid: mine.gid, tids: [u, opp], mine: true });
   }
   // the upset of the week: the best-ranked team to lose to a lower-ranked (or unranked) one
   const ups = games.filter(g => R0[lose(g)] && (!R0[win(g)] || R0[win(g)] - R0[lose(g)] >= 8)).sort((a, b) => R0[lose(a)] - R0[lose(b)]);
@@ -11536,7 +11541,7 @@ function buildFront(games, label, before) {
   if (label.poll !== false) {
     const moves = Object.keys(R1).map(Number).map(tid => ({ tid, d: (R0[tid] || 30) - R1[tid] })).sort((a, b) => b.d - a.d), out = Object.keys(R0).map(Number).filter(tid => !R1[tid]);
     const one = Object.keys(R1).find(t => R1[t] === 1), lines = [];
-    if (one != null && R0[+one] !== 1) lines.push(`${cteam(+one).name} take over the No. 1 spot.`); else if (one != null) lines.push(`${cteam(+one).name} stay at No. 1.`);
+    if (one != null && R0[+one] !== 1) lines.push(`${cteam(+one).name} takes over the No. 1 spot.`); else if (one != null) lines.push(`${cteam(+one).name} stays at No. 1.`);
     const up = moves.filter(x => x.d >= 4).slice(0, 3); if (up.length) lines.push(`Climbing: ${up.map(x => `${cteam(x.tid).name} (${R0[x.tid] ? R0[x.tid] : 'NR'} to ${R1[x.tid]})`).join(', ')}.`);
     const dn = moves.filter(x => x.d <= -4).slice(-3).reverse(); if (dn.length) lines.push(`Falling: ${dn.map(x => `${cteam(x.tid).name} (${R0[x.tid]} to ${R1[x.tid]})`).join(', ')}.`);
     if (out.length) lines.push(`Out of the top 25: ${out.slice(0, 5).map(t => cteam(t).name).join(', ')}.`);
@@ -13790,8 +13795,9 @@ function proPregame(g) {
   if (st) keys.push(`Their player to watch: ${st.pos} ${plink(st)} (${rv(st.ovr)}).`);
   const wx = g.wx; if (wx && !wx.dome && (wx.wind >= 15 || /rain|snow/i.test(wx.cond || ''))) keys.push(`The weather (${E(HM.wxText(wx))}) favors the running game and short throws.`);
   if (keys.length < 3) keys.push('Win the turnover battle. It decides more games than anything else.');
-  // the week is simmed before you watch it, so take this game back out of the records (no spoilers before kickoff)
-  const preRec = (t, x) => { const r = t.rec; if (!x.score || x.po) return r; const m = (x.home === t.tid ? 1 : -1) * (x.score[0] - x.score[1]); return { w: r.w - (m > 0), l: r.l - (m < 0), t: (r.t || 0) - (m === 0) }; };
+  // the week is simmed before you watch it, so take this game back out of the records (no spoilers before kickoff);
+  // a game you coach isn't played yet, so it's not in them
+  const preRec = (t, x) => { const r = t.rec; if (!x.score || x.po || (ui.live && ui.live.coach)) return r; const m = (x.home === t.tid ? 1 : -1) * (x.score[0] - x.score[1]); return { w: r.w - (m > 0), l: r.l - (m < 0), t: (r.t || 0) - (m === 0) }; };
   const ln = g.line || HM.gameLine(H.tid, A.tid, !!g.neutral, g.week, g.po), pH = ln ? ln.pH : winProb(RH.ovr, RA.ovr, 2), alt = g.riv >= 60;
   const notes = [wx ? `${wxIcon(wx)} ${E(HM.wxText(wx))}` : '', (() => { try { return E(HM.STADIUM_NAME[HM.stadiumOf(H.tid).climate] || ''); } catch (e) { return ''; } })(), g.riv >= 40 ? `<b>${E(HM.rivLabel(g.riv))}</b>` : ''].filter(Boolean);
   return pregameCard({ kicker: g.po ? HM.PO_ROUNDS[g.po - 1] : `Week ${g.week}`, title: `${g.season} · ${E(H.city)}`, A, H, altH: alt,
@@ -13827,11 +13833,11 @@ function potgScore(s) {
     + (s.tkl || 0) * 0.9 + (s.sck || 0) * 4.5 + (s.dint || 0) * 6 + (s.fgm || 0) * 2.2 + ((s.krtd || 0) + (s.prtd || 0)) * 7 - (s.fuml || 0) * 3;
 }
 function potgLine(s) {
-  const b = [];
+  const b = [], pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
   if (s.pa) b.push(`${s.pc || 0} of ${s.pa} for ${s.py || 0} yards${s.ptd ? `, ${s.ptd} TD` : ''}${s.pint ? `, ${s.pint} INT` : ''}`);
-  if ((s.ry || 0) >= 25 || s.rtd) b.push(`${s.ra || 0} carries for ${s.ry || 0} yards${s.rtd ? `, ${s.rtd} TD` : ''}`);
-  if (s.rec) b.push(`${s.rec} catches for ${s.rcy || 0} yards${s.rctd ? `, ${s.rctd} TD` : ''}`);
-  if (s.tkl || s.sck || s.dint) b.push([s.tkl ? `${s.tkl} tackles` : '', s.sck ? `${s.sck} sack${s.sck === 1 ? '' : 's'}` : '', s.dint ? `${s.dint} interception${s.dint === 1 ? '' : 's'}` : ''].filter(Boolean).join(', '));
+  if ((s.ry || 0) >= 25 || s.rtd) b.push(`${s.ra === 1 ? '1 carry' : `${s.ra || 0} carries`} for ${s.ry || 0} yards${s.rtd ? `, ${s.rtd} TD` : ''}`);
+  if (s.rec) b.push(`${s.rec} catch${s.rec === 1 ? '' : 'es'} for ${s.rcy || 0} yards${s.rctd ? `, ${s.rctd} TD` : ''}`);
+  if (s.tkl || s.sck || s.dint) b.push([s.tkl ? pl(s.tkl, 'tackle') : '', s.sck ? `${s.sck} sack${s.sck === 1 ? '' : 's'}` : '', s.dint ? `${s.dint} interception${s.dint === 1 ? '' : 's'}` : ''].filter(Boolean).join(', '));
   if (s.fga) b.push(`${s.fgm || 0} of ${s.fga} field goals`);
   if ((s.krtd || 0) + (s.prtd || 0)) b.push(`${(s.krtd || 0) + (s.prtd || 0)} return TD`);
   return b.slice(0, 2).join('; ');
@@ -13864,7 +13870,7 @@ function gameRecap(o) {
   else if (m <= 3) head = `${W} ${vb('edge', 'edges')} ${Lo}, ${sc}`;
   else head = `${W} ${vb('beat', 'beats')} ${Lo}, ${sc}`;
   const body = [];
-  if (o.potg) body.push(`${o.potgName} led the way: ${E(o.potg.line)}.`);
+  if (o.potg) body.push(o.potg.side === l ? `${o.potgName} was the best player on the field for ${o.plural ? 'the ' : ''}${Lo} in a losing effort: ${E(o.potg.line)}.` : `${o.potgName} led the way for ${o.plural ? 'the ' : ''}${W}: ${E(o.potg.line)}.`);
   if (hw != null && hl != null && !comeback) body.push(hw === hl ? `It was tied ${hw}-${hl} at the half.` : `${hw > hl ? W : Lo} led ${Math.max(hw, hl)}-${Math.min(hw, hl)} at the half${hw > hl && m >= 14 ? ' and never looked back' : ''}.`);
   if (comeback) body.push(`${Lo} led ${hl}-${hw} at the half, then the second half belonged to ${W}.`);
   if (g.ts) { const yw = (g.ts[w].py || 0) + (g.ts[w].ry || 0), yl = (g.ts[l].py || 0) + (g.ts[l].ry || 0), tw = g.ts[w].to || 0, tl = g.ts[l].to || 0;
@@ -14519,7 +14525,7 @@ function boxModal(g) {
     ${trow('Total yards', i => ts[i].py + ts[i].ry)}${trow('Passing', i => ts[i].py)}${trow('Comp / att', i => `${ts[i].pc}/${ts[i].pa}`)}${trow('Rushing', i => `${ts[i].ry} (${ts[i].ra})`)}${trow('First downs', i => ts[i].fd)}${trow('3rd/4th down', i => `${ts[i].c3}/${ts[i].a3}`)}${trow('Turnovers', i => ts[i].to)}${trow('Sacks by', i => ts[i].sk)}${trow('Penalties', i => penaltyLine(g, i))}${trow('Possession', top)}</tbody></table></div>`;
   const scoring = g.scoring.length ? g.scoring.map(sc => `<div class="row" style="font-size:13px;padding:5px 0;border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent)"><span class="num muted" style="width:70px">${sc.q > 4 ? 'OT' : 'Q' + sc.q} ${fmtClock(sc.c)}</span>${chip(teams[sc.t])}<span style="flex:1;min-width:140px">${E(sc.d)}</span><span class="num">${sc.s[1]}-${sc.s[0]}</span></div>`).join('') : '<p class="muted">No scoring.</p>';
   const drives = (g.drives || []).map(d => { const [t, q, c, s0, pl, y, tm, r, k, e] = d; const tm2 = teams[t]; const a = Math.min(s0, e), b = Math.max(s0, e);
-    return `<div class="drive"><span class="num muted">${q > 4 ? 'OT' : 'Q' + q} ${fmtClock(c)}</span><div style="min-width:0"><div class="row" style="gap:6px">${chip(tm2)}<span class="muted">${pl} plays, ${y} yds, ${fmtClock(tm)}</span></div><div style="font-size:12px;overflow:hidden;text-overflow:ellipsis">${E(k || '')}</div></div>
+    return `<div class="drive"><span class="num muted">${q > 4 ? 'OT' : 'Q' + q} ${fmtClock(c)}</span><div style="min-width:0"><div class="row" style="gap:6px">${chip(tm2)}<span class="muted">${pl} play${pl === 1 ? '' : 's'}, ${y} yds, ${fmtClock(tm)}</span></div><div style="font-size:12px;overflow:hidden;text-overflow:ellipsis">${E(k || '')}</div></div>
     <div class="field" title="Own ${s0 <= 50 ? s0 : 'opp ' + (100 - s0)} to ${e >= 100 ? 'end zone' : e <= 50 ? 'own ' + e : 'opp ' + (100 - e)}"><i class="${e < s0 ? 'back' : ''}" style="--dc:${tm2.color};left:${a}%;width:${Math.max(1.2, b - a)}%"></i></div>
     <span class="res ${E(r.split(' ')[0])}">${E(r)}</span></div>`; }).join('');
   const lines = i => { const out = {}; for (const pid in g.ps) if (g.pt[pid] === i) { const p = P(pid); if (p) out[pid] = { p, s: g.ps[pid] }; } return Object.values(out); };
@@ -14592,7 +14598,7 @@ function startScreen() {
   const saved = slotsPanel(true);
   const L = S();
   const pick = ui.pickTid;
-  const confs = [0, 1].map(c => `<section class="stack"><h3>${E(HM.confName(c))} Conference</h3>${[0, 1, 2, 3].map(d => `<div class="lbl">${HM.DIVS[d]}</div><div class="pickgrid">${L.teams.filter(t => t.div === c * 4 + d).map(t => { const R = HM.teamRatings(t); const qb = HM.lineup(t).QB[0]; return `<button class="pick" data-act="pickTeam" data-id="${t.tid}" aria-pressed="${pick === t.tid}">${chip(t, true)}<div><b>${E(t.city)} ${E(t.name)}</b><small>QB ${E(qb.fn[0] + '. ' + qb.ln)} (${rv(qb.ovr)}) · Cap space ${money(HM.capRoom(t.tid))}</small></div><div style="text-align:right"><b style="font:800 22px/1 var(--fd)">${rt(R.ovr)}</b><small>OVR</small></div></button>`; }).join('')}</div>`).join('')}</section>`).join('');
+  const confs = [0, 1].map(c => `<section class="stack"><h3>${E(HM.confName(c))} Conference</h3>${[0, 1, 2, 3].map(d => `<div class="lbl">${HM.DIVS[d]}</div><div class="pickgrid div4">${L.teams.filter(t => t.div === c * 4 + d).map(t => { const R = HM.teamRatings(t); const qb = HM.lineup(t).QB[0]; return `<button class="pick" data-act="pickTeam" data-id="${t.tid}" aria-pressed="${pick === t.tid}">${chip(t, true)}<div><b>${E(t.city)} ${E(t.name)}</b><small>QB ${E(qb.fn[0] + '. ' + qb.ln)} (${rv(qb.ovr)}) · Cap space ${money(HM.capRoom(t.tid))}</small></div><div style="text-align:right"><b style="font:800 22px/1 var(--fd)">${rt(R.ovr)}</b><small>OVR</small></div></button>`; }).join('')}</div>`).join('')}</section>`).join('');
   if (!ui.startMode && !ui.uniPending) return startLanding(saved);
   const pt = pick != null ? T(pick) : null, sm = ui.startMode || 'pro', scen = ui.scen || 'standard';
   const modeSeg = `<div><button class="btn sm backbtn" data-act="startMode" data-v="">← All game modes</button></div>`;
@@ -14720,9 +14726,11 @@ function liveUpdate(instant) {
   if (willAnim) { L.anim = L.i; L.animated = L.i; } else if (!inProg) L.anim = null;
   const rv = L.ph === 1 && L.anim !== L.i;
   const score = rv ? e.s : (prev ? prev.s : [0, 0]);
+  // (waiting on your call, the clock is the one you're deciding at: the log's clocks are each play's snap)
+  const ak = L.ask && !inProg && !willAnim ? L.ask : null;
   const tos = n => `<span class="tos" aria-label="${n} timeouts left">${[0, 1, 2].map(i => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</span>`;
   $('lvBug').innerHTML = `<div class="bt ${!L.done && e.p === 1 && e.t !== 'qtr' ? 'pos' : ''}">${teamHelmet(A, 58, false)}<span class="tn"><span>${E(A.city)}</span><b>${E(A.name)}</b>${tos(e.to[1])}</span><span class="sc">${score[1]}</span></div>
-    <div class="mid"><b>${L.done ? 'Final' + (g.ot ? ' / OT' : '') : e.t === 'qtr' ? (e.q === 2 ? 'Half' : 'End') : qLabel(e.q)}</b><span class="num">${L.done || e.t === 'qtr' ? '&nbsp;' : fmtClock(e.c)}</span></div>
+    <div class="mid"><b>${L.done ? 'Final' + (g.ot ? ' / OT' : '') : ak ? qLabel(ak.qtr) : e.t === 'qtr' ? (e.q === 2 ? 'Half' : 'End') : qLabel(e.q)}</b><span class="num">${L.done ? '&nbsp;' : ak ? fmtClock(ak.clock) : e.t === 'qtr' ? '&nbsp;' : fmtClock(e.c)}</span></div>
     <div class="bt r ${!L.done && e.p === 0 && e.t !== 'qtr' ? 'pos' : ''}"><span class="sc">${score[0]}</span><span class="tn"><span>${E(H.city)}</span><b>${E(H.name)}</b>${tos(e.to[0])}</span>${teamHelmet(H, 58, true, g.riv >= 60)}</div>`;
   // the field: formations at the snap, then the play drawn out on the canvas
   const cv = $('lvCv'), offT = T(e.p === 0 ? g.home : g.away), defT = T(e.p === 0 ? g.away : g.home), dir = e.p === 1 ? 1 : -1;
@@ -15890,11 +15898,13 @@ function fvDraw(cv, St) {
   }
   // rings and names for the players that matter on this play
   c.font = `600 ${Math.round(clamp(h / 19, 10, 13))}px system-ui, sans-serif`; c.textBaseline = 'bottom';
+  const named = new Set();   // (two labels can overlap on one player, as the handoff becomes the run: one name tag is enough)
   for (const lb of pre ? [] : Sc.labels || []) {
     if (t < lb.t0 || t > lb.t1) continue;
     const q = (lb.side === 'o' ? Sc.O : Sc.D)[lb.i].at(t), [xx, yy] = px(q[0], q[1]);
     if (lb.ring) { c.beginPath(); c.arc(xx, yy, R * 1.85, 0, 7); c.lineWidth = 2.5; c.strokeStyle = '#F0C63A'; c.stroke(); }
-    if (!lb.name) continue;
+    if (!lb.name || named.has(lb.name)) continue;
+    named.add(lb.name);
     // the tag goes above him (below, for a defender), unless that side would cover more players than the other: a tackler
     // closing in from that side stays in sight
     const tw = c.measureText(lb.name).width, bx = clamp(xx - tw / 2 - 5, 2, w - tw - 12), up = Math.max(2, yy - R * 2.2 - 18), dn = Math.min(h - 19, yy + R * 2 + 2);
@@ -16551,8 +16561,10 @@ function askPanel() {
   const btn = (v, l, sub) => `<button class="btn${a.auto === v ? ' primary' : ''}" data-act="coachAns" data-v="${v}">${E(l)}${sub ? `<span class="sub">${E(sub)}</span>` : ''}</button>`;
   let q = '', btns = '';
   if (a.type === 'call') {
-    const spot = a.yl === 50 ? 'midfield' : a.yl < 50 ? `own ${a.yl}` : `opp ${100 - a.yl}`, off = a.unit === 'off';
-    const dd = `${ord(a.down)} & ${a.yl + a.togo >= 100 ? 'goal' : a.togo} at the ${spot}`;
+    // (yl counts from the offense's goal line, so on defense "their own 30" is the other side's)
+    const off = a.unit === 'off', n = Math.min(a.yl, 100 - a.yl), ours = off === a.yl < 50;
+    const spot = a.yl === 50 ? 'midfield' : ours ? `your own ${n}` : `their ${off ? '' : 'own '}${n}`;
+    const dd = `${ord(a.down)} & ${a.yl + a.togo >= 100 ? 'goal' : a.togo} at ${spot}`;
     const calls = off ? HM.OFF_CALLS : HM.DEF_CALLS;
     const cb = off ? playbookPanel(a) : Object.entries(calls).map(([v, l]) => `<button class="btn${a.auto === v ? ' primary' : ''}" data-act="coachAns" data-v="${v}" title="${E(HM.CALL_TIPS[v] || 'Let your coordinator pick the play.')}">${E(l)}<span class="sub">${E(v === 'auto' ? 'Their best guess' : (HM.CALL_TIPS[v] || '').split('.')[0])}</span></button>`).join('');
     const modeSeg = `<div class="seg">${[['key', 'Key downs'], ['all', 'Every snap'], ['off', 'Never']].map(([v, l]) => `<button data-act="callMode" data-v="${v}" aria-pressed="${callMode() === v}">${l}</button>`).join('')}</div>`;
@@ -17415,6 +17427,8 @@ function tourMark() {
   const s = S(); t.done = t.done || [];
   const hit = TOUR.find(x => x.v === ui.view); if (hit && !t.done.includes(hit.id)) t.done.push(hit.id);
   if ((s.week > 1 || s.phase !== 'regular') && !t.done.includes('play')) t.done.push('play');
+  // two weeks after the first game it isn't the first week any more: the guide steps aside without a toast
+  const at = s.season * 100 + s.week; if (t.done.includes('play')) { if (t.pw == null) t.pw = at; else if (at - t.pw >= 2) { t.fin = true; return; } }
   if (t.done.length >= TOUR.length && !t.fin) { t.fin = true; toast('Guide complete. The Help page has a reference for every system.'); }
 }
 function tourCard() {
@@ -17528,6 +17542,7 @@ const GUIDES = {
       { id: 'play', v: null, t: 'Play or coach week 1', d: 'Play the week from the top bar, or coach the game yourself, calling every snap. Recruiting hours refill each week.' },
     ],
     done: () => { const c = CSx(); return c.phase !== 'season' || c.week > 1; },
+    at: () => { const c = CSx(); return c.season * 100 + c.week; },
   },
   career: {
     title: 'Your first week as a player', home: 'home', nav: 'carNav',
@@ -17538,6 +17553,7 @@ const GUIDES = {
       { id: 'play', v: null, t: 'Play your first game', d: 'Press Play in the top bar, or Sim ahead to jump to the next decision. Big games move your recruiting stock and your draft stock.' },
     ],
     done: () => { const c = S().car; return (c.hs && c.hs.g && c.hs.g.length > 0) || (c.glog && c.glog.length > 0); },
+    at: () => { const c = S().car; return ((c.hs && c.hs.g) || []).length + (c.glog || []).length; },
   },
 };
 function guideCtx() {
@@ -17551,6 +17567,8 @@ function guideMark() {
   const d = x.t.done || (x.t.done = []), steps = guideSteps(x);
   const hit = steps.find(s => s.v && s.v === x.view); if (hit && !d.includes(hit.id)) d.push(hit.id);
   if (x.g.done()) { if (!d.includes('play')) d.push('play'); if (x.k === 'career' && !d.includes('focus')) d.push('focus'); }
+  // two weeks (or games) after the first, the guide steps aside without a toast
+  if (d.includes('play')) { const at = x.g.at(); if (x.t.pw == null) x.t.pw = at; else if (at - x.t.pw >= 2) { x.t.fin = true; return; } }
   if (steps.every(s => d.includes(s.id))) { x.t.fin = true; toast('Guide complete. You\'re on your own now. Good luck.'); }
 }
 function guideCard() {
@@ -18532,8 +18550,8 @@ function cfvDlog(st, D) {
 }
 function cfvChart(st, D) {
   const H = CT(st.h), A = CT(st.a);
-  return D.map(d => { const tm = d.o === 0 ? H : A, s0 = d.start ?? 25, e = d.end ?? s0 + d.yds, res = { td: 'TD', fg: d.pts ? 'FG' : 'Missed FG', to: /Intercept/.test(d.res) ? 'INT' : 'Fumble', punt: 'Punt', downs: 'Downs', half: 'End of half', safety: 'Safety', two: d.pts ? '2-pt' : 'No good' }[d.out] || d.out, a = d.o === 1 ? s0 : 100 - e, b = d.o === 1 ? e : 100 - s0;
-    return `<div class="drive"><span class="num muted">${d.q > 4 ? 'OT' : 'Q' + d.q}</span><div style="min-width:0"><div class="row" style="gap:6px">${cchip(tm)}<span class="muted">${d.n} plays, ${Math.max(0, e - s0)} yds</span></div></div><div class="field"><i class="${e < s0 ? 'back' : ''}" style="--dc:${tm.color};left:${Math.min(a, b)}%;width:${Math.max(1.2, Math.abs(b - a))}%"></i></div><span class="res ${E(String(res).split(' ')[0])}">${E(res)}</span></div>`; }).join('') || '<p class="muted" style="margin:0">No drives yet.</p>';
+  return D.map(d => { const tm = d.o === 0 ? H : A, s0 = d.start ?? 25, e = d.end ?? s0 + d.yds, res = { td: 'TD', fg: d.pts ? 'FG' : 'Missed FG', to: /Intercept/.test(d.res) ? 'INT' : 'Fumble', punt: 'Punt', downs: 'Downs', half: d.res === 'End of game' ? 'End of game' : 'End of half', safety: 'Safety', two: d.pts ? '2-pt' : 'No good' }[d.out] || d.out, a = d.o === 1 ? s0 : 100 - e, b = d.o === 1 ? e : 100 - s0;
+    return `<div class="drive"><span class="num muted">${d.q > 4 ? 'OT' : 'Q' + d.q}</span><div style="min-width:0"><div class="row" style="gap:6px">${cchip(tm)}<span class="muted">${d.n} play${d.n === 1 ? '' : 's'}, ${Math.max(0, e - s0)} yds</span></div></div><div class="field"><i class="${e < s0 ? 'back' : ''}" style="--dc:${tm.color};left:${Math.min(a, b)}%;width:${Math.max(1.2, Math.abs(b - a))}%"></i></div><span class="res ${E(String(res).split(' ')[0])}">${E(res)}</span></div>`; }).join('') || '<p class="muted" style="margin:0">No drives yet.</p>';
 }
 const cfvTos = n => `<span class="tos" aria-label="${n} timeouts left">${[0, 1, 2].map(i => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</span>`;
 // paint everything except the canvas animation: scorebug, situation, feed, drive chart and log
