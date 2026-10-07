@@ -1515,7 +1515,7 @@ function pbMatch(pkg, form) {
 // v across the field (the sidelines at about +-26.7). Field spots: offense 0-4 the line (left to right), 5 quarterback,
 // 6 back, 7 tight end, 8 and 9 wide receivers, 10 the third receiver (or second tight end, or fullback); defense 0-3 the
 // line, 4-6 linebackers (or nickel and dime backs), 7 and 8 corners, 9 and 10 safeties.
-let FX_BRK = 0.3, FX_SPREAD = 0.6, FX_RSHED = 0.15, FX_SY_SHED = 2, FX_SY_PUSH = 0.4; const fxH = (x, y) => Math.sqrt(x * x + y * y); const FLD_V = 20, FX_DT = 0.1, FX_SIDE = 26.6, FX_DBG = {};
+let FX_HELP_PRS = 0.3, FX_PSLOPE = 16, FX_HALF = 1.5, FX_BRK = 0.3, FX_SPREAD = 0.6, FX_RSHED = 0.15, FX_SY_SHED = 2, FX_SY_PUSH = 0.4; const fxH = (x, y) => Math.sqrt(x * x + y * y); const FLD_V = 21, FX_DT = 0.1, FX_SIDE = 26.6, FX_DBG = {};
 function fxRng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 const fxGauss = r => { let u = 0; while (!u) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); };
 
@@ -1789,7 +1789,7 @@ function fxProtect(W) {
   for (const [dd, b, d] of pairs) { if (bUsed.has(b) || dUsed.has(d) || dd > 6) continue; b.as = d; bUsed.add(b); dUsed.add(d); }
   // (the protection call: a spare blocker slides to help on the most dangerous man within reach, the best rusher, an edge
   // rusher before an inside one, rather than just doubling whoever's next to him)
-  for (const b of ol) if (!bUsed.has(b)) { const sc = x => Math.abs(x.v - b.v) * 0.8 - x.c.PRS * 0.5 - (Math.abs(x.v) > 4 ? 1.5 : 0); const d = rushers.filter(x => dUsed.has(x) && Math.abs(x.v - b.v) < 7).sort((x, y) => sc(x) - sc(y))[0]; b.as = d || null; b.help = true; }
+  for (const b of ol) if (!bUsed.has(b)) { const sc = x => Math.abs(x.v - b.v) * 0.8 - x.c.PRS * FX_HELP_PRS - (Math.abs(x.v) > 4 ? 1.5 : 0); const d = rushers.filter(x => dUsed.has(x) && Math.abs(x.v - b.v) < 7).sort((x, y) => sc(x) - sc(y))[0]; b.as = d || null; b.help = true; }
   W.freeR = rushers.filter(d => !dUsed.has(d));
   // (a quarterback who reads the blitz before the snap knows where it's coming from and where his hot throw is)
   const Q = O[5]; W.hotB = rushers.some(d => d.blitz) && W.r() < clamp(0.55 + (Q.c.AWR - 68) * 0.02 + (Q.c.VIS - 68) * 0.01, 0.25, 0.92);
@@ -2468,7 +2468,7 @@ function fxBlocks(W) {
       let push = pass ? clamp(0.3 + net * 0.03, -0.3, 1.3) : clamp(-0.15 + (W.sy ? FX_SY_PUSH : 0) + net * 0.05, -1.6, 1.6);
       if (bl.length > 1) push = Math.min(push, pass ? 0.1 : -0.3);
       // Copy the lineup: fxEngage can append a helper to the live list before the next tick.
-      bc = d.bcalc = { pass, role: bl[0].role, bl: bl.slice(), push, rate: (pass ? 0.6 : FX_RSHED * (W.sy ? FX_SY_SHED : 1)) * Math.exp(net / (pass ? 16 : 9)), chances: [] };
+      bc = d.bcalc = { pass, role: bl[0].role, bl: bl.slice(), push, rate: (pass ? 0.6 : FX_RSHED * (W.sy ? FX_SY_SHED : 1)) * Math.exp(net / (pass ? FX_PSLOPE : 9)), chances: [] };
     }
     const push = bc.push;
     d.vu = eu * push; d.vv = ev * push;
@@ -2653,7 +2653,8 @@ function fxResult(W, rec) {
   const L = W.L, o = W.over || { k: 'down' }, c = W.car, st = W.st, R = { k: null, t: +W.t.toFixed(1), air: null, tgt: null };
   const spot = x => Math.round(x - L), qbU = W.downC === W.O[5] ? W.downU : W.O[5].u;
   const th = st.throw;
-  if (st.sack) { R.k = 'sack'; R.y = Math.min(-1, spot(qbU)); R.by = st.sack.i; }
+  // (a second rusher free and on him as he goes down shares it: half a sack each, as the NFL scores it)
+  if (st.sack) { R.k = 'sack'; R.y = Math.min(-1, spot(qbU)); R.by = st.sack.i; const Q = W.O[5], two = fxNear(W.D, x => x !== st.sack && !x.eng && !(x.stun > 0) && fxD(x, Q) < FX_HALF, Q); if (two) R.by2 = two.i; }
   else if (st.int) { const d = st.int; R.k = 'int'; R.by = d.i; R.tgt = th ? th.tgt : null; R.air = th ? th.air : null; R.ret = Math.round(100 - (W.downC === d ? W.downU : d.u)); R.catchU = Math.round(st.catchU ?? d.u); R.td = o.k === 'td'; R.tk = st.tk ? st.tk.i : null; }
   else if (o.k === 'inc') { R.k = 'inc'; R.tgt = th ? th.tgt : null; R.air = th ? th.air : null; R.drop = !!o.drop; R.pbu = o.pbu ?? null; R.away = !!o.away; }
   else if (c) {
@@ -2802,6 +2803,8 @@ function fxDec(s, cards) {
   return { seed: +a[1], kind: a[2], play: a[3] || null, form: a[4], pkg: a[5], cov: a[6], dc: a[7] || null, fl: +a[8], los: +a[9], tg: +a[10], hurry: a[11] === '1', car: a[12] === '' ? null : +a[12], edge: +a[13], wcp: +a[14] / 1000, wdp: +a[15] / 1000, dn: +a[18] || 1, catchU: a[19] ? +a[19] : null, catchV: a[20] ? +a[20] : null, hang: a[21] ? +a[21] : null, pri, O: C.slice(0, 11), D: C.slice(11) };
 }
 // ---------- game simulation ----------
+// how often a starting defensive tackle comes off for a rotation man on a passing play (on other downs, then on third and long)
+const DLR_E = [0.35, 0.12], DLR_T = [0.38, 0.2]; // (ends, tackles)
 // play calls a coaching user can make on a snap
 const OFF_CALLS = { auto: 'Coordinator\'s call', inside: 'Inside run', outside: 'Outside run', quick: 'Quick pass', deep: 'Deep shot', pa: 'Play action', screen: 'Screen' };
 const DEF_CALLS = { auto: 'Coordinator\'s call', stack: 'Stack the box', blitz: 'Blitz', man: 'Man coverage', zone: 'Zone coverage', prevent: 'Prevent' };
@@ -2988,7 +2991,8 @@ function* gameGen(ht, at, opt = {}) {
   function dlRot(Ld) {
     const dl = Ld.DL.slice(0, 4); if (!SNAP.dlr) return dl;
     const long = st.down >= 3 && st.togo >= 7;
-    for (const k of [0, 3]) { const b = Ld.DL[4]; if (b && b.id != null && !hurt.has(b.id) && !dl.includes(b) && SNAP.dlr[k] < (long ? 0.1 : 0.25)) dl[k] = b; }
+    for (const k of [0, 3]) { const b = Ld.DL[4]; if (b && b.id != null && !hurt.has(b.id) && !dl.includes(b) && SNAP.dlr[k] < (long ? DLR_E[1] : DLR_E[0])) dl[k] = b; }
+    for (const k of [1, 2]) { const b = [Ld.DL[5], Ld.DL[4]].find(x => x && x.id != null && !hurt.has(x.id) && !dl.includes(x)); if (b && SNAP.dlr[k] < (long ? DLR_T[1] : DLR_T[0])) dl[k] = b; }
     return dl;
   }
   function snapSpd(o, d, over = {}) {
@@ -3263,8 +3267,8 @@ function* gameGen(ht, at, opt = {}) {
       inc(ql, 'sk'); inc(ql, 'sky', loss); const rl = sl(rusher, d); inc(rl, 'sck'); inc(rl, 'tkl'); inc(rl, 'prs'); { const bl = sl(olBlame(), o); inc(bl, 'sa'); inc(bl, 'pra'); } g.ts[d].sk++; g.ts[d].prs++; g.ts[o].py -= loss;
       injure(qb, o, 0.003);
       if (rnd() < 0.09) { const spot = st.yl - loss; note('fum', `${nm(qb)} strip-sacked by ${nm(rusher)}, fumble recovered by the defense`, -loss); const ev = tick(6, 0); turnover('Fumble', 100 - spot, `${nm(qb)} strip-sacked by ${nm(rusher)}`, rnd() < 0.06); return ev; }
-      note('sack', `${nm(qb)} sacked by ${nm(rusher)} for a loss of ${loss}`, -loss, nm(rusher));
-      return result(-loss, 6, hurry ? 14 : 30, `${nm(qb)} sacked by ${nm(rusher)}`, was3, false);
+      note('sack', `${nm(qb)} sacked by ${nm(rusher)}${two ? ' and ' + nm(two) : ''} for a loss of ${loss}`, -loss, nm(rusher));
+      return result(-loss, 6, hurry ? 14 : 30, `${nm(qb)} sacked by ${nm(rusher)}${two ? ' and ' + nm(two) : ''}`, was3, false);
     }
     const dp = defPkg(), third = st.down >= 3 && st.togo >= 4;
     const pressured = rnd() < Math.max(0, (pressP - sackP) / (1 - sackP));
@@ -3472,12 +3476,13 @@ function* gameGen(ht, at, opt = {}) {
     if (pressured && R.k !== 'sack') { inc(sl(def[R.prs], d), 'prs'); inc(sl(olBlame(), o), 'pra'); g.ts[d].prs++; if (lastLook) lastLook.fl += 'p'; }
     const miss = cl => { for (const i of R.miss || []) { const m = def[i]; if (m) { inc(sl(m, d), 'mtk'); inc(cl, 'btk'); } } };
     if (R.k === 'sack') {
-      const rusher = def[R.by] || def[0], loss = Math.min(Math.max(1, -R.y), st.yl);
-      inc(ql, 'sk'); inc(ql, 'sky', loss); const rl = sl(rusher, d); inc(rl, 'sck'); inc(rl, 'tkl'); inc(rl, 'prs'); { const bl = sl(olBlame(), o); inc(bl, 'sa'); inc(bl, 'pra'); } g.ts[d].sk++; g.ts[d].prs++; g.ts[o].py -= loss;
+      const rusher = def[R.by] || def[0], two = R.by2 != null && def[R.by2] && def[R.by2] !== rusher ? def[R.by2] : null, loss = Math.min(Math.max(1, -R.y), st.yl);
+      inc(ql, 'sk'); inc(ql, 'sky', loss); const rl = sl(rusher, d); inc(rl, 'sck', two ? 0.5 : 1); inc(rl, 'tkl'); inc(rl, 'prs');
+      if (two) { const r2 = sl(two, d); inc(r2, 'sck', 0.5); inc(r2, 'prs'); } { const bl = sl(olBlame(), o); inc(bl, 'sa'); inc(bl, 'pra'); } g.ts[d].sk++; g.ts[d].prs++; g.ts[o].py -= loss;
       injure(qb, o, 0.003);
       if (rnd() < 0.09) { const spot = st.yl - loss; note('fum', `${nm(qb)} strip-sacked by ${nm(rusher)}, fumble recovered by the defense`, -loss); const ev = tick(6, 0); turnover('Fumble', 100 - spot, `${nm(qb)} strip-sacked by ${nm(rusher)}`, rnd() < 0.06); return ev; }
-      note('sack', `${nm(qb)} sacked by ${nm(rusher)} for a loss of ${loss}`, -loss, nm(rusher));
-      return result(-loss, 6, hurry ? 14 : 30, `${nm(qb)} sacked by ${nm(rusher)}`, was3, false);
+      note('sack', `${nm(qb)} sacked by ${nm(rusher)}${two ? ' and ' + nm(two) : ''} for a loss of ${loss}`, -loss, nm(rusher));
+      return result(-loss, 6, hurry ? 14 : 30, `${nm(qb)} sacked by ${nm(rusher)}${two ? ' and ' + nm(two) : ''}`, was3, false);
     }
     if (R.k === 'scramble') {
       let yds = clamp(R.td ? dist : R.y, -5, dist); if (st.yl + yds <= 0) yds = 1 - st.yl; lastRole = 5;
@@ -5185,10 +5190,7 @@ function weekBegin(coach, lazy) { if (fdOn()) return null;
   if (S.phase !== 'regular') return null;
   if (inCamp()) finishCamp(true);
   if (S.presser && !S.coachPending) S.presser = null;
-  processWaivers();
-  if (!S.coachPending) rollGameStatus();
-  for (const t of S.teams) ensureDepth(t);
-  if (!S.coachPending) rivalryWeekNews();
+  weekPre();
   const um = S.schedule[S.week - 1].find(m => m.h === S.userTid || m.a === S.userTid) || null;
   if (um && um.gid) { weekFlushGames(); weekEnd(S.games[um.gid]); return null; } // (its game was played and the week never wrapped up)
   if (um && lazy) S.weekLazy = { wk: S.week }; else weekFlushGames();
@@ -5196,6 +5198,9 @@ function weekBegin(coach, lazy) { if (fdOn()) return null;
   S.coachPending = { kind: 'week', week: S.week };
   return { gen: gameGen(team(um.h), team(um.a), { week: S.week, pbp: true, coach: coach ? (um.h === S.userTid ? 0 : 1) : null }) };
 }
+// the week's setup before any game (waivers, who's a game-time decision, depth charts, rivalry news), once a week: in a
+// college-first universe it can run ahead, in the background, while a college game is on
+function weekPre() { if (S.weekPre === S.season * 100 + S.week) return; processWaivers(); if (!S.coachPending) rollGameStatus(); for (const t of S.teams) ensureDepth(t); if (!S.coachPending) rivalryWeekNews(); S.weekPre = S.season * 100 + S.week; }
 // the week's other games not yet played (the user's game is left to the caller)
 function weekNextGame() { return S.phase === 'regular' && S.schedule[S.week - 1] ? S.schedule[S.week - 1].find(m => !m.gid && m.h !== S.userTid && m.a !== S.userTid) : null; }
 function weekPlayOne(m) { const g = simGame(team(m.h), team(m.a), { week: S.week }); applyGame(g); recordGame(g); m.gid = g.gid; }
@@ -9612,11 +9617,18 @@ function updatePoll(final) {
 const rankOf = tid => { const p = CS.polls[CS.polls.length - 1]; if (!p) return null; const i = p.list.findIndex(x => x.tid === tid); return i >= 0 ? i + 1 : null; };
 function confStandings(c) { return CS.teams.filter(t => t.conf === c).sort((a, b) => (b.rec.cw - b.rec.cl) - (a.rec.cw - a.rec.cl) || (b.rec.w - b.rec.l) - (a.rec.w - a.rec.l) || ((b.rec.pf - b.rec.pa) - (a.rec.pf - a.rec.pa))); }
 // ---------- the week ----------
+function colPlayMatch(m, wk) { const g = colGame(m.h, m.a, { wk, neutral: !!m.neutral, riv: m.riv }); applyColGame(g, m.conf != null ? m.conf : cteam(m.h).conf === cteam(m.a).conf && !isInd(cteam(m.h).conf)); m.gid = g.gid; return g; }
+// one of this week's other games, played while the user's game is on (watched or coached); playWeek skips the ones already in
+function weekBgStep() {
+  if (CS.phase !== 'season' || !LIVE) return false;
+  const wk = CS.week, m = (CS.sched[wk - 1] || []).find(m => !m.gid && m.h !== CS.userTid && m.a !== CS.userTid); if (!m) return false;
+  colPlayMatch(m, wk); return true;
+}
 function playWeek() {
   if (CS.phase !== 'season') return null;
   autoRecruit();
   const wk = CS.week, games = CS.sched[wk - 1] || [], R0 = pollMap(); let mine = null;
-  for (const m of games) { if (m.gid) continue; const g = colGame(m.h, m.a, { wk, neutral: !!m.neutral, riv: m.riv }); applyColGame(g, m.conf != null ? m.conf : cteam(m.h).conf === cteam(m.a).conf && !isInd(cteam(m.h).conf)); m.gid = g.gid; if (m.h === CS.userTid || m.a === CS.userTid) mine = g; }
+  for (const m of games) { if (m.gid) continue; const g = colPlayMatch(m, wk); if (m.h === CS.userTid || m.a === CS.userTid) mine = g; }
   for (const p of cplayers()) if (p.inj > 0 && p.tid >= 0) p.inj--;
   holdWeek(); moraleWeek(games.map(m => CS.games[m.gid])); if (!CS.bg) nilDemandsWeek(wk);
   resolveVisits(wk); aiRecruitWeek(); commitWeek();
@@ -10227,7 +10239,7 @@ function cFxRes(X, o, oc, dc, U, opt) {
   const fx = fxEnc(F), R = fieldPlay(fxDec(fx, X.fxc.a)), man = cov === 'c0' || cov === 'c1';
   X.pr = R.prs != null && R.hot < 0.65; // (a rusher closing on him as he throws)
   const base = { fx, fxP: [off, def], cov, man }, tk = R.tk != null ? def[R.tk] || null : null;
-  if (R.k === 'sack') return { ...base, k: 'sack', y: Math.max(-s.yl, Math.min(-1, R.y)), sacker: def[R.by] || def[0], fum: rnd() < 0.09 };
+  if (R.k === 'sack') return { ...base, k: 'sack', y: Math.max(-s.yl, Math.min(-1, R.y)), sacker: def[R.by] || def[0], sacker2: R.by2 != null && def[R.by2] && def[R.by2] !== def[R.by] ? def[R.by2] : null, fum: rnd() < 0.09 };
   if (R.k === 'scramble') return { ...base, k: 'run', car: qb, scr: true, y: R.td ? dist : clamp(R.y, -s.yl, dist), oob: !!R.oob, fum: rnd() < 0.006, tk };
   if (R.k === 'run') {
     const c = R.car === 5 ? off[5] : off[6] || car, y = R.td ? dist : clamp(R.y ?? 0, -s.yl, dist);
@@ -10358,7 +10370,7 @@ function cPlay(X, r, U, oc, dc, fourth) {
     if (!td) { tackler = cTackle(X, d, U, true, null, r.tk); e.t = tackler ? nmc(tackler) : ''; e.tr = cRoleD(U, tackler); }
     hurt(o, r.car); hurt(d, tackler);
   } else if (r.k === 'sack') {
-    inc(ql, 'sk'); g.ts[o].ry += r.y; if (r.sacker) { const sl = line(r.sacker, d); inc(sl, 'sck'); inc(sl, 'tkl'); }
+    inc(ql, 'sk'); g.ts[o].ry += r.y; if (r.sacker) { const sl = line(r.sacker, d); inc(sl, 'sck', r.sacker2 ? 0.5 : 1); inc(sl, 'tkl'); if (r.sacker2) inc(line(r.sacker2, d), 'sck', 0.5); }
     e.a = qb ? nmc(qb) : ''; e.t = r.sacker ? nmc(r.sacker) : ''; e.tr = cRoleD(U, r.sacker); hurt(o, qb);
   } else {
     const rl = line(r.rec, o); inc(ql, 'pa'); e.a = qb ? nmc(qb) : ''; e.b = r.rec ? nmc(r.rec) : ''; if (r.away) e.away = 1; e.r = r.role; e.air = r.air; e.rt = r.rt; e.cr = cRoleD(U, r.defBy); if (r.defBy) e.cb = nmc(r.defBy);
@@ -11863,7 +11875,7 @@ return {
   get S() { return CS; }, get COL_CONFS() { return confNames(); }, isInd, CLS, COL_ROS, COL_MAX, REC_PTS, PO_NAMES_C, STAR_PTS,
   newCollege, setUser: setUserC, save: () => JSON.stringify(CS), load: j => { const d = typeof j === 'string' ? JSON.parse(j) : j; if (!d || d.mode !== 'college') throw new Error('Not a college save.'); CS = d; RC = null; CNAMES = null; LIVE = null; PRE = null; persAll(); if (CS.teams.some(t => t.chem == null)) chemAll(); fxUpgrade(); return CS; },
   news: cnews, cfpRankOf, PRIOS, REC_ACTS, BOARD_MAX, recView, recEst, boardOf, boardOpen, homeWeeks, scheduleVisit, stageOf, gradeLetter, setAutoRec: on => { CS.auto = !!on; }, get autoLog() { return CS.autoLog || null; }, get autoTot() { return CS.autoTot && CS.autoTot.s === CS.season ? CS.autoTot : null; }, get autoRec() { return CS.auto !== false; }, poGameName, projectedClass, isMe, RIV, rivalryTable, rivalsOf: rivalsOfC, coachInfo, acceptJob, declineJobs, seatLabel, genCoach: genCoachC, coachChange, TRAIN, setTraining, trainOf, springGame, POS_MOVES: COL_POS_MOVES, posChangePreview, changePos, POS_AWARDS, AA_SLOTS,
-  liveStart, liveState, playTxt: colPlayTxt, liveCall, live4th, liveSim, liveFinish, liveAbandon, liveIce, livePat, liveKick, liveHalf, liveTimeout, liveTempo, liveAuto, userNext, OFF_C, DEF_C, CALL_TIPS, ROUTE_NM: C_ROUTE_NM, COVS: C_COVS, colGame, gameStep: cStep, gameInit: colGameInit, get live() { return LIVE; }, awardsOf: s => (CS.awards || {})[s] || null, confSize,
+  weekBgStep, liveStart, liveState, playTxt: colPlayTxt, liveCall, live4th, liveSim, liveFinish, liveAbandon, liveIce, livePat, liveKick, liveHalf, liveTimeout, liveTempo, liveAuto, userNext, OFF_C, DEF_C, CALL_TIPS, ROUTE_NM: C_ROUTE_NM, COVS: C_COVS, colGame, gameStep: cStep, gameInit: colGameInit, get live() { return LIVE; }, awardsOf: s => (CS.awards || {})[s] || null, confSize,
   programInfo, recordBook, RB_KEYS, OFF_SCH, DEF_SCH, schemeFit, fitWord, hireCoord, fireCoord, coordCands, setPlan, filmStudy, scoutReport, get plan() { return CS.plan || { off: 'bal', def: 'bal' }; }, get film() { return CS.film && CS.film.s === CS.season && CS.film.wk === CS.week ? CS.film : null; }, setDepth: (pos, ids) => { CS.udepth = CS.udepth || {}; if (ids) CS.udepth[pos] = ids.slice(); else delete CS.udepth[pos]; return null; },
   setFict: () => null, editTeam: editTeamC, renameConf: renameConfC, editPlayer: editPlayerC, packC, applyPackC, rosterCsv: rosterCsvC, importRoster: importRosterC, get edited() { return !!(CS && CS.edited); }, reviews: () => (CS && CS.reviews) || {}, lbl, rivName, rivTrophy, get fict() { return !!(CS && CS.fict); }, carRecruit, gradeVal, recFit, colDepth, COL_START, cplayer: id => CS.players[id], cplayers: () => cplayers(), heisList: () => (CS.hw && CS.hw.list) || [], get front() { return CS.front || null; }, adv: season => ((CS.adv || {})[season ?? CS.season]) || {}, advSeasons: () => Object.keys(CS.adv || {}).map(Number).sort((a, b) => b - a), get asks() { return (CS.asks || []).filter(x => x.s === CS.season); }, answerDemand, nilWant, PERS_C, PERS_TIP, chemWord, teamChem: tid => cteam(tid).chem ?? 60, get fronts() { return CS.fronts || []; },
   playWeek, playCCG, playPlayoffRound, holdSigningDay, portalDay, portalOffer, retainPlayer, talkStay, portalPlayers, portalLog, scholarships, recFitToday, portalAsk, progRep: () => CS.progRep || null, progSeen: () => { if (CS.progRep) CS.progRep.seen = true; }, recHours: tid => recHours(tid ?? CS.userTid), portalOffers: () => (CS.portal ? { ...CS.portal.offers } : {}), portalChance, nextSeason, simToEnd,
@@ -12003,6 +12015,16 @@ function uniAfterCol() {
   UNI_BUSY = true;
   try { const CS = COLLEGE.S, want = PRO_FOR_COL(colDone(CS)); let g = 0; while (S.season === CS.season && proDone() < want && g++ < 60) { if (S.car && S.phase === 'draft' && carInDraft()) break; if (!proStep()) break; } }
   finally { UNI_BUSY = false; }
+}
+// while the user's college game is on: the rest of the college week, then the pro week that will follow it, a game at a time
+// (each game is played and booked whole, so a save in between is a league partway through its week, as after a crash)
+function uniBgStep() {
+  if (COLLEGE.weekBgStep()) return true;
+  if (!uniOn() || S.uni.fg !== 'college' || UNI_BUSY) return false;
+  const CS = COLLEGE.S; if (CS.phase !== 'season' || S.season !== CS.season || S.phase !== 'regular' || inCamp() || fdOn()) return false;
+  if (proDone() !== PRO_FOR_COL(CS.week) - 1) return false; // (the pro week that finishing this college week will play)
+  if (S.weekPre !== S.season * 100 + S.week) { autoFixRoster(); weekPre(); return true; }
+  const m = weekNextGame(); if (!m) return false; weekPlayOne(m); return true;
 }
 // a new year: whoever is behind finishes the old one first
 function uniNewYearPro() { // pro startSeason is about to run
@@ -12815,7 +12837,7 @@ return {
   negotiation, scoreOffer, makeOffer, tagPrice, franchiseTag,
   pruneOffers, acceptOffer, declineOffer, takeJob, teamRank,
   careerRecords, franchiseLeaders, REC_KEYS, REC_LABEL, hofScore, hofOutlook, hofWatch, LEAD_KEYS, mainTeam,
-  weekBegin, weekEnd, watchWeek, weekRestStep, weekFlush, weekPending: () => !!(S && S.weekLazy), poBegin, poEnd, poPairs, coachStart, coachFinish, runGen, scoutingReport, setGamePlan, OFF_PLANS, DEF_PLANS, gamePlanFor,
+  weekBegin, weekEnd, watchWeek, uniBgStep, weekRestStep, weekFlush, weekPending: () => !!(S && S.weekLazy), poBegin, poEnd, poPairs, coachStart, coachFinish, runGen, scoutingReport, setGamePlan, OFF_PLANS, DEF_PLANS, gamePlanFor,
   optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, deadlineFrenzy, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carSeasons, carGameLine, carHofStatus, carDraftProjection, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
   injStatus, injuryReport, toggleRest, gameKey, pkgFor, setPackage, marketComps, positionMarket, hotSeat, hotSeatHeat,
   PROTECT_N, defaultProtect, ACHIEVEMENTS, RULES_DEFAULT, PROPOSALS, castVote, expandLeague: (n, pr) => { const r = expandLeague(n, pr); topUpProspects(); return r; }, MILESTONES, MS_NAME, stadiumTag, tradeDeadline,
@@ -18442,10 +18464,10 @@ Object.assign(actions, {
   cSpring: () => { const e = HC().springGame(); if (e) toast(e); persist(); },
   cMove: d => { const e = HC().changePos(+d.id, d.v); if (e) toast(e); else { ui.cMoveId = null; toast('Position change made.'); } persist(); },
   cMovePick: d => { ui.cMoveId = d.id ? +d.id : null; },
-  cLive: () => { const st = HC().liveStart(); if (!st) { toast('You have no game to coach right now.'); return; } ui.cView = 'live'; if (!ui.cfv || ui.cfv.gid !== st.gid) { ui.cfv = { gid: st.gid, n: 0, speed: ui.cfvSpeed || 1, tok: 0 }; if (!st.drives.some(d => (d.pl || []).length > 1)) ui.cPre = st.gid; } },
+  cLive: () => { const st = HC().liveStart(); if (!st) { toast('You have no game to coach right now.'); return; } ui.cView = 'live'; cBg(); if (!ui.cfv || ui.cfv.gid !== st.gid) { ui.cfv = { gid: st.gid, n: 0, speed: ui.cfvSpeed || 1, tok: 0 }; if (!st.drives.some(d => (d.pl || []).length > 1)) ui.cPre = st.gid; } },
   cKickOff: () => { ui.cPre = null; },
   // watching the game: the staff calls every snap (the game is played out at once), and the field shows it a play at a time
-  cWatch: () => { const st = HC().liveStart(); if (!st) { toast('You have no game this week.'); return; } HC().liveSim(); ui.cWatch = st.gid; ui.cView = 'live'; ui.cfv = { gid: st.gid, n: 0, speed: ui.cfvSpeed || 1, tok: 0 }; ui.cPre = st.gid; },
+  cWatch: () => { const st = HC().liveStart(); if (!st) { toast('You have no game this week.'); return; } HC().liveSim(); ui.cWatch = st.gid; ui.cView = 'live'; ui.cfv = { gid: st.gid, n: 0, speed: ui.cfvSpeed || 1, tok: 0 }; ui.cPre = st.gid; cBg(); },
   cWatchSkip: () => { ui.cPre = null; cfvSkip(); },
   cfvSpeed: d => { ui.cfvSpeed = +d.v; if (ui.cfv) ui.cfv.speed = +d.v; },
   cfvSkip: () => { cfvSkip(); },
@@ -18467,6 +18489,14 @@ Object.assign(actions, {
   uniCancel: () => { ui.uniPending = false; },
 });
 
+// the rest of the week (the other college games, then the pro week alongside) played behind your game, a game at a time and
+// never while a play is being drawn, so finishing the game only has the wrap-up left
+function cBg() {
+  clearTimeout(ui.cBgT); ui.cBgT = null; if (!HC().live) return;
+  if (FV.raf) { ui.cBgT = setTimeout(cBg, 120); return; }
+  let more = false; try { more = HM.uniBgStep(); } catch (e) { more = false; }
+  if (more) ui.cBgT = setTimeout(cBg, 30);
+}
 // ---------- your job ----------
 function cCoach() {
   const c = CSx(), I = HC().coachInfo(), me = I.me, t = I.t, car = I.carousel;
@@ -18669,6 +18699,7 @@ function cLive() {
   const st = HC().liveState();
   if (!st) return `<div class="pagehead"><div><h2>Game day</h2><p>No game in progress.</p></div></div>`;
   if (!ui.cfv || ui.cfv.gid !== st.gid) ui.cfv = { gid: st.gid, n: 0, speed: ui.cfvSpeed || 1, tok: 0 };
+  if (!ui.cBgT) setTimeout(cBg, 0);
   const wm = ui.cWatch === st.gid;
   if (ui.cPre === st.gid && wm) return `<div class="pagehead"><div><h2>${E(st.name)}</h2><p>The pregame show. Kick off when you're ready; your staff calls the game and you watch it play out.</p></div><div class="row"><button class="btn" data-act="cWatchSkip">Skip to the final</button></div></div>${cPregame(st)}`;
   if (ui.cPre === st.gid && !st.done) return `<div class="pagehead"><div><h2>${E(st.name)}</h2><p>The pregame show. Kick off when you're ready; you call every snap after that.</p></div><div class="row"><button class="btn" data-act="cLiveQuit">Leave the game</button></div></div>${cPregame(st)}`;
