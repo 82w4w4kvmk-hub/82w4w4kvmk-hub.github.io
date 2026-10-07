@@ -9618,17 +9618,19 @@ const rankOf = tid => { const p = CS.polls[CS.polls.length - 1]; if (!p) return 
 function confStandings(c) { return CS.teams.filter(t => t.conf === c).sort((a, b) => (b.rec.cw - b.rec.cl) - (a.rec.cw - a.rec.cl) || (b.rec.w - b.rec.l) - (a.rec.w - a.rec.l) || ((b.rec.pf - b.rec.pa) - (a.rec.pf - a.rec.pa))); }
 // ---------- the week ----------
 function colPlayMatch(m, wk) { const g = colGame(m.h, m.a, { wk, neutral: !!m.neutral, riv: m.riv }); applyColGame(g, m.conf != null ? m.conf : cteam(m.h).conf === cteam(m.a).conf && !isInd(cteam(m.h).conf)); m.gid = g.gid; return g; }
-// one of this week's other games, played while the user's game is on (watched or coached); playWeek skips the ones already in
-function weekBgStep() {
-  if (CS.phase !== 'season' || !LIVE) return false;
-  const wk = CS.week, m = (CS.sched[wk - 1] || []).find(m => !m.gid && m.h !== CS.userTid && m.a !== CS.userTid); if (!m) return false;
+// one of this week's games played ahead of the week: the other games while the user's game is on (watched or coached), or for
+// a quick sim (all) every game, the user's first; playWeek skips the ones already in and only wraps the week up
+function weekBgStep(all) {
+  if (CS.phase !== 'season' || !(LIVE || all)) return false;
+  const wk = CS.week, ms = CS.sched[wk - 1] || [], isU = m => m.h === CS.userTid || m.a === CS.userTid;
+  const m = (all && !LIVE ? ms.find(m => !m.gid && isU(m)) : null) || ms.find(m => !m.gid && !isU(m)); if (!m) return false;
   colPlayMatch(m, wk); return true;
 }
 function playWeek() {
   if (CS.phase !== 'season') return null;
   autoRecruit();
   const wk = CS.week, games = CS.sched[wk - 1] || [], R0 = pollMap(); let mine = null;
-  for (const m of games) { if (m.gid) continue; const g = colPlayMatch(m, wk); if (m.h === CS.userTid || m.a === CS.userTid) mine = g; }
+  for (const m of games) { if (m.gid) { if (m.h === CS.userTid || m.a === CS.userTid) mine = CS.games[m.gid] || null; continue; } const g = colPlayMatch(m, wk); if (m.h === CS.userTid || m.a === CS.userTid) mine = g; }
   for (const p of cplayers()) if (p.inj > 0 && p.tid >= 0) p.inj--;
   holdWeek(); moraleWeek(games.map(m => CS.games[m.gid])); if (!CS.bg) nilDemandsWeek(wk);
   resolveVisits(wk); aiRecruitWeek(); commitWeek();
@@ -12018,8 +12020,8 @@ function uniAfterCol() {
 }
 // while the user's college game is on: the rest of the college week, then the pro week that will follow it, a game at a time
 // (each game is played and booked whole, so a save in between is a league partway through its week, as after a crash)
-function uniBgStep() {
-  if (COLLEGE.weekBgStep()) return true;
+function uniBgStep(all) {
+  if (COLLEGE.weekBgStep(all)) return true;
   if (!uniOn() || S.uni.fg !== 'college' || UNI_BUSY) return false;
   const CS = COLLEGE.S; if (CS.phase !== 'season' || S.season !== CS.season || S.phase !== 'regular' || inCamp() || fdOn()) return false;
   if (proDone() !== PRO_FOR_COL(CS.week) - 1) return false; // (the pro week that finishing this college week will play)
@@ -13051,7 +13053,7 @@ const actions = {
   newLeague: () => { HM.newLeague(); ui.pickTid = null; ui.scen = ui.scen || 'standard'; },
   // season flow
   week: () => { const wk = S().week; const g = HM.watchWeek(); if (g) { liveStart(g.gid, false, true); weekBg(); } else { persist(); toast(`Week ${wk} was your bye week. Your team rested while the rest of the league played.`); } },
-  quickWeek: () => { const wk = S().week; const g = HM.simWeek(); persist(); if (g) ui.modal = { type: 'box', id: g.gid }; else toast(`Week ${wk} was your bye week.`); },
+  quickWeek: () => { const wk = S().week; const g = HM.watchWeek(); if (g) { ui.modal = { type: 'box', id: g.gid }; weekBg(); } else { persist(); toast(`Week ${wk} was your bye week.`); } },
   poQuick: () => { const g = HM.simPlayoffRound(); persist(); if (g) ui.modal = { type: 'box', id: g.gid }; else toast('Round complete.'); if (S().phase !== 'playoffs') ui.view = 'dashboard'; },
   replay: d => { liveStart(+d.id, false, false, true); },
   replayAt: d => { liveStart(+d.id, false, false, true); liveJump(+d.i); },
@@ -13258,7 +13260,7 @@ const UNDOABLE = { release: 'release', propose: 'trade', shopAccept: 'trade', of
 const UNDO_CLEARS = ['week', 'quickWeek', 'toPO', 'po', 'poQuick', 'poAll', 'toFA', 'faDay', 'toDraft', 'toMyPick', 'draftAll', 'start', 'smartSim', 'coachWeek', 'coachPo', 'newLeague', 'wipe', 'openSlot', 'importSave', 'takeJob', 'firedNew', 'begin', 'autoPlay'];
 // the rest of a watched week's games, played a game at a time behind the pregame show and the broadcast; anything else the
 // user does first finishes them (the live viewer's own buttons don't need to)
-const WEEK_BG_OK = new Set(['liveKick', 'liveToggle', 'liveSpeed', 'liveJump', 'liveStep', 'liveNext', 'coachAns']);
+const WEEK_BG_OK = new Set(['liveKick', 'liveToggle', 'liveSpeed', 'liveJump', 'liveStep', 'liveNext', 'coachAns', 'close', 'seg', 'simMenu']);
 function weekBg() {
   clearTimeout(ui.weekBgT); ui.weekBgT = null;
   if (!HM.weekPending || !HM.weekPending()) return;
@@ -18142,6 +18144,24 @@ async function doSaveCol() {
 
 // ---------- actions ----------
 const cAfterGame = g => { persist(); if (g) ui.modal = { type: 'cbox', id: g.gid }; };
+// a quick sim in the background: your game first (its box score opens as soon as it's in), then the rest of the college week
+// and the pro week alongside, a game at a time, while the app stays usable; the week wraps up when they're all in
+function cQuick() {
+  const Q = ui.cq; clearTimeout(ui.cqT); ui.cqT = null; if (!Q) return;
+  if (Q.cs !== CSx() || ui.mode !== 'college') { ui.cq = null; return; } // (another save or mode was opened: what's played stays)
+  if (FV.raf) { ui.cqT = setTimeout(cQuick, 120); return; }
+  let more = false; try { more = HM.uniBgStep(true); } catch (e) { console.error(e); more = false; }
+  const c = CSx(), ms = c.sched[Q.wk - 1] || [], m = ms.find(x => x.h === c.userTid || x.a === c.userTid);
+  if (!Q.shown && m && m.gid) { Q.shown = true; if (!ui.modal) ui.modal = { type: 'cbox', id: m.gid }; render(); }
+  if (more) {
+    const left = ms.filter(x => !x.gid).length, el = document.querySelector('.tb-main[data-act=cQuickBusy]');
+    if (el) el.textContent = left ? `Simming week ${Q.wk}… ${left} game${left === 1 ? '' : 's'} left` : `Simming week ${Q.wk}… the pros`;
+    ui.cqT = setTimeout(cQuick, 30); return;
+  }
+  ui.cq = null; const g = c.week === Q.wk && c.phase === 'season' ? HC().playWeek() : null; persist();
+  if (!Q.shown) { if (g) ui.modal = { type: 'cbox', id: g.gid }; else toast('Bye week. Recruiting hours are refilled.'); }
+  render();
+}
 Object.assign(actions, {
   startMode: d => { ui.startMode = d.v || null; if (!d.v) ui.uniPending = false; if (d.v === 'college' && !CSx()) { HC().newCollege(); } setTimeout(() => window.scrollTo(0, 0), 0); },
   cPick: d => { ui.cPickTid = +d.id; },
@@ -18149,7 +18169,7 @@ Object.assign(actions, {
   cBegin: () => { slotId = null; HM.newUniverse('college', ui.cPickTid); CSx().tour = guideStart(); ui.uniPending = false; /* the pro league always plays alongside */ ui.mode = 'college'; ui.cView = 'home'; persist(); },
   cNav: d => { ui.cView = d.v; ui.modal = null; window.scrollTo(0, 0); },
   cTitle: () => { ui.mode = null; ui.startMode = null; slotId = null; HM.newLeague(); ui.pickTid = null; ui.modal = null; },
-  cWeek: () => { const g = HC().playWeek(); cAfterGame(g); if (!g) toast('Bye week. Recruiting hours are refilled.'); },
+  cWeek: () => { const c = CSx(); if (ui.cq) return; if (c.phase !== 'season' || HC().live) { const g = HC().playWeek(); cAfterGame(g); if (!g) toast('Bye week. Recruiting hours are refilled.'); return; } ui.cq = { cs: c, wk: c.week, shown: false }; cQuick(); },
   cToEnd: () => { HC().simToEnd(); persist(); toast('Regular season complete.'); ui.cView = 'stand'; },
   cCCG: () => { const g = HC().playCCG(); cAfterGame(g); ui.cView = 'playoff'; },
   cPO: () => { const g = HC().playPlayoffRound(); cAfterGame(g); if (!g) toast('Round complete.'); if (CSx().phase !== 'playoff') ui.cView = 'history'; },
@@ -18182,6 +18202,7 @@ function collegeStart() {
 function cTopActs() {
   const c = CSx(), A = [], b = (act, label, primary, title, d) => A.push({ act, label, primary: !!primary, title: title || '', d });
   if (HC().live) { const watching = ui.cWatch != null && ui.cWatch === (HC().liveState() || {}).gid && !(ui.cfv && ui.cfv.wmEnd); if (HC().live.done && !watching) b('cLiveDone', 'Finish the game', 1); else b('cNav', 'Back to the game', 1, '', { v: 'live' }); return A; }
+  if (ui.cq) { A.push({ act: 'cQuickBusy', label: `Simming week ${ui.cq.wk}…`, primary: true, title: 'The rest of the week is being played', disabled: true }); return A; }
   if (c.phase === 'signing' && c.me && c.me.fired && c.me.offers.length) { b('cNav', 'Choose your next job', 1, '', { v: 'coach' }); return A; }
   const coach = ['season', 'ccg', 'playoff'].includes(c.phase) && HC().userNext();
   // (as in the pros: watch your game, coach it, or sim it without watching)
