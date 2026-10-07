@@ -3516,8 +3516,7 @@ function* gameGen(ht, at, opt = {}) {
     const rec = R.tgt != null ? off[R.tgt] : null, rl = rec ? sl(rec, o) : null, air = R.air ?? 0;
     inc(ql, 'pa'); g.ts[o].pa++; injure(qb, o, 0.0003); if (pressured) inc(ql, 'upa');
     const cvD = rec && R.cv != null ? def[R.cv] : null, cvl = cvD ? sl(cvD, d) : {}; if (cvD) { inc(cvl, 'ctg'); EPX.cov = cvD; }
-    // (expected completion: a fit on field-engine throws by depth, window and pressure; behind the line is a screen or a dump-off)
-    if (rec) { inc(rl, 'tg'); EPX.rec = rec; const xa10 = clamp(air, -5, 45) / 10, xs = clamp(R.sep ?? 2, -3, 9) / 3, xcp = 1 / (1 + Math.exp(-(0.587 - 0.575 * xa10 - 0.011 * xa10 * xa10 + 0.544 * xs - 0.193 * Math.min(xs, 2 / 3) - (pressured ? 0.374 : 0) + (air <= 0 ? 0.557 : 0)))); inc(ql, 'xa'); inc(ql, 'xcp', Math.round(xcp * 1000)); }
+    if (rec) { inc(rl, 'tg'); EPX.rec = rec; const xcp = xcpFit(air, R.sep, pressured); inc(ql, 'xa'); inc(ql, 'xcp', Math.round(xcp * 1000)); }
     if (R.k === 'comp') {
       let yds = R.td ? dist : Math.min(R.y, dist); if (st.yl + yds <= 0) yds = 1 - st.yl;
       inc(rl, 'yac', Math.max(0, yds - Math.max(0, air))); if (pressured) { inc(ql, 'upc'); inc(ql, 'upy', yds); if (yds >= dist) inc(ql, 'uptd'); }
@@ -8489,7 +8488,13 @@ function aiDraftTradeDown() {
 // ---------- percentile rankings: a player's advanced stats against every qualified player at his position ----------
 // Each metric has a volume floor scaled to the games played so far (NFL style: 14 dropbacks a team game for a passer,
 // 6.25 carries for a back), so a part-timer can't top a list on a handful of snaps. Lower-is-better metrics are flipped,
-// so 99 is always the best in the league and 1 the worst.
+// so 100 is always the leader and 1 the bottom of the league.
+// expected completion on the field engine: a fit on its throws by depth, window and pressure (behind the line is a screen
+// or a dump-off). The pro and college games both book it.
+function xcpFit(air, sep, pressured) {
+  const a = clamp(air, -5, 45) / 10, s = clamp(sep ?? 2, -3, 9) / 3;
+  return 1 / (1 + Math.exp(-(0.587 - 0.575 * a - 0.011 * a * a + 0.544 * s - 0.193 * Math.min(s, 2 / 3) - (pressured ? 0.374 : 0) + (air <= 0 ? 0.557 : 0))));
+}
 const pctDb = s => s.db || ((s.pa || 0) + (s.sk || 0));
 const pctRate = (n, d) => d ? n / d : null;
 const PCT_FMT = { pct: v => (v * 100).toFixed(1) + '%', f1: v => v.toFixed(1), f2: v => v.toFixed(2), epa: v => (v > 0 ? '+' : '') + v.toFixed(2), sgn: v => (v > 0 ? '+' : '') + v.toFixed(1) + '%', int: v => String(Math.round(v)) };
@@ -8563,18 +8568,27 @@ const PCT_SETS = {
   CB: [['Coverage', PCT_COV], ['Tackling', PCT_TKL]], S: [['Coverage', PCT_COV], ['Tackling', PCT_TKL]],
   K: [['Kicking', PCT_K]], P: [['Punting', PCT_P]],
 };
-// who's in the pool for a season: active players and, for past seasons, the retired too (by the position they played)
-const PCT_C = { st: null, k: null, pools: {} };
-function pctPool(season, pos) {
-  const k = `${S.season}|${S.week}|${S.phase}|${PL_V}`;
-  if (PCT_C.st !== S || PCT_C.k !== k) { PCT_C.st = S; PCT_C.k = k; PCT_C.pools = {}; }
-  const key = season + '|' + pos; if (PCT_C.pools[key]) return PCT_C.pools[key];
-  const lines = [];
-  for (const id in S.players) { const p = S.players[id], s = p.stats && p.stats[season]; if (s && p.pos === pos) lines.push(s); }
-  if (+season < S.season) for (const r of S.retired || []) { const s = r.stats && r.stats[season]; if (s && r.pos === pos) lines.push(s); }
+// whose stats a card ranks against: the pro league here, the college game (98-college-5d-pct) its own players.
+// A source gives the players at a position with a line that season, each line in the pro shape.
+const PCT_PRO = {
+  id: 'pro', stamp: () => `${S.season}|${S.week}|${S.phase}|${PL_V}`, root: () => S, stats: p => p.stats, ok: () => true,
+  lines(season, pos) {
+    const lines = [];
+    for (const id in S.players) { const p = S.players[id], s = p.stats && p.stats[season]; if (s && p.pos === pos) lines.push(s); }
+    // (past seasons: the retired too, by the position they played)
+    if (+season < S.season) for (const r of S.retired || []) { const s = r.stats && r.stats[season]; if (s && r.pos === pos) lines.push(s); }
+    return lines;
+  },
+};
+const PCT_C = {};
+function pctPool(src, season, pos) {
+  const k = src.stamp(), C = PCT_C[src.id] || (PCT_C[src.id] = { st: null, k: null, pools: {} });
+  if (C.st !== src.root() || C.k !== k) { C.st = src.root(); C.k = k; C.pools = {}; }
+  const key = season + '|' + pos; if (C.pools[key]) return C.pools[key];
+  const lines = src.lines(season, pos);
   // games in the season so far: the most any player at the position has played
   let G = 0; for (const s of lines) G = Math.max(G, s.gp || 0);
-  const out = { G, lines, m: {} }; PCT_C.pools[key] = out; return out;
+  const out = { G, lines, m: {} }; C.pools[key] = out; return out;
 }
 // the qualified values for one metric, sorted (lower-is-better metrics are ranked flipped later)
 function pctValues(pool, m) {
@@ -8583,26 +8597,27 @@ function pctValues(pool, m) {
   for (const s of pool.lines) { if (m[3](s) < floor || m[3](s) <= 0) continue; const v = m[2](s); if (v != null && isFinite(v)) vals.push(v); }
   vals.sort((a, b) => a - b); return (pool.m[m[0]] = vals);
 }
-// share of the pool he's better than (ties count half), 1 to 99
-function pctRank(vals, v, lo) {
+// share of the rest of the pool he's better than (ties count half), 1 to 100: the leader is 100, the last man 1. A player
+// short of the volume floor isn't in the pool, so he's placed among all of it.
+function pctRank(vals, v, lo, inPool) {
   let below = 0, eq = 0; for (const x of vals) { if (x < v) below++; else if (x === v) eq++; }
-  const p = (below + eq / 2) / vals.length * 100;
-  return clamp(Math.round(lo ? 100 - p : p), 1, 99);
+  const p = inPool ? (vals.length > 1 ? (below + Math.max(0, eq - 1) / 2) / (vals.length - 1) * 100 : 50) : (below + eq / 2) / vals.length * 100;
+  return clamp(Math.round(lo ? 100 - p : p), 1, 100);
 }
 // a player's percentile card for one season: groups of { label, value, pct, qualified }; null if he has nothing to rank
-function percentiles(p, season) {
-  if (!p || !p.stats) return null;
-  const seasons = Object.keys(p.stats).sort(); if (!seasons.length) return null;
-  season = season != null && p.stats[season] ? String(season) : seasons[seasons.length - 1];
-  const s = p.stats[season], sets = PCT_SETS[p.pos]; if (!s || !sets) return null;
-  const pool = pctPool(season, p.pos), groups = [];
+function percentiles(p, season, src = PCT_PRO) {
+  const st = p && src.stats(p); if (!st) return null;
+  const seasons = Object.keys(st).filter(y => src.ok(y)).sort(); if (!seasons.length) return null;
+  season = season != null && seasons.includes(String(season)) ? String(season) : seasons[seasons.length - 1];
+  const s = src.norm ? src.norm(st[season]) : st[season], sets = PCT_SETS[p.pos]; if (!s || !sets) return null;
+  const pool = pctPool(src, season, p.pos), groups = [];
   for (const [label, ms] of sets) {
     const rows = [];
     for (const m of ms) {
       const v = m[2](s), vol = m[3](s); if (v == null || !isFinite(v) || !vol) continue;
-      const vals = pctValues(pool, m); if (vals.length < 8) continue; // too few qualified players to rank against
+      const vals = pctValues(pool, m); if (vals.length < 8 || vals[0] === vals[vals.length - 1]) continue; // too few qualified players to rank against, or nothing tells them apart
       const q = vol >= m[4] * pool.G;
-      rows.push({ k: m[0], l: m[1], v: PCT_FMT[m[6]](v), pct: pctRank(vals, v, m[5]), q, lo: !!m[5], n: vals.length, d: m[7] || '' });
+      rows.push({ k: m[0], l: m[1], v: PCT_FMT[m[6]](v), pct: pctRank(vals, v, m[5], q), q, lo: !!m[5], n: vals.length, d: m[7] || '' });
     }
     if (rows.length) groups.push({ l: label, rows });
   }
@@ -10322,16 +10337,17 @@ function cRes0(X, o, oc, dc, U, opt, pb) {
   cp = clamp(cp, 0.05, 0.93);
   const pInt = clamp(0.0135 + (C_SEP_T - sepT) * 0.004 + (air >= 18 ? 0.014 : 0) + (covS - cA(qb, 'VIS', 50)) * 0.0006 + press * 0.02 + (man ? 0 : 0.004) + (sd ? sd.to * 0.5 : 0) + (opt.hail ? 0.12 : 0), 0.005, 0.2);
   const r = rnd();
-  if (r < pInt) return { k: 'int', y: 0, rec, air, rt, cov, role, defBy, man, sp: spL };
+  const adv = { rts: tg.map(x => x[0]), sep: sepT, cvD: defBy || null };
+  if (r < pInt) return { k: 'int', y: 0, rec, air, rt, cov, role, defBy, man, sp: spL, adv };
   if (r < pInt + cp) {
     let yac = Math.round(expR(yacM * 0.83 * (man ? 1.2 : 1) * (0.85 + (cA(rec, 'SPD', 50) + cA(rec, 'AGI', 50) - 100) / 250) * fx[3] + (sd ? sd.big * 20 : 0)));
     if (!scr) yac = Math.round(yac * clamp(1 + (sepT - C_SEP_T) * 0.12, 0.6, 1.6)); // room to run
     if (oc === 'screen' && dc === 'blitz') yac += randInt(2, 8);
     const y = Math.min(dist, air + yac);
-    return { k: 'pass', y: Math.max(y, rt === 'screen' ? -4 : -2), rec, air, rt, cov, role, defBy, man, sp: spL, fum: rnd() < 0.006, oob: rnd() < (rt === 'out' || rt === 'comeback' || rt === 'corner' || rt === 'wheel' ? 0.45 : 0.14) };
+    return { k: 'pass', y: Math.max(y, rt === 'screen' ? -4 : -2), rec, air, rt, cov, role, defBy, man, sp: spL, adv, fum: rnd() < 0.006, oob: rnd() < (rt === 'out' || rt === 'comeback' || rt === 'corner' || rt === 'wheel' ? 0.45 : 0.14) };
   }
   const drop = rnd() < 0.12;
-  return { k: 'inc', y: 0, rec, air, rt, cov, role, defBy, man, sp: spL, drop, pbu: !drop && rnd() < (sepT < 1 ? 0.75 : sepT < 2 ? 0.5 : sepT < 3.5 ? 0.22 : 0.05) };
+  return { k: 'inc', y: 0, rec, air, rt, cov, role, defBy, man, sp: spL, adv, drop, pbu: !drop && rnd() < (sepT < 1 ? 0.75 : sepT < 2 ? 0.5 : sepT < 3.5 ? 0.22 : 0.05) };
 }
 // ---------- the field engine (09-field.js): with "Players think for themselves" on, a run or pass is played out by all 22
 // players, as in the pro game, and the result comes back in the shape cPlay books. College ratings run 9-17 under the
@@ -10393,7 +10409,11 @@ function cFxRes(X, o, oc, dc, U, opt) {
   Object.assign(F, { seed: Math.floor(rnd() * 2147483647), los: s.yl, tg: s.tg, dn: s.dn, play: pb.play, form: pb.form, pkg: pk, fl: rnd() < 0.5 ? -1 : 1, wcp: 0, wdp: 0 });
   const fx = fxEnc(F), R = fieldPlay(fxDec(fx, X.fxc.a)), man = cov === 'c0' || cov === 'c1';
   X.pr = R.prs != null && R.hot < 0.65; // (a rusher closing on him as he throws)
-  const base = { fx, fxP: [off, def], cov, man }, tk = R.tk != null ? def[R.tk] || null : null;
+  // what the advanced stats need: routes run, who got the pressure and which blocker it beat (picked off the snap's seed,
+  // so no extra draw changes the game), missed tackles, the window at the throw and the man in coverage
+  const olw = O.OL.filter(Boolean), olBy = olw.length ? olw[cSeedPick(F.seed, olw.map(x => Math.pow(Math.max(8, 100 - cA(x, 'PBK', 50)) / 30, 2)))] : null;
+  const adv = { rts: off.filter((x, i) => i >= 6 && x && R.rt[i]), prsBy: R.prs != null ? def[R.prs] || null : null, olBy, miss: (R.miss || []).map(i => def[i]).filter(Boolean), sep: R.sep, cvD: R.cv != null ? def[R.cv] || null : null };
+  const base = { fx, fxP: [off, def], cov, man, adv }, tk = R.tk != null ? def[R.tk] || null : null;
   if (R.k === 'sack') return { ...base, k: 'sack', y: Math.max(-s.yl, Math.min(-1, R.y)), sacker: def[R.by] || def[0], sacker2: R.by2 != null && def[R.by2] && def[R.by2] !== def[R.by] ? def[R.by2] : null, fum: rnd() < 0.09 };
   if (R.k === 'scramble') return { ...base, k: 'run', car: qb, scr: true, y: R.td ? dist : clamp(R.y, -s.yl, dist), oob: !!R.oob, fum: rnd() < 0.006, tk };
   if (R.k === 'run') {
@@ -10480,7 +10500,9 @@ function cSnap(X, D = {}) {
   const dc = D.dc || cAiDef(X, d);
   X.tend[o].push(oc); X.tend[d].push(dc);
   const U = cUnits(X, o, dc), r = cRes(X, o, oc, dc, U, { hail, hurry: (D.tempo || cAiTempo(X, o)) === 'hurry', fake: fourth === 'fakep' || fourth === 'fakefg', pb: { play: D.play || null, form: D.form || null } });
+  const pre = { dn: s.dn, tg: s.tg, yl: s.yl, s0: g.score[o], s1: g.score[d] };
   cPlay(X, r, U, oc, dc, fourth);
+  cEpa(X, o, d, pre, r, U);
 }
 function cKneel(X) {
   const s = X.st, o = s.o, diff = cDiff(X, o), dto = X.to[1 - o];
@@ -10510,6 +10532,7 @@ function cKneelPlay(X) {
 function cPlay(X, r, U, oc, dc, fourth) {
   const hurtQ = [], hurt = (side, p, m) => hurtQ.push([side, p, m]);
   const s = X.st, o = s.o, d = 1 - o, g = X.g, line = X.line, qb = U.O.QB, ql = qb ? line(qb, o) : {};
+  const prsd = !!X.pr && (r.k !== 'run' || !!r.scr) && !['inside', 'outside'].includes(oc);
   const e = { k: r.k, y: r.y, dn: s.dn, tg: s.tg, yl: s.yl, oc, dc, cv: r.cov };
   if (r.pb) { e.pl = r.pb.play; e.fm = r.pb.form; e.pg = r.pb.pkg; }
   if (r.fx) e.fx = r.fx;
@@ -10534,6 +10557,7 @@ function cPlay(X, r, U, oc, dc, fourth) {
     else if (r.k === 'inc') { if (r.drop) e.drop = true; }
   }
   cEv(X, e);
+  cAdvLine(X, r, U, o, d, td, prsd);
   if (rnd() < 0.5) hurt(o, U.O.OL[randInt(0, 4)], 0.5); else hurt(d, U.D.DL[randInt(0, 3)], 0.5);
   for (const [sd, p, m] of hurtQ) cInjury(X, sd, p, null, m);
   if (r.fum && !td && r.k !== 'inc') r.lost = rnd() < 0.52;
@@ -10728,6 +10752,46 @@ function colGame(h, a, opt = {}) {
 }
 // ---------- advanced stats: tallied on every snap of every game ----------
 // success (the college standard): 50% of the distance on 1st down, 70% on 2nd, all of it on 3rd and 4th. Explosive: runs of 10+, passes of 20+.
+// ---------- player advanced stats (the percentile card): booked off what the snap already decided, never a new draw ----------
+// a weighted pick from the snap's seed (the field engine's seed for this play, already drawn)
+function cSeedPick(seed, w) { let t = w.reduce((a, b) => a + b, 0) * ((seed % 9973) / 9973); for (let i = 0; i < w.length; i++) { t -= w[i]; if (t < 0) return i; } return w.length - 1; }
+// (only onto a player already on the game's stat sheet: a new line would count a game played and could burn a redshirt)
+const cAdvL = X => p => (p && X.g.ps[p.id]) || {};
+function cAdvLine(X, r, U, o, d, td, prsd) {
+  const line = cAdvL(X), A = r.adv || {}, qb = U.O.QB, ql = qb ? line(qb, o) : {}, drop = r.k !== 'run' || !!r.scr, thrown = r.k === 'pass' || r.k === 'inc' || r.k === 'int';
+  // pass-block and pass-rush snaps, pressures (a sack is one) and the blocker beaten
+  if (drop) { for (const x of U.O.OL) if (x) inc(line(x, o), 'pbs'); for (const x of U.D.DL) if (x) inc(line(x, d), 'prn'); }
+  if (r.k === 'sack') { if (r.sacker) inc(line(r.sacker, d), 'prs'); if (r.sacker2) inc(line(r.sacker2, d), 'prs'); if (A.olBy) { const b = line(A.olBy, o); inc(b, 'sa'); inc(b, 'pra'); } }
+  else if (prsd) { if (A.prsBy) inc(line(A.prsBy, d), 'prs'); if (A.olBy) inc(line(A.olBy, o), 'pra'); }
+  // runs: yards after contact; anyone with the ball: tackles he broke
+  if (r.k === 'run' && !r.scr && r.car && r.bc != null) inc(line(r.car, o), 'yco', Math.max(0, r.y - Math.max(r.bc, 0)));
+  const ball = r.k === 'run' ? r.car : r.k === 'pass' ? r.rec : null;
+  for (const m of A.miss || []) { inc(line(m, d), 'mtk'); if (ball) inc(line(ball, o), 'btk'); }
+  if (!thrown) return;
+  // throws: routes, expected completions, pressure splits, the man in coverage, drops and breakups
+  for (const x of A.rts || []) inc(line(x, o), 'rt');
+  if (prsd) inc(ql, 'upa');
+  if (r.rec) { inc(ql, 'xa'); inc(ql, 'xcp', Math.round(xcpFit(r.air ?? 0, A.sep, prsd) * 1000)); }
+  const cv = r.rec && A.cvD ? line(A.cvD, d) : null; if (cv) inc(cv, 'ctg');
+  if (r.k === 'pass') {
+    inc(line(r.rec, o), 'yac', Math.max(0, r.y - Math.max(0, r.air || 0)));
+    if (prsd) { inc(ql, 'upc'); inc(ql, 'upy', r.y); if (td) inc(ql, 'uptd'); }
+    if (cv) { inc(cv, 'cc'); inc(cv, 'cy', r.y); if (td) inc(cv, 'ctd'); }
+  } else if (r.k === 'inc') { if (r.drop && r.rec) inc(line(r.rec, o), 'drop'); if (r.pbu && r.defBy) inc(line(r.defBy, d), 'pbu'); }
+  else if (prsd) inc(ql, 'upint');
+}
+// expected points added: the situation after the snap against the one before (the pro scale), charged to the passer on a
+// dropback, the target, the ball carrier and the man in coverage
+function cEpa(X, o, d, pre, r, U) {
+  const g = X.g, st = X.st, dO = g.score[o] - pre.s0, dD = g.score[d] - pre.s1;
+  const after = dO >= 6 ? 6.3 : dD >= 6 ? -6.3 : dD === 2 ? -2.4 : !st ? null : st.o === o ? epValue(st.dn, st.tg, st.yl) : -epValue(1, 10, st.yl);
+  if (after == null) return;
+  const epa = after - epValue(pre.dn, pre.tg, pre.yl), e10 = Math.round(epa * 10), ok = epa > 0 ? 1 : 0, line = cAdvL(X), A = r.adv || {}, qb = U.O.QB;
+  if ((r.k !== 'run' || r.scr) && qb) { const l = line(qb, o); inc(l, 'pEP', e10); inc(l, 'psu', ok); inc(l, 'db'); }
+  if (r.rec && r.k !== 'sack') { const l = line(r.rec, o); inc(l, 'tEP', e10); inc(l, 'tsu', ok); }
+  if (r.k === 'run' && !r.scr && r.car) inc(line(r.car, o), 'rEP', e10);
+  if (r.rec && A.cvD && r.k !== 'sack') inc(line(A.cvD, d), 'cEP', e10);
+}
 function advNew() { return { gp: 0, pl: 0, yds: 0, su: 0, ex: 0, rpl: 0, ry: 0, rsu: 0, rex: 0, ppl: 0, py: 0, psu: 0, pex: 0, pa: 0, pc: 0, sk: 0, int: 0, fl: 0, d3a: 0, d3c: 0, d4a: 0, d4c: 0, rzt: 0, rztd: 0, rzfg: 0, drv: 0, dst: 0, dpts: 0, cm: {}, rc: {} }; }
 function cAdv(X, o, r, dn, tg, td, oc, dc) {
   const A = X.adv && X.adv[o]; if (!A) return false;
@@ -11171,6 +11235,20 @@ function colPaper(t) {
 const COL_PROG = () => ({ teams: CS.teams, tidOf: t => t.tid, roster: tid => croster(tid), rate: colPaper, starts: pos => COL_START[pos] || 1, positions: POS_ORDER, name: p => `${p.fn} ${p.ln}` });
 function progSnapCol() { if (CS.bg || CS.userTid == null) return; CS.progSnap = progSnap(COL_PROG(), CS.userTid, CS.season); }
 function progReportCol() { if (CS.bg || !CS.progSnap) return; const r = progBuild(CS.progSnap, COL_PROG(), CS.userTid, CS.season); if (r) CS.progRep = r; }
+// ---------- percentile rankings for college players: the same card as the pros' (96-percentiles), ranked against FBS ----------
+// A college line counts targets as 'tgt'; the card reads the pro shape. Seniors leave the database when they graduate, so
+// only this season and last are ranked (an older pool would be missing its best players).
+const PCT_COLSRC = {
+  id: 'col', root: () => CS, stats: p => p.st, ok: y => +y >= CS.season - 1,
+  stamp: () => `${CS.season}|${CS.week}|${CS.phase}|${Object.keys(CS.games || {}).length}`,
+  norm: s => (s && s.tgt != null && s.tg == null ? { ...s, tg: s.tgt } : s),
+  lines(season, pos) {
+    const out = [];
+    for (const id in CS.players) { const p = CS.players[id], s = p.st && p.st[season]; if (s && p.pos === pos) out.push(PCT_COLSRC.norm(s)); }
+    return out;
+  },
+};
+const colPercentiles = (p, season) => percentiles(p, season, PCT_COLSRC);
 // ---------- conference realignment: every few years somebody moves ----------
 const POWER_MIN = 60; // a conference with base prestige this high is a power conference
 const REGION_FIT = { SEC: ['Southeast', 'Southwest'], 'Big Ten': ['Midwest', 'Northeast', 'West'], 'Big 12': ['Southwest', 'Midwest', 'West'], ACC: ['Southeast', 'Northeast'] };
@@ -12027,7 +12105,7 @@ function carRecruit(o) {
   touchC(); return r;
 }
 return {
-  get S() { return CS; }, get COL_CONFS() { return confNames(); }, isInd, CLS, COL_ROS, COL_MAX, REC_PTS, PO_NAMES_C, STAR_PTS,
+  get S() { return CS; }, get COL_CONFS() { return confNames(); }, isInd, percentiles: colPercentiles, CLS, COL_ROS, COL_MAX, REC_PTS, PO_NAMES_C, STAR_PTS,
   newCollege, setUser: setUserC, save: () => JSON.stringify(CS), load: j => { const d = typeof j === 'string' ? JSON.parse(j) : j; if (!d || d.mode !== 'college') throw new Error('Not a college save.'); CS = d; RC = null; CNAMES = null; LIVE = null; PRE = null; persAll(); if (CS.teams.some(t => t.chem == null)) chemAll(); fxUpgrade(); return CS; },
   news: cnews, cfpRankOf, PRIOS, REC_ACTS, BOARD_MAX, recView, recEst, boardOf, boardOpen, homeWeeks, scheduleVisit, stageOf, gradeLetter, setAutoRec: on => { CS.auto = !!on; }, get autoLog() { return CS.autoLog || null; }, get autoTot() { return CS.autoTot && CS.autoTot.s === CS.season ? CS.autoTot : null; }, get autoRec() { return CS.auto !== false; }, poGameName, projectedClass, isMe, RIV, rivalryTable, rivalsOf: rivalsOfC, coachInfo, acceptJob, declineJobs, seatLabel, genCoach: genCoachC, coachChange, TRAIN, setTraining, trainOf, springGame, POS_MOVES: COL_POS_MOVES, posChangePreview, changePos, POS_AWARDS, AA_SLOTS,
   weekBgStep, liveStart, liveState, playTxt: colPlayTxt, liveCall, live4th, liveSim, liveFinish, liveAbandon, liveIce, livePat, liveKick, liveHalf, liveTimeout, liveTempo, liveAuto, userNext, OFF_C, DEF_C, CALL_TIPS, ROUTE_NM: C_ROUTE_NM, COVS: C_COVS, colGame, gameStep: cStep, gameInit: colGameInit, get live() { return LIVE; }, awardsOf: s => (CS.awards || {})[s] || null, confSize,
@@ -17585,15 +17663,17 @@ function teamAdvBody(season) {
   ], rows, { sort: { k: 'offEpa', d: 'desc' }, empty: 'Advanced team stats start with the first game.' });
 }
 // ---------- percentile rankings on the player card: each advanced stat against the league at his position ----------
-// (blue is the bottom of the league, grey the middle, red the top; 99 is always best, even for stats where lower is better)
+// (blue is the bottom of the league, grey the middle, red the top; 100 is always best, even for stats where lower is better)
 const pctColor = v => { const x = Math.abs(v - 50) / 50; return `hsl(${v >= 50 ? 2 : 218},${Math.round(8 + x * 64)}%,${Math.round(60 - x * 10)}%)`; };
-function pctPanel(p) {
-  const want = (ui.pctS || {})[p.id], P = HM.percentiles(p, want); if (!P) return '';
+// (college: the same card from the college game's players, ranked against FBS)
+function pctPanel(p, col) {
+  const key = (col ? 'c' : '') + p.id, want = (ui.pctS || {})[key], P = col ? HM.college.percentiles(p, want) : HM.percentiles(p, want); if (!P) return '';
+  const cur = col ? CSx().season : S().season, lg = col ? ' in FBS' : '';
   const pos = { QB: 'quarterbacks', RB: 'running backs', WR: 'wide receivers', TE: 'tight ends', OL: 'offensive linemen', DL: 'defensive linemen', LB: 'linebackers', CB: 'cornerbacks', S: 'safeties', K: 'kickers', P: 'punters' }[P.pos] || 'players';
   const yrs = P.seasons.slice().reverse(), anyNq = P.groups.some(g => g.rows.some(r => !r.q));
   const row = r => `<div class="pctr${r.q ? '' : ' nq'}" title="${E((r.d ? r.d + ' ' : '') + (r.lo ? 'Lower is better, so the ranking is flipped. ' : '') + `Ranked against ${r.n} qualified ${pos}.` + (r.q ? '' : ' Not enough volume to qualify yet.'))}"><span>${E(r.l)}</span><b class="num">${E(r.v)}</b><div class="pctb"><i style="width:${r.pct}%;background:${pctColor(r.pct)}"></i><b style="left:${r.pct}%;background:${pctColor(r.pct)}">${r.pct}</b></div></div>`;
-  return `<section class="panel pctl"><div class="ph"><h3>Percentile rankings</h3>${yrs.length > 1 ? `<label class="row" style="gap:6px"><span class="lbl">Season</span><select data-pct-pid="${p.id}" aria-label="Season for percentile rankings">${yrs.map(y => `<option ${y === P.season ? 'selected' : ''}>${y}</option>`).join('')}</select></label>` : `<span class="lbl">${P.season}</span>`}</div>
-    <p class="muted" style="font-size:12.5px;margin:0 0 8px">Where he ranks among qualified ${pos}${P.season === S().season ? ' this season' : ` in ${P.season}`}: 99 is the best in the league, 1 the worst. Stats where lower is better are flipped.${anyNq ? ' Faded rows: not enough volume to qualify yet.' : ''}</p>
+  return `<section class="panel pctl"><div class="ph"><h3>Percentile rankings</h3>${yrs.length > 1 ? `<label class="row" style="gap:6px"><span class="lbl">Season</span><select data-pct-pid="${key}" aria-label="Season for percentile rankings">${yrs.map(y => `<option ${y === P.season ? 'selected' : ''}>${y}</option>`).join('')}</select></label>` : `<span class="lbl">${P.season}</span>`}</div>
+    <p class="muted" style="font-size:12.5px;margin:0 0 8px">Where he ranks among qualified ${pos}${lg}${P.season === cur ? ' this season' : ` in ${P.season}`}: 100 is the best${col ? '' : ' in the league'}, 1 the worst. Stats where lower is better are flipped.${anyNq ? ' Faded rows: not enough volume to qualify yet.' : ''}</p>
     ${P.groups.map(g => `<div class="pctg"><div class="lbl">${E(g.l)}</div>${g.rows.map(row).join('')}</div>`).join('')}</section>`;
 }
 app.addEventListener('change', e => { const pid = e.target.dataset && e.target.dataset.pctPid; if (pid == null) return; (ui.pctS || (ui.pctS = {}))[pid] = e.target.value; render(); });
@@ -17704,7 +17784,7 @@ const HELP = [
     <p>The owner has a personality and sets directives. Meet them and your job security rises; miss them repeatedly and you're fired, after which you can take another job. On the finance side, ticket prices, facilities and a new stadium affect revenue.</p>`],
   ['league', 'League life', () => `<p>Rivalries build from close games and playoff meetings. Each offseason the league votes on rule changes (overtime, kickoffs, two-point tries, the trade deadline, even expansion). If expansion passes, every team protects ${HM.PROTECT_N} players, and you choose yours.</p>
     <p>Awards, All-Pro teams, milestones, records and a Hall of Fame vote each year. Team history pages show franchise leaders, the best player each season and head-to-head records against every opponent.</p>`],
-  ['stats', 'Advanced stats glossary', () => `<dl class="gloss"><dt>CPOE</dt><dd>Completion percentage over expected: completions above what an average QB would hit on the same throws (depth, coverage, receiver, pressure, weather).</dd><dt>Rate under pressure / clean</dt><dd>Passer rating split by whether the rush got home.</dd><dt>Yards per route run</dt><dd>Receiving yards divided by every route run on pass plays, not just targets.</dd><dt>Drop rate</dt><dd>Drops per target.</dd><dt>YAC</dt><dd>Yards after the catch.</dd><dt>YCO</dt><dd>Rushing yards after first contact.</dd><dt>Broken / missed tackles</dt><dd>Tackles the ball carrier escaped; charged to the defender as a miss.</dd><dt>Pressures allowed</dt><dd>Charged to the offensive lineman who got beat, including sacks.</dd><dt>Coverage stats</dt><dd>Each target is charged to the defender in coverage closest to the receiver when the ball is thrown: targets, completions, yards and touchdowns allowed, passer rating allowed, and forced incompletions (breakups plus interceptions).</dd><dt>Pressure rate</dt><dd>For a lineman, pressures per pass-rush snap; for a blocker, pressures allowed per pass-block snap.</dd><dt>Percentile rankings</dt><dd>On every player card: where each stat ranks among qualified players at his position that season. 99 is the best in the league and 1 the worst, flipped for stats where lower is better. A player needs enough volume to qualify (for a passer, 14 dropbacks a team game); below that his row is faded.</dd></dl>`],
+  ['stats', 'Advanced stats glossary', () => `<dl class="gloss"><dt>CPOE</dt><dd>Completion percentage over expected: completions above what an average QB would hit on the same throws (depth, coverage, receiver, pressure, weather).</dd><dt>Rate under pressure / clean</dt><dd>Passer rating split by whether the rush got home.</dd><dt>Yards per route run</dt><dd>Receiving yards divided by every route run on pass plays, not just targets.</dd><dt>Drop rate</dt><dd>Drops per target.</dd><dt>YAC</dt><dd>Yards after the catch.</dd><dt>YCO</dt><dd>Rushing yards after first contact.</dd><dt>Broken / missed tackles</dt><dd>Tackles the ball carrier escaped; charged to the defender as a miss.</dd><dt>Pressures allowed</dt><dd>Charged to the offensive lineman who got beat, including sacks.</dd><dt>Coverage stats</dt><dd>Each target is charged to the defender in coverage closest to the receiver when the ball is thrown: targets, completions, yards and touchdowns allowed, passer rating allowed, and forced incompletions (breakups plus interceptions).</dd><dt>Pressure rate</dt><dd>For a lineman, pressures per pass-rush snap; for a blocker, pressures allowed per pass-block snap.</dd><dt>Percentile rankings</dt><dd>On every player card: where each stat ranks among qualified players at his position that season. 100 is the best in the league and 1 the worst, flipped for stats where lower is better. A player needs enough volume to qualify (for a passer, 14 dropbacks a team game); below that his row is faded.</dd></dl>`],
   ['sim', 'Simulation settings', () => `<p>On the League & saves page you can change how aggressive AI teams are in trades, and how quickly players develop. Changes apply from then on.</p>`],
   ['editor', 'Custom leagues, logos and rosters', () => `<p>The <b>League editor</b> (under More) redesigns any team: name, abbreviation, colors and a logo built from emblems, badge shapes and stripes, or <b>your own image</b> (PNG, JPG, WebP or SVG). To do many teams at once, choose several images named after the teams, like <code>BUF.png</code>.</p>
     <p><b>Rosters</b> load from a spreadsheet. Download the current rosters as a CSV to see the columns, edit them in any spreadsheet app, and import the file, or paste rows straight from the spreadsheet. Only Team, Pos and a name are required; ratings use the scale the game shows and anything missing is built from the overall. You see what will change before anything happens, and you choose whether players left out of the file are released or kept.</p>
@@ -18628,6 +18708,7 @@ function cPlayerModal(p) {
   <section class="panel"><h3>His recruitment</h3><p style="margin:0 0 6px;font-size:13px">${stageTxt(p, rv0)}</p>${rv0.list.length ? `<ol class="prl">${rv0.list.map(t => `<li class="${t === c.userTid ? 'me' : ''}">${cchip(CT(t))} ${E(CT(t).name)}${t === c.userTid ? ` <span class="muted">interest ${rv0.int}</span>` : ''}</li>`).join('')}</ol><p class="muted" style="font-size:12px;margin:6px 0 0">Schools in order of where he stands with them.</p>` : '<p class="muted" style="margin:0;font-size:13px">No offers yet.</p>'}${rv0.visits.length ? `<p style="font-size:13px;margin:6px 0 0">Official visits: ${rv0.visits.map(v => `${E(CT(v.tid).abbr)} wk ${v.wk}${v.done ? ' (done)' : ''}`).join(', ')}.</p>` : ''}</section>` : ''}
   <section class="panel"><h3>Ratings</h3><div class="stack">${attrs}</div></section>
   ${seasons.length ? `<section class="panel"><h3>Seasons</h3><div class="stack" style="gap:3px;font-size:13px">${seasons.map(y => `<div><span class="num muted">${y}</span> ${cStatLine(p, y)}</div>`).join('')}</div></section>` : ''}
+  ${seasons.length ? pctPanel(p, true) : ''}
   ${(p.hon || []).length ? `<div>${p.hon.map(h => `<span class="pill exp">${E(h.t)} ${h.s}</span>`).join(' ')}</div>` : ''}</div>`;
 }
 
