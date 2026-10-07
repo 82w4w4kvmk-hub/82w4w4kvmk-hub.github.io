@@ -1527,7 +1527,7 @@ function pbMatch(pkg, form) {
 // v across the field (the sidelines at about +-26.7). Field spots: offense 0-4 the line (left to right), 5 quarterback,
 // 6 back, 7 tight end, 8 and 9 wide receivers, 10 the third receiver (or second tight end, or fullback); defense 0-3 the
 // line, 4-6 linebackers (or nickel and dime backs), 7 and 8 corners, 9 and 10 safeties.
-let FX_HELP_PRS = 0.3, FX_PSLOPE = 16, FX_HALF = 2.4, FX_BRK = 0.3, FX_SPREAD = 0.6, FX_RSHED = 0.15, FX_SY_SHED = 2, FX_SY_PUSH = 0.4; const fxH = (x, y) => Math.sqrt(x * x + y * y); const FLD_V = 22, FX_DT = 0.1, FX_SIDE = 26.6, FX_DBG = {};
+let FX_HELP_PRS = 0.3, FX_PSLOPE = 16, FX_HALF = 2.4, FX_BRK = 0.3, FX_SPREAD = 0.6, FX_RSHED = 0.15, FX_SY_SHED = 2, FX_SY_PUSH = 0.4; const fxH = (x, y) => Math.sqrt(x * x + y * y); const FLD_V = 23, FX_DT = 0.1, FX_SIDE = 26.6, FX_DBG = {};
 function fxRng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 const fxGauss = r => { let u = 0; while (!u) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); };
 
@@ -1707,7 +1707,7 @@ function fxSetup(X, r) {
   }
   const O = O0.map(([u, v], i) => fxAgent('o', i, X.O[i], u, v)), D = D0.map(([u, v], i) => fxAgent('d', i, X.D[i], u, v));
   // (every field a snap can pick up exists from the start, as on the players: one shape for every snap keeps the lookups fast)
-  const W = { X, r, L, fl, form: formK, front, ucQ, pkg, cov, run, sy: fxShort(X), O, D, all: [...O, ...D], t: 0, ball: null, car: null, ev: [], over: null, qb: O[5], fr: [], st: {}, fam: undefined, kick: undefined, esc: undefined, caught: undefined, scram: undefined, hole: undefined, hist: undefined, hc: undefined, gen: undefined, toss: undefined, sv: undefined, scr: undefined, scheme: undefined, rv: undefined, readOpt: undefined, raDone: undefined, mesh: undefined, keep: undefined, kb: undefined, hotB: undefined, hand: undefined, good: undefined, freeR: undefined, flights: undefined, drill: undefined, drawD: undefined, downU: undefined, downC: undefined, bV: undefined, bU: undefined, awayOk: undefined, escRun: undefined, bail: undefined, prd: undefined, zr: undefined };
+  const W = { X, r, L, fl, form: formK, front, ucQ, pkg, cov, run, sy: fxShort(X), O, D, all: [...O, ...D], t: 0, ball: null, car: null, ev: [], over: null, qb: O[5], fr: [], st: {}, fam: undefined, kick: undefined, esc: undefined, caught: undefined, scram: undefined, hole: undefined, hist: undefined, hc: undefined, gen: undefined, toss: undefined, sv: undefined, scr: undefined, scheme: undefined, rv: undefined, readOpt: undefined, raDone: undefined, mesh: undefined, keep: undefined, kb: undefined, hotB: undefined, hand: undefined, scrT: undefined, good: undefined, freeR: undefined, flights: undefined, drill: undefined, drawD: undefined, downU: undefined, downC: undefined, bV: undefined, bU: undefined, awayOk: undefined, escRun: undefined, bail: undefined, prd: undefined, zr: undefined };
   // the edge for this snap (home field, coaching, chemistry) nudges everyone's ratings a touch
   const e = clamp(X.edge || 0, -6, 6) * 0.5; for (const a of O) fxNudge(a, e); for (const a of D) fxNudge(a, -e);
   return W;
@@ -2174,6 +2174,7 @@ function fxAway(W, Q) {
 function fxGive(W, a, how) {
   W.ball = { st: 'held', h: a }; W.car = a; a.role = 'carrier'; a.head = null; a.evalT = 0;
   if (how === 'hand' || how === 'keep') W.hand = W.t;
+  if (how === 'scramble') W.scrT = W.t;
   W.ev.push({ t: W.t, k: how, s: a.side, i: a.i });
   // now everyone plays the ball carrier: defenders chase (the ones still blocked keep fighting), the rest of his team blocks
   const opp = a.side === 'o' ? W.D : W.O, mates = a.side === 'o' ? W.O : W.D;
@@ -2357,9 +2358,10 @@ function fxDef(W, a) {
     const R = b.tgt, dist = fxH(du, dv), short = dist - a.top * Math.max(0, b.t1 - t);
     if (R && short > 2.5) { const s = fxH(R.vu, R.vv), eu = s > 1.5 ? R.vu / s : 1, ev = s > 1.5 ? R.vv / s : 0, k = clamp(1 + (short - 2.5) * 0.6, 1, 6); fxGo(a, b.to.u + eu * k, clamp(b.to.v + ev * k, -FX_SIDE, FX_SIDE), a.top); return; }
     fxGo(a, b.to.u, b.to.v, a.top); return; } }
-  // someone has it: chase him (after the read on a run: a defensive back gives it a moment to be sure it isn't a pass)
+  // someone has it: chase him (after the read on a run: a defensive back gives it a moment to be sure it isn't a pass; on a
+  // scramble a man defender turned to his receiver needs a beat to see the quarterback take off, a zone defender facing him less)
   if (c && c.side !== a.side) {
-    const late = W.run && !W.caught && a.i >= 7 && t < (W.hand || 0) + (a.react || 0.4) + (alley || a.i >= 9 ? 0 : a.role === "man" ? 0.3 : 0.1);
+    const late = W.run && !W.caught && a.i >= 7 && t < (W.hand || 0) + (a.react || 0.4) + (alley || a.i >= 9 ? 0 : a.role === "man" ? 0.3 : 0.1) || W.scram && W.scrT != null && (a.role === 'man' || a.role === 'zone') && t < W.scrT + (a.react || 0.4) * (a.role === 'man' ? 1.2 : 0.6) + (a.role === 'man' ? 0.25 : 0.05);
     if (!late) { fxChase(W, a, c); return; }
   }
   // a run: the linebackers read the backfield and fill downhill toward where the back is heading
@@ -2709,7 +2711,7 @@ function fieldReturn(X) {
     D0.push([kickU, 0]); for (let i = 0; i < 10; i++) D0.push([41, -22.5 + i * 5]);
   }
   const O = O0.map(([u, v], i) => fxAgent('o', i, X.O[i], u, v)), D = D0.map(([u, v], i) => fxAgent('d', i, X.D[i], u, v));
-  const W = { X, r, L: cu, fl, form: null, front: null, ucQ: false, pkg: 'kick', cov: null, run: false, O, D, all: [...O, ...D], t: 0, ball: null, car: null, ev: [], over: null, qb: O[5], fr: [], st: {}, fam: null, kick: X.kind, esc: undefined, caught: undefined, scram: undefined, hole: undefined, hist: undefined, hc: undefined, gen: undefined, toss: undefined, sv: undefined, scr: undefined, scheme: undefined, rv: undefined, readOpt: undefined, raDone: undefined, mesh: undefined, keep: undefined, kb: undefined, hotB: undefined, hand: undefined, good: undefined, freeR: undefined, flights: undefined, drill: undefined, drawD: undefined, downU: undefined, downC: undefined, bV: undefined, bU: undefined, awayOk: undefined, escRun: undefined, bail: undefined, prd: undefined, zr: undefined };
+  const W = { X, r, L: cu, fl, form: null, front: null, ucQ: false, pkg: 'kick', cov: null, run: false, O, D, all: [...O, ...D], t: 0, ball: null, car: null, ev: [], over: null, qb: O[5], fr: [], st: {}, fam: null, kick: X.kind, esc: undefined, caught: undefined, scram: undefined, hole: undefined, hist: undefined, hc: undefined, gen: undefined, toss: undefined, sv: undefined, scr: undefined, scheme: undefined, rv: undefined, readOpt: undefined, raDone: undefined, mesh: undefined, keep: undefined, kb: undefined, hotB: undefined, hand: undefined, scrT: undefined, good: undefined, freeR: undefined, flights: undefined, drill: undefined, drawD: undefined, downU: undefined, downC: undefined, bV: undefined, bU: undefined, awayOk: undefined, escRun: undefined, bail: undefined, prd: undefined, zr: undefined };
   const ed = clamp(X.edge || 0, -6, 6) * 0.5; for (const a of O) fxNudge(a, ed); for (const a of D) fxNudge(a, -ed);
   const R5 = O[5];
   // (the return is called to one side or up the middle)
@@ -2869,9 +2871,10 @@ const SEP0 = 1.8, SEP_T = 2.5;
 const sepOf = (rvc, q) => clamp(SEP0 + (rvc - RVC_MEAN) * 6 + q + gauss(0, 1.0), 0.2, 9);
 const sepK = vis => clamp(1.0 + (vis - 65) * 0.02, 0.6, 1.4);
 // top speed, in yards a second, from a player's speed rating (a 99 runs about 11, the fastest ever timed; an average one about
-// 9.7); linemen have no speed rating and run about 7.5 (offense) or 8 (defense). A replay moves everyone at his own speed.
+// 9.7); linemen have no speed rating and run about 7.5 (offense) or 8 (defense); a quarterback runs on his mobility (a 95 about
+// 10.5, as fast as a back; an average starter about 9.5; a statue under 9). A replay moves everyone at his own speed.
 // Logged per field spot as one character each: offense 0-10, then defense 0-10 (the field view's order)
-const topSpd = (p, pos) => (!p ? (pos === 'OL' ? 7.4 : pos === 'DL' ? 8 : 9.6) : p.a && p.a.SPD != null ? 7.7 + p.a.SPD * 0.034 : pos === 'OL' || p.pos === 'OL' ? 7.2 + ((p.ovr ?? 70) - 70) * 0.01 : pos === 'DL' || p.pos === 'DL' ? 7.9 + ((p.ovr ?? 70) - 70) * 0.015 : 9.6);
+const topSpd = (p, pos) => (!p ? (pos === 'OL' ? 7.4 : pos === 'DL' ? 8 : 9.6) : p.a && p.a.SPD != null ? 7.7 + p.a.SPD * 0.034 : (pos === 'QB' || p.pos === 'QB') && p.a && p.a.MOB != null ? 6.95 + p.a.MOB * 0.0374 : pos === 'OL' || p.pos === 'OL' ? 7.2 + ((p.ovr ?? 70) - 70) * 0.01 : pos === 'DL' || p.pos === 'DL' ? 7.9 + ((p.ovr ?? 70) - 70) * 0.015 : 9.6);
 // jersey numbers per field spot, two base-36 characters each ('--' when unknown), same order as the speeds
 const numCode = ps => ps.map(p => (p && p.num != null && p.num >= 0 && p.num <= 99 ? p.num.toString(36).padStart(2, '0') : '--')).join('');
 const spdCode = (ps, pos) => ps.map((p, i) => clamp(Math.round((topSpd(p, pos[i]) - 6) * 6), 0, 35).toString(36)).join('');
@@ -2979,7 +2982,7 @@ function* gameGen(ht, at, opt = {}) {
     if (play) fam = PB_PLAYS[play].fam;
     else if (kind === 'run') {
       fam = oc === 'outside' ? 'outside' : oc === 'inside' ? 'inside' : st.yl >= 95 || st.togo <= 1 ? (rnd() < 0.8 ? 'inside' : 'outside') : rnd() < 0.4 ? 'outside' : 'inside';
-      play = qbRun ? (st.togo <= 1 && rnd() < 0.7 ? 'sneak' : 'read') : pbPickPlay(fam, sit);
+      play = qbRun ? (st.togo <= 1 && rnd() < 0.85 ? 'sneak' : 'read') : pbPickPlay(fam, sit);
     } else {
       fam = oc === 'pa' || oc === 'screen' || oc === 'quick' || oc === 'deep' || oc === 'drop' ? oc : FXON ? fxFam(hurry) : !hurry && st.down <= 2 && st.togo <= 10 && st.yl < 95 && rnd() < 0.22 ? 'pa' : 'drop';
       play = pbPickPlay(fam, sit);
@@ -3408,7 +3411,10 @@ function* gameGen(ht, at, opt = {}) {
   function runPlay(o, d, hurry, protect, h, was3) {
     const Lo = LU[o], Ld = LU[d]; snapInj(o, d);
     const upl = CL.play && PB_PLAYS[CL.play] && PB_PLAYS[CL.play].qb ? PB_PLAYS[CL.play].qb : null; // a called sneak or read option
-    const qbRun = upl ? upl === 'sneak' || rnd() < 0.45 : !CL.o && rnd() < clamp(0.025 + ((Lo.QB[0].a.MOB ?? 50) - 50) * 0.003, 0.02, 0.2);
+    // the quarterback keeps it: a sneak on a yard to go (most teams, the strong ones more), and designed keepers by his legs: a statue
+    // almost never, a dual threat a quarter of the runs, more near the goal line where a keeper is the extra blocker
+    const mob = Lo.QB[0].a.MOB ?? 50, qbStr = Lo.QB[0].a.STR ?? 55;
+    const qbRun = upl ? upl === 'sneak' || rnd() < 0.45 : !CL.o && (st.togo <= 1 && rnd() < clamp(0.45 + (qbStr - 55) * 0.01, 0.3, 0.65) || rnd() < clamp(0.01 + (mob - 62) * 0.009, 0.01, 0.3) * (st.yl >= 90 && mob >= 70 ? 1.6 : 1));
     const glb = !qbRun && !CL.clock && rnd() < 0.6 && (st.yl >= 95 || (st.togo <= 1 && st.yl >= 90)) && PK[o].glrb && available(PK[o].glrb) && !hurt.has(PK[o].glrb.id) ? PK[o].glrb : null;
     const car = qbRun ? Lo.QB[0] : glb ? glb : (() => { // even a workhorse back gets spelled: about 70% of the carries at most, less once he's past 22 in a game
       const w1 = 0.55 * Math.pow(Lo.RB[0].ovr / 70, 3), w2 = 0.45 * Math.pow(Lo.RB[1].ovr / 70, 3), n1 = (sl(Lo.RB[0], o).ra || 0);
