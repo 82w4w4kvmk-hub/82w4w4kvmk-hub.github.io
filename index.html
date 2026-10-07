@@ -4833,11 +4833,19 @@ function runCombine() {
 // leaders and long careers are the likeliest. They start out raw but with plenty of room to grow, and a famous name
 // gets a look from teams with an opening.
 const EX_OFF = ['QB', 'RB', 'WR', 'TE', 'OL'];
+// games he played before the league began: a veteran who was there from the start has no box scores before it, so his
+// career is counted from about age 22 at roughly 12 games a season (only for whether he goes into coaching)
+function preLeagueGp(p) {
+  if (p.draft != null) return 0;
+  const ss = Object.keys(p.stats || {}).map(Number).filter(Number.isFinite), first = ss.length ? Math.min(...ss) : S.season;
+  return Math.max(0, first - (S.season - Math.max(0, p.age - 22))) * 12;
+}
 function maybeCoachCareer(p, car, rr) {
-  if (p.car || p.age < 29 || p.age > 40 || (car.gp || 0) < 40) return null;
-  const star = p.ovr >= 78 || car.gp >= 150;
+  const gp = (car.gp || 0) + preLeagueGp(p);
+  if (p.car || p.age < 29 || p.age > 40 || gp < 40) return null;
+  const star = p.ovr >= 78 || gp >= 150;
   let ch = (p.pos === 'QB' ? 0.22 : ['OL', 'LB', 'S'].includes(p.pos) ? 0.12 : 0.08) + (star ? 0.06 : 0) + ({ leader: 0.1, grinder: 0.05, diva: -0.04 }[p.pers] || 0);
-  if (car.gp < 80) ch *= 0.6;
+  if (gp < 80) ch *= 0.6;
   if (rnd() > ch) return null;
   const role = p.pos === 'K' || p.pos === 'P' ? 'ST' : rnd() < 0.08 ? 'SC' : EX_OFF.includes(p.pos) ? 'OC' : 'DC';
   const c = genCoach(role, gauss(56, 6) + (p.pos === 'QB' ? 4 : 0) + (p.pers === 'leader' ? 3 : 0) + (star ? 3 : 0));
@@ -4845,7 +4853,7 @@ function maybeCoachCareer(p, car, rr) {
   c.pot = clamp(Math.round(c.rat + Math.max(5, gauss(14, 5))), c.rat, 95); // young, and still learning the job
   c.sal = coachSalary(role, c.rat);
   const main = mainTeam(p.stats || {});
-  c.ex = { pid: p.id, pos: p.pos, s: S.season, gp: car.gp, star, tid: main != null ? main : undefined };
+  c.ex = { pid: p.id, pos: p.pos, s: S.season, gp, est: gp > (car.gp || 0) || undefined, star, tid: main != null ? main : undefined };
   if (rr) rr.coach = c.id;
   if (star || p.tid === S.userTid) news(`Former ${p.pos} ${fullName(p)} is going into coaching. He is looking for a job as ${ROLE_NAME[role].toLowerCase()}.`, p.tid === S.userTid);
   return c;
@@ -8148,7 +8156,7 @@ function retireChance(p, rk) {
 // returns true for a notable retirement
 function retirePlayer(p) {
   const car = careerTotals(p); let notable = false;
-  if (car.gp >= 40 || p.ovr >= 75) {
+  if (car.gp >= 40 || p.ovr >= 75 || (car.gp || 0) + preLeagueGp(p) >= 40) { // (a veteran from before the league began: few box scores, a long career)
     S.retired.push({ id: p.id, colMine: p.colMine || undefined, name: fullName(p), fn: p.fn, ln: p.ln, pos: p.pos, age: p.age, s: S.season, car, teamLast: p.tid >= 0 ? team(p.tid).abbr : 'FA', byTeam: byTeamTotals(p), hon: (p.hon || []).slice(), stats: p.stats, hist: p.hist, draft: p.draft, col: p.col, peak: Math.max(p.ovr, ...(p.hist || []).map(h => h.ovr)), hofScore: hofScore(p, car), faceSeed: p.faceSeed, num: p.num });
     const rr = S.retired[S.retired.length - 1]; honorFranchise(rr); if (rr.hofScore < 34) { delete rr.stats; delete rr.hist; }
     notable = p.ovr >= 78 || car.gp >= 150; considerHof(p, car); maybeCoachCareer(p, car, rr);
@@ -16261,7 +16269,7 @@ function staffView() {
   <section class="panel"><div class="tw"><table class="t"><thead><tr><th>Job</th><th>Coach</th><th class="n">Age</th><th class="n">Rating</th><th>Scheme</th><th class="n">Salary</th><th class="n">Contract</th><th>Effect</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></section>
   <section class="panel"><h3>Schemes</h3><p class="muted" style="margin:0 0 8px;font-size:12.5px">Coordinators run a scheme. Starters whose ratings suit it make the unit play better; a poor fit costs you on every snap. Player cards show each player's fit. Good coordinators get hired away as head coaches.</p><div class="grid2">${Object.entries(HM.SCHEMES).map(([k, x]) => `<div style="font-size:12.5px"><b>${E(x.name)}</b> <span class="muted">(${x.role === 'OC' ? 'offense' : 'defense'})</span> ${E(x.desc)}<div class="muted" style="font-size:11.5px;margin-top:2px">Wants: ${Object.entries(HM.SCHEME_ARCH[k] || {}).map(([pos, l]) => `${pos} ${l.map(E).join(' / ')}`).join('; ')}</div></div>`).join('')}</div></section>
   <section class="panel"><div class="ph"><h3>Available coaches</h3>${seg('staffRole', role, HM.ROLES.map(r => [r, HM.ROLE_NAME[r]]))}</div>
-  ${table('coachpool', [{ k: 'n', l: 'Coach', f: c => clink(c) + (c.ex ? ` <span class="pill" title="${E('Played ' + c.ex.gp + ' games')}">Former ${E(c.ex.pos)}</span>` : '') + (c.age < 48 && c.pot - c.rat >= 5 ? ' <span class="pill w" title="Young and still improving">Rising</span>' : ''), v: c => c.ln }, ...(role === 'SC' ? [{ k: 'spec', l: 'Sharpest on', f: c => E(HM.SCOUT_SPEC[HM.scoutProfile(c).spec][0]), v: c => HM.scoutProfile(c).spec }, { k: 'lean', l: 'Lean', f: c => { const L = HM.SCOUT_LEAN[HM.scoutProfile(c).lean]; return `<span title="${E(L[1])}">${E(L[0])}</span> <span class="muted" style="font-size:12px">${E(L[1])}</span>`; }, v: c => HM.scoutProfile(c).lean }] : []), ...(role === 'HC' ? [{ k: 'tend', l: 'Tendencies', nosort: 1, f: c => `<span class="muted" style="font-size:12px">${E(c.tend ? HM.tendText(c.tend) : '')}</span>` }] : []), { k: 'tree', l: 'Tree', nosort: 1, f: c => { const m = (c.mentors || [])[c.mentors ? c.mentors.length - 1 : 0]; const mc = m != null ? (S().coaches[m] || (S().coachArc || {})[m]) : null; return mc ? `<span class="muted" style="font-size:12px">under ${E(mc.fn[0] + '. ' + mc.ln)}</span>` : ''; } }, { k: 'age', l: 'Age', n: 1 }, { k: 'rat', l: 'Rating', n: 1, f: c => ovrC(c.rat) }, { k: 'style', l: 'Scheme', f: c => c.scheme ? `<span title="${E(HM.SCHEMES[c.scheme].desc)}">${E(HM.SCHEMES[c.scheme].name)}</span>` : '' }, { k: 'rec', l: 'Record', nosort: 1, f: c => c.rec && c.rec.seasons ? `${c.rec.w}-${c.rec.l}${c.rec.titles ? `, ${c.rec.titles} title${c.rec.titles > 1 ? 's' : ''}` : ''}` : '<span class="muted">—</span>' }, { k: 'sal', l: 'Salary', n: 1, f: c => money(c.sal) },
+  ${table('coachpool', [{ k: 'n', l: 'Coach', f: c => clink(c) + (c.ex ? ` <span class="pill" title="${E('Played ' + (c.ex.est ? 'about ' : '') + c.ex.gp + ' games')}">Former ${E(c.ex.pos)}</span>` : '') + (c.age < 48 && c.pot - c.rat >= 5 ? ' <span class="pill w" title="Young and still improving">Rising</span>' : ''), v: c => c.ln }, ...(role === 'SC' ? [{ k: 'spec', l: 'Sharpest on', f: c => E(HM.SCOUT_SPEC[HM.scoutProfile(c).spec][0]), v: c => HM.scoutProfile(c).spec }, { k: 'lean', l: 'Lean', f: c => { const L = HM.SCOUT_LEAN[HM.scoutProfile(c).lean]; return `<span title="${E(L[1])}">${E(L[0])}</span> <span class="muted" style="font-size:12px">${E(L[1])}</span>`; }, v: c => HM.scoutProfile(c).lean }] : []), ...(role === 'HC' ? [{ k: 'tend', l: 'Tendencies', nosort: 1, f: c => `<span class="muted" style="font-size:12px">${E(c.tend ? HM.tendText(c.tend) : '')}</span>` }] : []), { k: 'tree', l: 'Tree', nosort: 1, f: c => { const m = (c.mentors || [])[c.mentors ? c.mentors.length - 1 : 0]; const mc = m != null ? (S().coaches[m] || (S().coachArc || {})[m]) : null; return mc ? `<span class="muted" style="font-size:12px">under ${E(mc.fn[0] + '. ' + mc.ln)}</span>` : ''; } }, { k: 'age', l: 'Age', n: 1 }, { k: 'rat', l: 'Rating', n: 1, f: c => ovrC(c.rat) }, { k: 'style', l: 'Scheme', f: c => c.scheme ? `<span title="${E(HM.SCHEMES[c.scheme].desc)}">${E(HM.SCHEMES[c.scheme].name)}</span>` : '' }, { k: 'rec', l: 'Record', nosort: 1, f: c => c.rec && c.rec.seasons ? `${c.rec.w}-${c.rec.l}${c.rec.titles ? `, ${c.rec.titles} title${c.rec.titles > 1 ? 's' : ''}` : ''}` : '<span class="muted">—</span>' }, { k: 'sal', l: 'Salary', n: 1, f: c => money(c.sal) },
     { k: 'x', l: '', nosort: 1, f: c => `<button class="btn sm${off ? ' primary' : ''}" data-act="hire" data-id="${c.id}" ${off ? '' : 'disabled'}>Hire</button>` }], pool, { sort: { k: 'rat', d: 'desc' }, empty: 'No coaches available for this job right now.' })}</section>`;
 }
 
@@ -17909,7 +17917,7 @@ function coachModal(id) {
   <div class="mb">
     <div class="kv"><div><span class="lbl">Rating</span><b class="num">${c.rat}</b>${rising ? '<div class="muted" style="font-size:11.5px">Still improving</div>' : ''}</div><div><span class="lbl">Age</span><b>${c.age}</b></div>${c.rec && c.rec.seasons ? `<div><span class="lbl">Head-coaching record</span><b class="num">${c.rec.w}-${c.rec.l}${c.rec.t ? '-' + c.rec.t : ''}</b>${c.rec.titles ? `<div class="muted" style="font-size:11.5px">${c.rec.titles} title${c.rec.titles > 1 ? 's' : ''}</div>` : ''}</div>` : ''}${c.scheme ? `<div><span class="lbl">Scheme</span><b>${E(HM.SCHEMES[c.scheme].name)}</b></div>` : ''}${pr.active && mine ? `<div><span class="lbl">Contract</span><b class="num">${money(c.sal)} × ${c.yrs}y</b></div>` : ''}</div>
     ${c.role === 'HC' && pr.tend ? `<div class="note"><b>Game-day tendencies:</b> ${E(pr.tend)}. These show up on the field: fourth-down calls, the run/pass mix and two-point tries.</div>` : ''}
-    ${c.ex ? `<div class="note"><b>Former player:</b> ${retiredById(c.ex.pid) ? rlink(c.ex.pid, c.ex.pos + ', ' + c.ex.gp + ' games') : E(c.ex.pos + ', ' + c.ex.gp + ' games')}${c.ex.tid != null && T(c.ex.tid) ? `, mostly for the ${chip(T(c.ex.tid))} ${E(T(c.ex.tid).name)}` : ''}. He went into coaching when he retired in ${c.ex.s}.</div>` : ''}
+    ${c.ex ? `<div class="note"><b>Former player:</b> ${retiredById(c.ex.pid) ? rlink(c.ex.pid, c.ex.pos + ', ' + (c.ex.est ? 'about ' : '') + c.ex.gp + ' games') : E(c.ex.pos + ', ' + (c.ex.est ? 'about ' : '') + c.ex.gp + ' games')}${c.ex.tid != null && T(c.ex.tid) ? `, mostly for the ${chip(T(c.ex.tid))} ${E(T(c.ex.tid).name)}` : ''}. He went into coaching when he retired in ${c.ex.s}.</div>` : ''}
     ${c.role === 'SC' ? (() => { const sk = HM.scoutProfile(c), L = HM.SCOUT_LEAN[sk.lean]; return `<div class="note"><b>Scouting eye:</b> sharpest on ${E(HM.SCOUT_SPEC[sk.spec][0].toLowerCase())} (his reads there are much tighter, the rest a little looser). <b>${E(L[0])}:</b> ${E(L[1])}</div>`; })() : ''}
     <div class="grid2">
       <section class="panel"><h3>Coaching tree</h3>
