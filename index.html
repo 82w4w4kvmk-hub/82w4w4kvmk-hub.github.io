@@ -2873,9 +2873,9 @@ function pickCov(dc) { return dc === 'blitz' ? (rnd() < 0.6 ? 'c0' : 'c1') : dc 
 const RVC_MEAN = 0.0136;
 // separation: how open each receiver is when the ball comes out (yards to the nearest defender). It comes from his route
 // against the coverage, his quality and the snap's luck; the quarterback throws to the open man (the better his vision, the
-// more reliably), and it feeds the completion and the run after the catch. The replay draws it. SEP_T is the average for
-// the man who gets the ball, so the league's numbers stay put
-const SEP0 = 1.8, SEP_T = 2.5;
+// more reliably), and it feeds the completion and the run after the catch. The replay draws it
+// (the college game still rolls its last-second heave this way)
+const SEP0 = 1.8;
 const sepOf = (rvc, q) => clamp(SEP0 + (rvc - RVC_MEAN) * 6 + q + gauss(0, 1.0), 0.2, 9);
 const sepK = vis => clamp(1.0 + (vis - 65) * 0.02, 0.6, 1.4);
 // top speed, in yards a second, from a player's speed rating (a 99 runs about 11, the fastest ever timed; an average one about
@@ -2911,10 +2911,7 @@ function* gameGen(ht, at, opt = {}) {
   const GP = [gamePlanFor(ht, at), gamePlanFor(at, ht)];
   const bestWR = i => LU[i].WR.slice(0, 3).reduce((b, p) => (p.ovr > b.ovr ? p : b)).id;
   const shadowId = [GP[0].def === 'shadow' ? bestWR(1) : null, GP[1].def === 'shadow' ? bestWR(0) : null];
-  const manOf = t => { const sc = coachOf(t.tid, 'DC')?.scheme; return sc === 'press' ? 0.7 : sc === 'cover2' ? 0.25 : sc === '34' ? 0.45 : 0.5; };
-  const MANF = [manOf(ht), manOf(at)], covVal = (p, man) => man * (p.a.COV ?? ((p.a.ZON ?? 45) - 4)) + (1 - man) * (p.a.ZON ?? ((p.a.COV ?? 45) - 4));
   const fumMult = p => clamp(1 + (65 - (p.a.BSC ?? 65)) * 0.03, 0.4, 2.2);
-  const weakCB = i => { const cbs = LU[i].CB.slice(0, 3); let k = 0; cbs.forEach((c, j) => { if ((c.a.COV ?? 40) < (cbs[k].a.COV ?? 40)) k = j; }); return k; };
   const edge = tid => { const hc = (coachRat(tid, 'HC') - 70) * 0.02; return { off: (coachRat(tid, 'OC') - 70) * 0.05 + hc, def: (coachRat(tid, 'DC') - 70) * 0.05 + hc, style: coachOf(tid, 'OC')?.style }; };
   const CE = [edge(ht.tid), edge(at.tid)];
   for (const [i, t] of [[0, ht], [1, at]]) { const ch = (teamChem(t) - 60) * 0.015; CE[i].off += ch; CE[i].def += ch; }
@@ -2948,7 +2945,6 @@ function* gameGen(ht, at, opt = {}) {
   for (let i = 0; i < 2; i++) for (const pos of POS_ORDER) LU[i][pos].forEach((p, j) => { if (p.id == null) return; const l = sl(p, i); l.gp = 1; if (j < POS[pos].start && !opt.pre) l.gs = 1; });
   for (let i = 0; i < 2; i++) for (const p of [PK[i].rb3, PK[i].nick, PK[i].dime, ...PK[i].gl, PK[i].glrb, ...PK[i].tm, ...PK[i].rush]) if (p && p.id != null) sl(p, i).gp = 1;
   for (let i = 0; i < 2; i++) for (const p of [RET[i].kr, RET[i].pr]) if (p && p.id != null) sl(p, i).gp = 1;
-  const retScore = p => p ? (p.a.SPD ?? 60) * 0.45 + (p.a.AGI ?? (p.a.SPD ?? 60) - 4) * 0.35 + (p.a.HND ?? p.a.BSC ?? 55) * 0.2 : 50;
   // a flag: offense (side 0) or defense (side 1) commits it; yards, automatic first down, spot foul (pass interference)
   const flag = (ti, culprit, name, yds, auto1, spot) => {
     const o = st.poss, off = ti === o; let y;
@@ -2992,15 +2988,15 @@ function* gameGen(ht, at, opt = {}) {
       fam = oc === 'outside' ? 'outside' : oc === 'inside' ? 'inside' : st.yl >= 95 || st.togo <= 1 ? (rnd() < 0.8 ? 'inside' : 'outside') : rnd() < 0.4 ? 'outside' : 'inside';
       play = qbRun ? (st.togo <= 1 && rnd() < 0.85 ? 'sneak' : 'read') : pbPickPlay(fam, sit);
     } else {
-      fam = oc === 'pa' || oc === 'screen' || oc === 'quick' || oc === 'deep' || oc === 'drop' ? oc : FXON ? fxFam(hurry) : !hurry && st.down <= 2 && st.togo <= 10 && st.yl < 95 && rnd() < 0.22 ? 'pa' : 'drop';
+      fam = oc === 'pa' || oc === 'screen' || oc === 'quick' || oc === 'deep' || oc === 'drop' ? oc : fxFam(hurry);
       play = pbPickPlay(fam, sit);
     }
     let form = CL.form && PB_FORMS[CL.form] && !(kind === 'run' && PB_FORMS[CL.form].noRun) ? CL.form : pbPickForm(play, sit);
     SNAP.play = play; SNAP.form = form; SNAP.fam = fam; SNAP.pkg = pbMatch(defPkg0(), form);
-    // (with the field engine the defensive line rotates, as NFL lines do: drawn once a snap, so every look at the lineup agrees)
-    SNAP.dlr = FXON && !hurry && kind === 'pass' ? [rnd(), rnd(), rnd(), rnd()] : null;
-    // (with the field engine the defense answers three wide receivers with a nickel back most of the time, as NFL defenses do)
-    if (FXON && SNAP.pkg === 'base' && ((PB_FORMS[form] || {}).pers || 11) === 11 && rnd() < 0.75) SNAP.pkg = 'nickel';
+    // (the defensive line rotates, as NFL lines do: drawn once a snap, so every look at the lineup agrees)
+    SNAP.dlr = !hurry && kind === 'pass' ? [rnd(), rnd(), rnd(), rnd()] : null;
+    // (the defense answers three wide receivers with a nickel back most of the time, as NFL defenses do)
+    if (SNAP.pkg === 'base' && ((PB_FORMS[form] || {}).pers || 11) === 11 && rnd() < 0.75) SNAP.pkg = 'nickel';
     lastLook = { con: PB_PLAYS[play] && PB_PLAYS[play].qb === 'read' && qbRun ? 'qb' : PB_CON[fam] || 'drp', pkg: SNAP.pkg, fl: '', form, play };
   }
   // the field engine plays out whatever is called, so the AI calls the NFL's mix: about a quarter quick game, a third
@@ -3157,10 +3153,9 @@ function* gameGen(ht, at, opt = {}) {
     const tbP = clamp(0.5 + ((k.a.KPW ?? 60) - 70) * 0.012 - (WX.wind || 0) * 0.004 + (R().ko === 'fair' ? -0.15 : 0), 0.12, 0.85);
     if (!kr || rnd() < tbP) { st.yl = tbYl; startDrive(); logEv('ko', `${nm(k)} kicks deep. Touchback; ${TM[recv].name} start at their own ${st.yl}.`); return; }
     if (R().ko === 'fair' && rnd() < 0.45) { st.yl = 25; startDrive(); logEv('ko', `${nm(kr)} fair catches the kickoff. ${TM[recv].name} start at their own 25.`); return; }
-    const rs = retScore(kr), rl = sl(kr, recv), catchYl = randInt(-4, 4);
+    const rl = sl(kr, recv), catchYl = randInt(-4, 4);
     let ret, yl, extra = '';
-    if (FXON) { const F = retField(recv, kick, kr, false, catchYl, 65, Math.round((3.8 + ((k.a.KPW ?? 60) - 70) * 0.01 + rnd() * 0.4) * 100) / 100); ret = F.R.td ? 100 - catchYl : F.R.y; yl = F.R.td ? 100 : clamp(catchYl + F.R.y, 1, 99); koFx = PBP ? F.s : null; }
-    else { ret = gauss(25.5 + (rs - 65) * 0.22 + stE[recv] - stE[kick] * 0.6, 6.5); if (rnd() < 0.025 + (rs - 70) * 0.0012 + (stE[recv] - stE[kick]) * 0.003) ret += expR(30); yl = clamp(Math.round(catchYl + ret), 1, 100); }
+    { const F = retField(recv, kick, kr, false, catchYl, 65, Math.round((3.8 + ((k.a.KPW ?? 60) - 70) * 0.01 + rnd() * 0.4) * 100) / 100); ret = F.R.td ? 100 - catchYl : F.R.y; yl = F.R.td ? 100 : clamp(catchYl + F.R.y, 1, 99); koFx = PBP ? F.s : null; }
     if (yl < 100 && rnd() < 0.05 * R0.pen * DM[recv]) { const back = Math.min(10, Math.floor(yl / 2)); yl -= back; g.ts[recv].pen = (g.ts[recv].pen || 0) + 1; g.ts[recv].peny = (g.ts[recv].peny || 0) + back; extra = ` Holding on the return team brings it back ${back} yards.`; }
     inc(rl, 'kr'); inc(rl, 'kry', Math.max(0, Math.min(yl, 100) - Math.max(0, catchYl))); rl.krl = Math.max(rl.krl || 0, yl - Math.max(0, catchYl));
     if (yl < 100 && rnd() < 0.007 * fumMult(kr)) { inc(rl, 'fum'); st.poss = kick; st.yl = 100 - yl; startDrive(); logEv('ko', `${nm(kr)} fumbles the kickoff return and the ${TM[kick].name} recover at the ${TM[recv].abbr} ${yl}!`); return; }
@@ -3227,11 +3222,10 @@ function* gameGen(ht, at, opt = {}) {
       const fairP = clamp(0.32 + ((p.a.KAC ?? 60) - 70) * 0.006 + (landing >= 85 ? 0.3 : 0) + (R().ko === 'fair' ? 0.05 : 0), 0.1, 0.85);
       if (!pr || rnd() < fairP) { oppYl = 100 - landing; how = `, fair catch${pr ? ' by ' + nm(pr) : ''} at the ${TM[d].abbr} ${oppYl}`; if (pr) inc(sl(pr, d), 'fc'); }
       else {
-        const rs = retScore(pr), rl = sl(pr, d);
+        const rl = sl(pr, d);
         if (rnd() < 0.006 * fumMult(pr)) { inc(rl, 'fum'); drv.k = `${nm(pr)} muffed punt`; note('punt', `${nm(p)} punts ${gross} yards and ${nm(pr)} MUFFS it! ${TM[o].abbr} recover.`, gross); endDrive('Punt'); st.pending = { k: 'sp', p: o, yl: clamp(landing, 1, 99) }; return ev; }
         let ret;
-        if (FXON) { const F = retField(d, o, pr, true, 100 - landing, 100 - st.yl, Math.round(clamp(3.3 + gross * 0.022 + ((p.a.KAC ?? 60) - 70) * 0.006, 3.4, 4.9) * 100) / 100); ret = F.R.td ? 100 : Math.max(-3, F.R.y); if (PBP) { lastFx = F.s; lastNum = null; } }
-        else { ret = Math.max(-2, Math.round(gauss(7.8 + (rs - 65) * 0.12 + stE[d] - stE[o] * 0.6 - ((p.a.KAC ?? 60) - 70) * 0.08, 5.5))); if (rnd() < 0.034 + (rs - 70) * 0.001 + (stE[d] - stE[o]) * 0.002) ret += Math.round(expR(34)); }
+        { const F = retField(d, o, pr, true, 100 - landing, 100 - st.yl, Math.round(clamp(3.3 + gross * 0.022 + ((p.a.KAC ?? 60) - 70) * 0.006, 3.4, 4.9) * 100) / 100); ret = F.R.td ? 100 : Math.max(-3, F.R.y); if (PBP) { lastFx = F.s; lastNum = null; } }
         const start = 100 - landing; ret = Math.min(ret, 100 - start);
         inc(rl, 'pr'); inc(rl, 'pry', ret); rl.prl = Math.max(rl.prl || 0, ret);
         if (start + ret >= 100) { inc(rl, 'prtd'); drv.k = `${nm(pr)} punt return TD`; note('punt', `${nm(p)} punts ${gross} yards and ${nm(pr)} takes it back ${ret} yards for a touchdown!`, gross); endDrive('Punt'); scoreTD(d, `${nm(pr)} ${ret}-yd punt return TD`); if (!st.over) st.pending = { k: 'ko', r: o }; return ev; }
@@ -3275,146 +3269,7 @@ function* gameGen(ht, at, opt = {}) {
     const dist = 100 - st.yl; drv.pl++; rzSnap(); g.ts[o].pl++; snapInj(o, d); EPX.qb = qb; pbSnap('pass', hurry); snapSpd(o, d);
     { const pe = penaltyCheck('pass', o, d); if (pe) return pe.ev; }
     for (const x of Lo.OL.slice(0, 5)) inc(sl(x, o), 'pbs'); for (const x of LU[d].DL.slice(0, POS.DL.start)) inc(sl(x, d), 'prn'); // pass-block and pass-rush snaps (the per-snap rates)
-    if (FXON) return passField(o, d, hurry, protect, h, was3);
-    const base = protect ? 36 : hurry ? 12 : 31;
-    const offP = GP[o].off, defP = GP[d].def;
-    { const rtOn = [Lo.WR[0], Lo.WR[1], Lo.WR[2], Lo.TE[0]]; if (rnd() < 0.35) rtOn.push(Lo.RB[0]); for (const x of rtOn) inc(sl(x, o), 'rt'); }
-    const OL5 = Lo.OL.slice(0, 5), olBlame = () => wpick(OL5, OL5.map(x => Math.pow(Math.max(8, 100 - (x.a.PBK ?? 60)) / 30, 2)));
-    const long3 = st.down >= 3 && st.togo >= 7, rp2 = long3 ? PK[d].rush.filter(x => x && available(x) && !hurt.has(x.id)) : [];
-    const rushBoost = rp2.length === 2 ? clamp((avgA(rp2, 'PRS') - avgA(Ld.DL.slice(0, 2), 'PRS')) * 0.5, -3, 4) : 0;
-    const rushPool = [...(rp2.length === 2 ? [rp2[0], rp2[1], ...Ld.DL.slice(2)] : Ld.DL), ...Ld.LB, Ld.S[0], Ld.CB[0]], rushW = rushPool.map((p, i) => [1.8, 1.8, 1.5, 1.5, 1.1, 0.9, 1.2, 1, 0.8, 0.5, 0.35][i] * Math.pow((p.a.PRS ?? 35) / 70, 2.9)); // elite rushers get home far more often than average ones
-    const oc = CL.o, dc = CL.d;
-    const ld = CL.user === 'off' ? Math.max(0, lean()) : 0;
-    const PP = PB_PLAYS[SNAP.play] || {}, tw = PP.tw || {};
-    const callSack = (1 + ld * 2.2) * (oc === 'quick' ? 0.5 : oc === 'deep' ? 1.3 : oc === 'pa' ? 1.35 : oc === 'screen' ? 0.45 : 1) * (dc === 'blitz' ? 1.35 : dc === 'prevent' ? 0.7 : 1) * pbSack(SNAP.play, SNAP.form);
-    const pressP = clamp((0.3 + rushBoost * 0.004 + (U[d].pr - U[o].pb - h) * 0.008 + (defP === 'blitz' ? 0.05 : 0) - (offP === 'quick' ? 0.08 : 0) - (protect ? 0.05 : 0)) * callSack, 0.08, 0.6);
-    let sackP = clamp(0.069 + (U[d].pr - U[o].pb - h) * 0.0035 - (qb.a.VIS - 70) * 0.0007 - ((qb.a.MOB ?? 55) - 60) * 0.0008 - ((qb.a.POC ?? 65) - 70) * 0.0004, 0.025, 0.17) * (1 + rushBoost * 0.015) * (defP === 'blitz' ? 1.2 : 1) * (offP === 'quick' ? 0.6 : 1) * callSack;
-    if (rnd() < sackP) {
-      const rusher = wpick(rushPool, rushW);
-      const loss = Math.min(clamp(Math.round(gauss(7, 2.5)), 1, 15), st.yl);
-      inc(ql, 'sk'); inc(ql, 'sky', loss); const rl = sl(rusher, d); inc(rl, 'sck'); inc(rl, 'tkl'); inc(rl, 'prs'); { const bl = sl(olBlame(), o); inc(bl, 'sa'); inc(bl, 'pra'); } g.ts[d].sk++; g.ts[d].prs++; g.ts[o].py -= loss;
-      injure(qb, o, 0.003);
-      if (rnd() < 0.09) { const spot = st.yl - loss; note('fum', `${nm(qb)} strip-sacked by ${nm(rusher)}, fumble recovered by the defense`, -loss); const ev = tick(6, 0); turnover('Fumble', 100 - spot, `${nm(qb)} strip-sacked by ${nm(rusher)}`, rnd() < 0.06); return ev; }
-      note('sack', `${nm(qb)} sacked by ${nm(rusher)} for a loss of ${loss}`, -loss, nm(rusher));
-      return result(-loss, 6, hurry ? 14 : 30, `${nm(qb)} sacked by ${nm(rusher)}`, was3, false);
-    }
-    const dp = defPkg(), third = st.down >= 3 && st.togo >= 4;
-    const pressured = rnd() < Math.max(0, (pressP - sackP) / (1 - sackP));
-    if (pressured) { inc(sl(wpick(rushPool, rushW), d), 'prs'); inc(sl(olBlame(), o), 'pra'); g.ts[d].prs++; if (lastLook) lastLook.fl += 'p'; } // a replay shows the quarterback under pressure
-    // mobile quarterbacks escape pressure and take off
-    { const mob = qb.a.MOB ?? 50, scrP = (pressured ? clamp((mob - 56) * 0.0095, 0, 0.28) : clamp((mob - 60) * 0.0008, 0, 0.03)) * (protect ? 0.3 : 1);
-      if (!hurry && rnd() < scrP) {
-        let yds = Math.round(gauss(4.5 + (mob - 70) * 0.12, 5) + (rnd() < 0.05 + (mob - 70) * 0.001 ? expR(14) : 0));
-        yds = clamp(yds, -2, dist); if (st.yl + yds <= 0) yds = 1 - st.yl;
-        inc(ql, 'ra'); inc(ql, 'ry', yds); ql.rl = Math.max(ql.rl || 0, yds); g.ts[o].ra++; g.ts[o].ry += yds; injure(qb, o, 0.002);
-        if (yds >= dist) { inc(ql, 'rtd'); note('run', `${nm(qb)} scrambles ${yds} yards for a touchdown`, yds); return result(yds, 6, 0, `${nm(qb)} ${yds}-yd TD scramble`, was3, false); }
-        if (rnd() < 0.006 * WE.fum * fumMult(qb)) { inc(ql, 'fum'); note('fum', `${nm(qb)} scrambles and fumbles`, yds); const ev = tick(6, 0); turnover('Fumble', 100 - (st.yl + yds), `${nm(qb)} fumbled on a scramble`, false); return ev; }
-        const oob = rnd() < (hurry ? 0.5 : 0.3); lastRole = 5;
-        note('run', `${nm(qb)} scrambles for ${yds === 0 ? 'no gain' : yds < 0 ? 'a loss of ' + (-yds) : yds + (yds === 1 ? ' yard' : ' yards')}`, yds);
-        return result(yds, 6, base, `${nm(qb)} ${yds}-yd scramble`, was3, oob);
-      } }
-    const tmw = hurry ? PK[o].tm.filter(x => x && available(x) && !hurt.has(x.id)) : [];
-    const tg = [tmw[0] || Lo.WR[0], tmw[1] || Lo.WR[1], tmw[2] || Lo.WR[2], Lo.TE[0], third && PK[o].rb3 ? PK[o].rb3 : Lo.RB[0], Lo.WR[3], Lo.TE[1], Lo.RB[1]];
-    const wk = offP === 'attackcb' ? weakCB(d) : -1; if (!GO[o]) GO[o] = tg.slice(0, 5).filter(x => x && x.id != null).sort((a, b) => b.ovr - a.ovr)[0]; // the quarterback's go-to target
-    // the quarterback reads the coverage: the receiver whose route in the concept beats it is likelier to get the ball
-    // how open each man is when the ball comes out: his best route in the concept against the coverage, and how good he is.
-    // A man who stays in to block isn't a target
-    // on a deep route, a receiver faster than the man on him runs away from him
-    const covD = [Ld.CB[0], Ld.CB[1], PK[d].nick || Ld.CB[2], Ld.S[0], Ld.LB[1], Ld.CB[3] || Ld.CB[2], Ld.LB[2] || Ld.LB[0], Ld.LB[0]];
-    const covPre = pickCov(dc), sepK0 = sepK(qb.a.VIS ?? 65), sep = tg.map((x, i) => { const all = PP.routes ? (PP.routes[PB_ROLE[i]] || []).map(z => (z[0] === 'check' ? 'flat' : z[0])) : [], rs = all.filter(z => RVC[z]); // a back who checks and releases is a checkdown
-      const deep = rs.some(z => ROUTES[z] && ROUTES[z][1] >= 18) || (!PP.routes && oc === 'deep'), burn = deep ? clamp((topSpd(x) - topSpd(covD[i])) * 0.6, -1.2, 1.2) : 0;
-      return PP.routes && all.length && !rs.length ? null : sepOf(rs.length ? Math.max(...rs.map(z => RVC[z][covPre])) : RVC_MEAN, ((x.ovr ?? 60) - 70) * 0.025 + burn); });
-    const open = i => (sep[i] == null ? 0.15 : Math.exp(sepK0 * (sep[i] - SEP0)));
-    // defenses bracket a receiver who is piling up targets today, and game-plan against one on a record pace for the season
-    const hot = i => { const x = tg[i], l = x && x.id != null && g.ps[x.id], ss = x && x.stats && x.stats[S.season], ypg = ss && ss.gp >= 4 ? (ss.rcy || 0) / ss.gp : 0, cpg = ss && ss.gp >= 4 ? (ss.rec || 0) / ss.gp : 0;
-      return 1 / (1 + Math.max(0, ((l && l.tg) || 0) - 10) * 0.15) / (1 + Math.max(0, ypg - 100) * 0.04) / (1 + Math.max(0, cpg - 7.5) * 0.6); };
-    const ti = oc === 'screen' ? (PP.scr ?? 4) : wIdx([16.5, 14, 12, 13.2, 7.5, 7, 5.5, 4].map((w, i) => w * hot(i) * (tw[PB_ROLE[i]] || 1) * open(i) * Math.pow(tg[i].ovr / 70, (st.yl >= 85 ? 1.6 : 2.7) - 1.45 * sepK0) * (tg[i] === GO[o] ? 1.02 : 1) * (tg[i].id != null && tg[i].id === shadowId[d] ? 0.7 : 1) * (i === wk ? 1.5 : 1) * (oc === 'deep' && i >= 3 ? 0.3 : 1)));
-    const rec = tg[ti], rl = sl(rec, o); lastRole = [8, 9, 10, 7, 6, 10, 7, 6][ti];
-    snapSpd(o, d, { [lastRole]: rec }); const sepT = sep[ti] ?? SEP0; { const sl5 = [ti === 7 ? 7 : 4, ti === 6 ? 6 : 3, 0, 1, ti === 5 ? 5 : 2]; lastSep = sl5.map(i => (i === ti && oc === 'screen' ? '' : sep[i] == null ? '' : sep[i].toFixed(1))).join(','); } // by field spot: back, tight end, wideouts, slot
-    const baseSlot = covVal(Ld.S[1], MANF[d]) >= covVal(Ld.LB[0], MANF[d]) ? Ld.S[1] : Ld.LB[0];
-    const defBy = [Ld.CB[0], Ld.CB[1], dp === 'base' || dp === 'goal' ? baseSlot : (PK[d].nick || Ld.CB[2]), dp === 'dime' && PK[d].dime ? PK[d].dime : pick([Ld.LB[0], Ld.S[0], Ld.S[1]]), Ld.LB[1], Ld.CB[3], Ld.LB[2], Ld.LB[0]][ti];
-    let cov = covVal(defBy, MANF[d]);
-    if (defP === 'shadow') cov += rec.id != null && rec.id === shadowId[d] ? 10 : -2;
-    if (defP === 'box') cov -= 3; if (defP === 'blitz') cov -= 2; if (dp === 'goal') cov -= 4;
-    if (dc) { const deepT = oc === 'deep' || (oc === 'pa' && rnd() < 0.5);
-      cov += dc === 'blitz' ? -6 : dc === 'stack' ? -4 : dc === 'man' ? (deepT ? -2.5 : 1.5) : dc === 'zone' ? (deepT ? 3 : -2) : dc === 'prevent' ? (deepT ? 9 : -5) : 0; }
-    cov += ld * 14;
-    if (oc === 'pa') cov -= (ld > 0 ? 0 : 1) * (dc === 'stack' ? 6 : dc === 'zone' ? -4 : dc === 'prevent' ? -6 : 1) + (U[o].rb - 65) * 0.08;
-    const armX = ((qb.a.ARM ?? 65) - 70) * 0.002, r = rnd(), [t1, t2] = offP === 'quick' ? [0.75, 0.95] : ti <= 2 ? [0.53, 0.86 - armX] : [0.62, 0.9 - armX / 2]; let air, cm;
-    if (r < t1) { air = randInt(-2, 8); cm = 0.06; } else if (r < t2) { air = randInt(9, 19); cm = -0.08; } else { air = randInt(20, 42); cm = -0.28; }
-    if (offP === 'quick') cm += 0.02;
-    if (oc === 'quick') { air = randInt(-1, 8); cm = 0.08; } else if (oc === 'deep') { air = randInt(20, 40); cm = -0.31; } else if (oc === 'pa') { air = randInt(8, 28); cm = air >= 20 ? -0.25 : -0.06; } else if (oc === 'screen') { air = randInt(-3, 1); cm = 0.16; }
-    if (CL.side) { air = randInt(5, 15); cm = 0.02; }
-    if (ti >= 3 && air > 16 && oc !== 'deep') air = randInt(6, 16);
-    if (air > dist) air = dist;
-    // the targeted receiver runs his route in the concept, the one that fits the throw's depth
-    const pbRt = PP.routes ? (PP.routes[PB_ROLE[ti]] || []).map(x => x[0]).filter(r => ROUTES[r] && air >= ROUTES[r][0] - 1 && air <= ROUTES[r][1] + 1) : [];
-    lastAir = air; lastRt = pbRt.length ? pbRt[Math.floor(rnd() * pbRt.length)] : pickRoute([0, 1].includes(ti) ? 'wr' : [2, 5].includes(ti) ? 'slot' : [3, 6].includes(ti) ? 'te' : 'rb', air, oc); lastCv = covPre;
-    const accR = air >= 20 ? (qb.a.DAC ?? qb.a.ACC) : qb.a.ACC;
-    let cp = 0.659 + cm + ((rec.a.RTE ?? rec.a.HND ?? 50) - 70) * 0.0018 + ((rec.a.AGI ?? 60) - 70) * 0.001 + ((rec.a.HND ?? 50) - 70) * 0.002 - (cov - 70) * 0.0045 + h * 0.004 + (pressured ? -0.12 : 0.04);
-    if (cov >= (rec.a.RTE ?? 60)) cp += ((rec.a.CIT ?? rec.a.HND ?? 55) - 70) * 0.0015;
-    cp += ((RVC[lastRt] ? RVC[lastRt][lastCv] : 0) - RVC_MEAN) * 0.6; // the route against the coverage
-    if (oc !== 'screen') cp += (sepT - SEP_T) * 0.03; // how open he is
-    cp += pbPassEdge(SNAP.play, { cov: lastCv, pkg: dp, form: SNAP.form, fam: SNAP.fam }); // the concept against the coverage, the formation against the personnel
-    if (oc === 'screen') cp += dc === 'blitz' ? 0.09 : dc === 'stack' ? -0.05 : 0.03;
-    // call-vs-call completion swings (the matchup matters more than the call)
-    if (oc === 'deep' || (oc === 'pa' && air >= 20)) cp += dc === 'prevent' ? -0.16 : dc === 'zone' ? -0.09 : dc === 'man' ? 0.02 : dc === 'blitz' ? 0.04 : dc === 'stack' ? 0.06 : -0.03;
-    else if (oc === 'pa') cp += dc === 'stack' ? 0.07 : dc === 'zone' ? -0.07 : dc === 'prevent' ? -0.05 : 0;
-    else if (oc === 'quick') cp += dc === 'man' ? -0.07 : dc === 'blitz' ? 0.05 : dc === 'prevent' ? 0.05 : 0;
-    cp -= ld * (oc === 'pa' ? 0.7 : 0.45);
-    cp -= WE.cp + (air >= 20 ? WE.deep : 0);
-    if (st.qtr >= 4 && Math.abs(g.score[o] - g.score[d]) <= 8) cp += hasT(rec, 'clutch') ? 0.015 : 0;
-    if (st.down === 3) cp += 0.055; // on third down the ball goes to the route that beats the sticks
-    const xcp = clamp(cp, 0.2, 0.9);
-    cp += (accR - 70) * (accR >= 70 ? 0.003 : 0.0015) + (air >= 20 ? ((qb.a.ARM ?? 65) - 70) * 0.0015 : 0) + (pressured ? ((qb.a.POC ?? 65) - 70) * 0.004 : 0);
-    if (st.qtr >= 4 && Math.abs(g.score[o] - g.score[d]) <= 8 && hasT(qb, 'clutch')) cp += 0.035;
-    cp = clamp(cp, 0.2, 0.9);
-    inc(ql, 'pa'); inc(rl, 'tg'); g.ts[o].pa++; injure(qb, o, 0.0003); EPX.rec = rec;
-    const cvl = sl(defBy, d); inc(cvl, 'ctg'); EPX.cov = defBy; // coverage: targets, catches, yards and scores against the man covering him
-    inc(ql, 'xa'); inc(ql, 'xcp', Math.round(xcp * 1000)); if (pressured) inc(ql, 'upa'); trkThrow(ql, rl, cvl, air, sepT, xcp, null);
-    if (ti >= 5) inc(rl, 'rt');
-    if (rnd() < cp) {
-      let yac = air >= 20 ? expR(2.45) : expR(3.85 + ((rec.a.SPD ?? 55) - 70) * 0.035 + ((rec.a.AGI ?? 60) - 70) * 0.025);
-      if (rnd() < 0.028 + ((rec.a.SPD ?? 55) - 70) * 0.0004 + ((rec.a.AGI ?? 60) - 70) * 0.0002) yac += expR(18);
-      if (rnd() < clamp(0.07 + ((rec.a.AGI ?? 60) - 70) * 0.002 + ((rec.a.POW ?? rec.a.STR ?? 55) - 70) * 0.0012 - ((defBy.a.TKL ?? 55) - 60) * 0.0015, 0.02, 0.16)) { yac += expR(4); inc(rl, 'btk'); inc(sl(defBy, d), 'mtk'); }
-      if (oc !== 'screen') yac *= clamp(1 + (sepT - SEP_T) * 0.08, 0.7, 1.4); // room to run
-      if (CL.side) yac *= 0.35;
-      if (hurry) yac *= 0.75; // receivers get out of bounds instead of fighting for yards
-      if (defP === 'blitz') yac *= 1.12;
-      if (oc === 'screen') yac *= dc === 'blitz' ? 2.4 : dc === 'stack' ? 1 : 2;
-      if (dc === 'blitz' && oc !== 'screen') yac *= 1.35; else if (dc === 'prevent') yac *= 1.25;
-      let yds = Math.round(air + yac); if (yds > dist) yds = dist; if (st.yl + yds <= 0) yds = 1 - st.yl;
-      inc(rl, 'yac', Math.max(0, yds - Math.max(0, air)));
-      if (pressured) { inc(ql, 'upc'); inc(ql, 'upy', yds); if (yds >= dist) inc(ql, 'uptd'); }
-      inc(ql, 'pc'); inc(ql, 'py', yds); inc(rl, 'rec'); inc(rl, 'rcy', yds); rl.rcl = Math.max(rl.rcl || 0, yds); g.ts[o].py += yds; g.ts[o].pc++; inc(cvl, 'cc'); inc(cvl, 'cy', yds);
-      injure(rec, o, 0.002);
-      if (yds >= dist) { inc(ql, 'ptd'); inc(rl, 'rctd'); inc(cvl, 'ctd'); ql.pl = Math.max(ql.pl || 0, yds); note('pass', `${nm(qb)} finds ${nm(rec)} for a ${yds}-yard touchdown`, yds, nm(rec)); return result(yds, 6, 0, `${nm(qb)} ${yds}-yd TD pass to ${nm(rec)}`, was3, false); }
-      const tk = wpick([defBy, Ld.S[0], Ld.S[1], Ld.LB[0], Ld.LB[2], Ld.DL[0]], [5, 2, 2, 2, 1, 0.5]); inc(sl(tk, d), 'tkl'); injure(tk, d, 0.001);
-      if (rnd() < 0.0065 * WE.fum * fumMult(rec)) { inc(rl, 'fum'); note('fum', `${nm(qb)} to ${nm(rec)} for ${yds}, but ${nm(rec)} fumbles and ${nm(tk)} recovers`, yds); const ev = tick(6, 0); turnover('Fumble', 100 - (st.yl + yds), `${nm(rec)} fumbled, recovered by ${nm(tk)}`, rnd() < 0.05); return ev; }
-      // about as many fumbles are recovered by the offense as lost (r = the replay shows it, c = he fell on it himself)
-      const kept = rnd() < 0.0065 * WE.fum * fumMult(rec), own = kept ? (rnd() < 0.45 ? rec : pick([Lo.WR[0], Lo.WR[1], Lo.TE[0], Lo.OL[2]].filter(x => x && x !== rec)) || rec) : null;
-      if (kept) { inc(rl, 'fum'); inc(rl, 'fumr'); lastFin = own === rec ? 'rc' : 'r'; }
-      const oob = !kept && (CL.side ? rnd() < 0.85 : rnd() < (hurry ? 0.55 : 0.18));
-      note('pass', `${nm(qb)} pass to ${nm(rec)} for ${yds === 0 ? 'no gain' : yds < 0 ? 'a loss of ' + (-yds) : yds + (yds === 1 ? ' yard' : ' yards')}${air >= 20 ? ', deep' : ''}${kept ? `, fumbles, ${own === rec ? 'and falls on it himself' : `recovered by ${nm(own)}`}` : ''}${oob && hurry ? ', out of bounds' : ''}`, yds, nm(rec));
-      return result(yds, 6, base, `${nm(qb)} ${yds}-yd pass to ${nm(rec)}`, was3, oob);
-    }
-    let ip = clamp(0.056 + (SEP_T - sepT) * 0.004 + (cov - qb.a.VIS) * 0.0006 + (air >= 20 ? 0.035 : 0) + (hurry ? 0.008 : 0) + (pressured ? 0.012 : -0.004), 0.02, 0.16);
-    { const qs = qb.stats && qb.stats[S.season]; if (qs && (qs.pa || 0) >= 100 && (qs.pint || 0) / qs.pa > 0.03) ip *= 0.75; } // coaches rein in a turnover-prone passer with safer reads
-    if (rnd() < ip) {
-      const pool = [Ld.S[0], Ld.S[1], Ld.LB[0], Ld.CB[0], Ld.CB[1]], picker = rnd() < 0.5 ? defBy : pool[wIdx(pool.map((q, i) => (i === 2 ? 0.6 : 1) * Math.pow(q.ovr / 70, 3)))]; // ball hawks get more of the loose ones
-      inc(ql, 'pint'); inc(sl(picker, d), 'dint'); if (pressured) inc(ql, 'upint');
-      note('int', `${nm(qb)} pass intended for ${nm(rec)} is intercepted by ${nm(picker)}`, 0, nm(picker));
-      const ev = tick(7, 0);
-      turnover('INT', 100 - (st.yl + Math.max(air, 0)), `${nm(qb)} intercepted by ${nm(picker)}`, rnd() < 0.035);
-      return ev;
-    }
-    const dropped = rnd() < clamp(0.12 + (70 - (rec.a.HND ?? 55)) * 0.005 - (pressured ? 0.05 : 0), 0.03, 0.28);
-    if (dropped) inc(rl, 'drop');
-    // why it fell incomplete: dropped, broken up by the man covering him (likelier when he's the better of the two), or a bad throw
-    const pbu = !dropped && rnd() < (sepT < 1 ? 0.75 : sepT < 2 ? 0.5 : sepT < 3.5 ? 0.22 : 0.05);
-    if (pbu) inc(cvl, 'pbu');
-    note('inc', dropped ? `${nm(qb)} pass is dropped by ${nm(rec)}` : `${nm(qb)} pass incomplete, intended for ${nm(rec)}${air >= 20 ? ' deep' : ''}${pbu ? `, broken up by ${nm(defBy)}` : ''}`, 0);
-    return result(0, 6, 0, `${nm(qb)} incomplete`, was3, false);
+    return passField(o, d, hurry, protect, h, was3);
   }
   function runPlay(o, d, hurry, protect, h, was3) {
     const Lo = LU[o], Ld = LU[d]; snapInj(o, d);
@@ -3432,41 +3287,11 @@ function* gameGen(ht, at, opt = {}) {
     EPX.car = car; lastRole = car === Lo.QB[0] ? 5 : 6; pbSnap('run', hurry, qbRun); snapSpd(o, d, { [lastRole]: car });
     const cl = sl(car, o); drv.pl++; rzSnap(); g.ts[o].pl++;
     { const pe = penaltyCheck('run', o, d); if (pe) return pe.ev; }
-    if (FXON) return runField(o, d, car, qbRun, hurry, protect, h, was3);
-    const spd = qbRun ? (car.a.MOB ?? 50) : (car.a.SPD ?? 58), eff = qbRun ? 20 + (car.a.MOB ?? 50) * 0.6 : spd * 0.35 + (car.a.AGI ?? spd) * 0.3 + (car.a.POW ?? 55) * 0.35;
-    const adv = (U[o].rb * 0.45 + eff * 0.55 + h) - U[d].rs + (GP[d].def === 'box' ? -4 : GP[d].def === 'blitz' ? 1 : 0) + (GP[o].off === 'run' ? 1 : 0);
-    const dpr = defPkg(), glRst = PK[d].gl.filter(Boolean).reduce((a, x) => a + (x.a.RST ?? 50), 0) / Math.max(1, PK[d].gl.filter(Boolean).length);
-    const pkgAdv = dpr === 'base' ? -1 : dpr === 'nickel' ? 1 : dpr === 'dime' ? 2.5 : -3 - (glRst - 65) * 0.08 + (st.yl >= 95 ? ((Lo.TE[1].a.BLK ?? 40) - 60) * 0.04 : 0);
-    const oc = CL.o, dc = CL.d;
-    const callMean = (oc === 'inside' ? 0.25 + (st.togo <= 2 ? 0.7 : 0) : oc === 'outside' ? 0.25 + (spd - 70) * 0.03 : 0) + (dc === 'stack' ? -1.6 : dc === 'prevent' ? 1.3 : dc === 'zone' || dc === 'man' ? 0.35 : dc === 'blitz' ? (rnd() < 0.3 ? -2.5 : 1.3) : 0);
-    const lr = CL.user === 'off' ? Math.min(0, lean()) : 0;
-    // the scheme and formation: edges against the defense's call and personnel, and the situation
-    const PP = PB_PLAYS[SNAP.play] || {}, pbE = pbRunEdge(SNAP.play, { dc, pkg: dpr, short: st.down >= 3 && st.togo <= 2, long: st.down >= 3 && st.togo >= 7, spd, form: SNAP.form }) + (PP.qb === 'read' && qbRun ? ((car.a.MOB ?? 50) - 70) * 0.03 : 0);
-    let yds = gauss(3.99 + (st.down >= 3 && st.togo <= 2 ? 0.7 : 0) + callMean + pbE + lr * 8 + (adv + pkgAdv) * 0.065 + WE.run + (hasT(car, 'clutch') && st.qtr >= 4 && Math.abs(g.score[o] - g.score[d]) <= 8 ? 0.4 : 0), 3.4);
-    if (PP.qb === 'sneak') yds = gauss(1.9 + ((car.a.STR ?? car.a.POW ?? 60) - 60) * 0.01 + (dc === 'stack' ? -0.4 : 0), 1.3); // a sneak: a yard or two, almost never more
-    else if (rnd() < (0.032 + (spd - 70) * 0.0009 + ((car.a.AGI ?? spd) - 70) * 0.0004) * (oc === 'inside' ? 0.6 : oc === 'outside' ? 1.7 : 1) * (dc === 'stack' ? 0.6 : dc === 'blitz' ? 1.4 : 1) * (PP.boom || 1)) yds += expR(15);
-    if (PP.loss && rnd() < (PP.loss - 1) * 0.3) yds -= randInt(1, 3); // boom-or-bust schemes get stuffed behind the line more often
-    const pool = [...Ld.DL, ...Ld.LB, Ld.S[0], Ld.S[1], Ld.CB[0], Ld.CB[1]], poolW = [2, 2, 1.8, 1.8, 0.9, 0.7, 2.6, 2.4, 1.8, 1.5, 1.5, 1, 0.8].map((w, i) => w * ((pool[i].a.TKL ?? pool[i].a.RST ?? 50) / 70));
-    const btk = rnd() < clamp(0.14 + ((car.a.AGI ?? 60) - 70) * 0.004 + ((car.a.POW ?? 55) - 70) * 0.003 - (U[d].rs - 70) * 0.002, 0.04, 0.3);
-    if (btk) { yds += expR(3.2); inc(cl, 'btk'); const mt = wpick(pool, pool.map((x, i) => poolW[i] * Math.pow(70 / Math.max(35, x.a.TKL ?? x.a.RST ?? 50), 2))); inc(sl(mt, d), 'mtk'); }
-    const dist = 100 - st.yl;
-    yds = Math.round(Math.max(yds, -4)); if (yds > dist) yds = dist; if (st.yl + yds < 0) yds = -st.yl;
-    { const c = Math.min(yds, Math.max(-3, Math.round(gauss(1.5 + (adv + pkgAdv) * 0.04 - ((car.a.POW ?? 55) - 70) * 0.015, 1.5)))); inc(cl, 'yco', Math.max(0, yds - Math.max(c, 0))); lastBc = c; } // yards before contact: where the replay's first defender gets to him
-    inc(cl, 'ra'); inc(cl, 'ry', yds); cl.rl = Math.max(cl.rl || 0, yds); g.ts[o].ra++; g.ts[o].ry += yds;
-    injure(car, o, 0.002);
-    if (yds >= dist) { inc(cl, 'rtd'); note('run', `${nm(car)} runs ${yds} yards for a touchdown`, yds, nm(car)); return result(yds, 5, 0, `${nm(car)} ${yds}-yd TD run`, was3, false); }
-    const tk = wpick(pool, poolW); inc(sl(tk, d), 'tkl'); injure(tk, d, 0.001);
-    if (rnd() < 0.0075 * WE.fum * fumMult(car)) { inc(cl, 'fum'); note('fum', `${nm(car)} runs for ${yds} and fumbles, ${nm(tk)} recovers`, yds); const ev = tick(5, 0); turnover('Fumble', 100 - (st.yl + yds), `${nm(car)} fumbled, recovered by ${nm(tk)}`, rnd() < 0.04); return ev; }
-    // about as many fumbles are recovered by the offense as lost
-    const kept = rnd() < 0.0075 * WE.fum * fumMult(car), own = kept ? (rnd() < 0.5 ? car : pick(Lo.OL.slice(0, 5).filter(Boolean)) || car) : null;
-    if (kept) { inc(cl, 'fum'); inc(cl, 'fumr'); lastFin = own === car ? 'rc' : 'r'; }
-    const oob = !kept && (CL.clock ? false : rnd() < (hurry ? 0.3 : protect ? 0.02 : 0.08));
-    note('run', `${nm(car)} ${qbRun ? 'keeps it' : 'runs'} for ${yds === 0 ? 'no gain' : yds < 0 ? 'a loss of ' + (-yds) : yds + (yds === 1 ? ' yard' : ' yards')}${kept ? `, fumbles, ${own === car ? 'and falls on it himself' : `recovered by ${nm(own)}`}` : ''}${oob && hurry ? ', out of bounds' : ''}`, yds, nm(car));
-    return result(yds, 5, protect ? 39 : hurry ? 14 : 34, `${nm(car)} ${yds}-yd run`, was3, oob);
+    return runField(o, d, car, qbRun, hurry, protect, h, was3);
   }
   // ---- the field engine: every snap played out by all 22 players (09-field.js), and the result goes in the book the same
   // way as ever. A replay rebuilds the snap from its seed and this game's field cards (the players' ratings, packed) ----
-  const FXON = SET('field') === 1 && !opt.classic, FXC = { m: new Map(), a: [] };
+  const FXC = { m: new Map(), a: [] };
   const fxIdx = (p, pos) => { const k = p && p.id != null ? p.id : 'x' + pos + (p ? p.ovr : ''); let i = FXC.m.get(k); if (i == null) { i = FXC.a.length; FXC.a.push(fxCard(p, pos)); FXC.m.set(k, i); } return i; };
   function fxSnap(o, d, X, over) {
     const { off, def } = snapSpd(o, d, over);
@@ -7039,20 +6864,19 @@ function makeScheduleGeneral() {
 }
 
 // ---------- simulation settings ----------
-const SET_DEFAULT = { inj: 1, trade: 1, dev: 1, pen: 1, floor: 0.89, press: 0, field: 1, film: 1 };
+const SET_DEFAULT = { inj: 1, trade: 1, dev: 1, pen: 1, floor: 0.89, press: 0, film: 1 };
 const SET_OPTS = {
   trade: { name: 'AI trading', opts: [[0.4, 'Quiet'], [1, 'Normal'], [1.8, 'Active']] },
   dev: { name: 'Player development', opts: [[0.7, 'Slow'], [1, 'Normal'], [1.35, 'Fast']] },
   pen: { name: 'Penalties', opts: [[0.6, 'Fewer'], [1, 'Normal'], [1.4, 'More']] },
   floor: { name: 'Salary floor', opts: [[0, 'None'], [0.85, '85% of cap'], [0.89, '89% of cap']] },
   press: { name: 'Postgame press conferences', opts: [[0, 'Off'], [1, 'On']] },
-  field: { name: 'Play engine', opts: [[1, 'Players think for themselves'], [0, 'Classic']] },
   film: { name: 'Film room reminder after your games', opts: [[1, 'On'], [0, 'Off']] },
 };
 // only settings still offered are read from a save (injury frequency and cap growth were removed and stay at their defaults)
 const SET = k => (SET_OPTS[k] && S.set && S.set[k] != null ? S.set[k] : SET_DEFAULT[k]);
-// older saves: the field engine became the default play engine; a save that stored the old default moves to it once
-function fieldDefault() { if (S.fieldDefV) return; S.fieldDefV = 1; if (S.set && S.set.field === 0) S.set.field = 1; }
+// older saves: the classic play engine is gone, so a stored engine choice is dropped (every game is played out by all 22)
+function fieldDefault() { if (S.set) delete S.set.field; }
 function setSimSetting(k, v) { if (!SET_OPTS[k]) return; S.set = { ...SET_DEFAULT, ...(S.set || {}), [k]: +v }; }
 
 // ---------- draft grades: on draft day, and three years later ----------
@@ -8593,7 +8417,7 @@ const PCT_K = [
 const PCT_P = [['pavg', 'Yards per punt', s => pctRate(s.pny || 0, s.pn), s => s.pn || 0, 2, 0, 'f1']];
 // (the same metric with a lower volume floor, for a role that gets less of it: a quarterback's carries, a back's routes)
 const pctFloor = (ms, f) => ms.map(m => { const c = m.slice(); c[4] *= f; return c; });
-// tracking: what the field engine measures as the play happens (the classic engine has the window and depth, not the clock)
+// tracking: what the field engine measures as the play happens (seasons played on the old classic engine have the window and depth, not the clock)
 const PCT_TRK_QB = [
   ['tt', 'Time to throw', s => s.ttN ? s.ttS / 10 / s.ttN : null, s => s.ttN || 0, 12, 2, 'sec', 'From the snap to the release.'],
   ['adot', 'Average depth of target', s => s.xa ? (s.ay || 0) / s.xa : null, s => s.xa || 0, 12, 2, 'f1', 'Air yards per targeted throw.'],
@@ -10269,7 +10093,7 @@ function cShare(X, o) {
 }
 function cAiOff(X, o) {
   const s = X.st, diff = cDiff(X, o), tempo = cAiTempo(X, o);
-  let pass = cShare(X, o) + (cFxOn() ? 0.06 : 0.02);
+  let pass = cShare(X, o) + 0.06;
   if (s.dn === 3 && s.tg >= 7) pass = 0.88; else if (s.dn === 3 && s.tg >= 4) pass = 0.72; else if (s.dn >= 3 && s.tg <= 2) pass = 0.3; else if (s.dn === 2 && s.tg >= 8) pass += 0.12; else if (s.dn === 1) pass -= 0.04;
   if (s.yl >= 96) pass -= 0.25; else if (s.yl >= 88) pass -= 0.1;
   if (tempo === 'hurry') pass = Math.max(pass, 0.78); if (tempo === 'milk' && X.q === 4) pass = Math.min(pass, 0.28);
@@ -10282,8 +10106,7 @@ function cAiOff(X, o) {
     const long = s.dn >= 3 && s.tg >= 7;
     // (the field engine plays out whatever is called, so the coordinator calls a real mix: a third dropbacks, a quarter
     // quick game, play action on early downs, a screen now and then and an occasional shot down the field)
-    const w = cFxOn() ? { quick: 2.7 + blitzes * 0.6, drop: 3.3 + (long ? 2.5 : 0), deep: 0.7 + (long ? 0.6 : 0) + stacks * 0.25, pa: s.dn <= 2 ? 2.4 + stacks * 0.8 : 0.3, screen: long && s.dn === 4 ? 0 : 0.9 + blitzes * 0.5 }
-      : { quick: 2.5 + blitzes * 0.6, drop: 0.8 + (long ? 0.5 : 0), deep: 1.5 + (long && s.tg >= 12 ? 1.5 : long ? 0.6 : 0) + stacks * 0.4, pa: s.dn <= 2 ? 1.9 + stacks * 0.8 : 0.5, screen: long && s.dn === 4 ? 0 : long ? 0.3 : 0.9 + blitzes * 0.5 };
+    const w = { quick: 2.7 + blitzes * 0.6, drop: 3.3 + (long ? 2.5 : 0), deep: 0.7 + (long ? 0.6 : 0) + stacks * 0.25, pa: s.dn <= 2 ? 2.4 + stacks * 0.8 : 0.3, screen: long && s.dn === 4 ? 0 : 0.9 + blitzes * 0.5 }
     if (deepish >= 3) { w.quick += 1; w.screen += 0.4; w.deep *= 0.7; w.drop *= 0.8; }
     return wpick(Object.keys(w), Object.values(w));
   }
@@ -10293,8 +10116,8 @@ function cAiOff(X, o) {
 function cAiDef(X, d) {
   const s = X.st, o = 1 - d, diff = cDiff(X, d), oh = X.tend[o].slice(-6), runs = oh.filter(c => c === 'inside' || c === 'outside').length, deeps = oh.filter(c => c === 'deep' || c === 'pa').length;
   if (cLate(X) && diff > 0 && diff <= 8 && X.clk < 60 && s.yl < 70) return rnd() < 0.7 ? 'prevent' : 'zone';
-  // (with the field engine a blitz is played out for real, extra rushers and all, so coordinators send one less often)
-  const fx = cFxOn(), bw = fx ? 0.45 : 1;
+  // (a blitz is played out for real, extra rushers and all, so coordinators send one less often)
+  const bw = 0.45;
   if (s.tg <= 2 && s.dn >= 3) return rnd() < 0.6 ? 'stack' : rnd() < 0.5 * bw ? 'blitz' : 'man';
   if (s.dn === 3 && s.tg >= 8) return wpick(['zone', 'blitz', 'man', 'prevent'], [4, 2.5 * bw, 2, s.tg >= 14 ? 1.5 : 0.3]);
   if (oh.length >= 4 && runs >= 4 && rnd() < 0.5) return 'stack';
@@ -10314,50 +10137,26 @@ function cEdge(X, o) { let e = colEdge(X, o) + (X.pm ? X.pm[o] : 0) + (X.film ? 
 // the playbook (08-playbook.js, shared with the pro sim): the play and formation (the user's call, or the coordinator's),
 // and the package the defense answers with. Its edges ride on top of the call against the call
 // the book's edges are centered for the pro game; these re-center them on how college teams call it
-// (the average boom and bust of each run family, the average run and pass edge)
-const C_PB_N = {}; for (const f of ['inside', 'outside']) { const ks = pbIn(f, false), w = k => PB_W[k] ?? 1, W = ks.reduce((a, k) => a + w(k), 0); C_PB_N[f] = { boom: ks.reduce((a, k) => a + w(k) * (PB_PLAYS[k].boom || 1), 0) / W, loss: ks.reduce((a, k) => a + w(k) * (PB_PLAYS[k].loss || 1), 0) / W }; }
-const C_PB_RUN = 0.1, C_PB_PASS = 0.015, C_SEP_T = 2.41;
+// (the average pass edge; the heave below is the only snap that still uses it)
+const C_PB_PASS = 0.015, C_SEP_T = 2.41;
 function cRes(X, o, oc, dc, U, opt = {}) {
   const s = X.st, pb = opt.pb || (opt.pb = {});
   if (!(pb.play && PB_PLAYS[pb.play] && PB_PLAYS[pb.play].fam === oc)) pb.play = null;
   pb.sit = { yl: s.yl, down: s.dn, togo: s.tg };
   const pkg0 = s.yl >= 95 ? 'goal' : dc === 'prevent' ? 'dime' : dc === 'man' || dc === 'zone' || (s.dn >= 3 && s.tg >= 6) ? 'nickel' : 'base';
   pb.pkg0 = pkg0;
-  if (!opt.hail && C_FX[oc] && cFxOn()) { const r = cFxRes(X, o, oc, dc, U, opt); r.pb = pb; return r; }
-  const r = cRes0(X, o, oc, dc, U, opt, pb);
+  if (!opt.hail) { const r = cFxRes(X, o, oc, dc, U, opt); r.pb = pb; return r; }
+  const r = cHeave(X, o, oc, dc, U, opt, pb);
   if (!pb.play) pb.play = pbPickPlay(oc, pb.sit) || (oc === 'outside' ? 'ozone' : oc === 'inside' ? 'zone' : 'slantflat');
   if (!pb.form || !PB_FORMS[pb.form] || (r.k === 'run' && !r.scr && PB_FORMS[pb.form].noRun)) pb.form = pbPickForm(pb.play, pb.sit);
   if (!pb.pkg) pb.pkg = pbMatch(pkg0, pb.form);
   r.pb = pb; return r;
 }
-function cRes0(X, o, oc, dc, U, opt, pb) {
+// the one snap the field engine doesn't play: a last-second heave into the end zone, rolled from the matchups
+function cHeave(X, o, oc, dc, U, opt, pb) {
   const d = 1 - o, s = X.st, yl = s.yl, dist = 100 - yl, e = cEdge(X, o) + (opt.fake ? 0.6 : 0), so = X.sm ? X.sm[o] : null, sd = X.sm ? X.sm[d] : null;
   const fx = (C_FX[oc] || C_FX.inside)[dc] || [0, 0, 1, 1], adjD = X.adj[d], adjO = X.adj[o];
   const O = U.O, D = U.D, qb = O.QB;
-  const runCall = oc === 'inside' || oc === 'outside';
-  if (runCall) {
-    // who carries: the back, his backup, or the quarterback on a designed run
-    const rbs = O.RB.filter(Boolean), qw = qb ? 0.1 + clamp(cA(qb, 'MOB', 50) - 55, 0, 30) * 0.006 + (so ? so.qbRun : 0) : 0;
-    const PQ = pb.play ? PB_PLAYS[pb.play].qb : null;
-    const cands = [[rbs[0], 0.74], [rbs[1], 0.17], [pb.play ? null : qb, qw]].filter(x => x[0]);
-    const car = PQ === 'sneak' && qb ? qb : PQ === 'read' && qb && rnd() < clamp(0.32 + (cA(qb, 'MOB', 50) - 60) * 0.012, 0.12, 0.6) ? qb : cands.length ? cands[wIdx(cands.map(x => x[1]))][0] : qb;
-    if (!pb.play) pb.play = car && car === qb ? (s.tg <= 1 ? 'sneak' : 'read') : pbPickPlay(oc, pb.sit);
-    if (!pb.form || !PB_FORMS[pb.form] || PB_FORMS[pb.form].noRun) pb.form = pbPickForm(pb.play, pb.sit);
-    pb.pkg = pbMatch(pb.pkg0, pb.form);
-    const PP = PB_PLAYS[pb.play] || {}, pbE = pbRunEdge(pb.play, { dc, pkg: pb.pkg, short: s.dn >= 3 && s.tg <= 2, long: s.dn >= 3 && s.tg >= 7, spd: cA(car, 'SPD', 60) + 8, form: pb.form }) - C_PB_RUN, PN = C_PB_N[oc] || { boom: 1, loss: 1 };
-    const blk = cAvg(X, O.OL, 'RBK', 45) * 0.8 + cA(O.TE, 'BLK', 45) * cFat(X, O.TE) * 0.2, front = cAvg(X, D.DL, 'RST', 45) * 0.6 + cAvg(X, D.LB, 'TKL', 45) * 0.4;
-    const back = car === qb ? cA(car, 'MOB', 50) * 0.7 + cA(car, 'SPD', 50) * 0.3 : (cA(car, 'SPD', 50) * 0.35 + cA(car, 'AGI', 50) * 0.3 + cA(car, 'POW', 50) * 0.35);
-    const edge = (blk - front) * 0.035 + (back * cFat(X, car) - 58) * 0.055 + e * 0.12 + fx[0] + (adjD && adjD.def === 'run' ? -0.5 : adjD && adjD.def === 'pass' ? 0.3 : 0) + (adjO && adjO.off === 'run' ? 0.15 : 0) + (opt.fake ? 1.5 : 0);
-    const inside = oc === 'inside', r = rnd();
-    const rz = s.yl >= 80; // the field shrinks in the red zone
-    const pStuff = clamp(((inside ? 0.17 : 0.22) - edge * 0.015 - pbE * 0.02 + (rz ? 0.03 : 0)) * (PP.loss || 1) / PN.loss, 0.05, 0.36), pBreak = clamp(((inside ? 0.09 : 0.12) + edge * 0.006) * fx[3] * (PP.boom || 1) / PN.boom + (sd ? sd.big : 0) * 0.5, 0.01, 0.2);
-    let y = r < pStuff ? -randInt(1, inside ? 3 : 5) : r < pStuff + pBreak ? randInt(10, 15) + Math.round(expR(inside ? 10 : 15)) : Math.max(0, Math.round(gauss((inside ? 3.9 : 4.0) + edge * 0.3 + pbE - (rz ? 0.12 : 0), inside ? 2.2 : 2.8)));
-    if (PQ === 'sneak' && car === qb) y = clamp(Math.round(gauss(1.9 + (dc === 'stack' ? -0.4 : 0), 1.3)), -1, 4); // a sneak: a yard or two, almost never more
-    const bc = Math.min(y, Math.max(-3, Math.round(gauss(1.5 + edge * 0.15 + pbE * 0.3, 1.5)))); // yards before contact: where the replay's first defender gets to him
-    if (s.yl >= 97 && y > 0 && rnd() < 0.3) y = Math.min(y, 1);
-    const fum = rnd() < 0.011 * (1.2 - (cA(car, 'BSC', 60) - 40) / 100);
-    return { k: 'run', y: Math.min(y, dist), car, fum, oob: !inside && rnd() < 0.2, bc: Math.min(bc, y, dist) }; // (a goal-line stop can cut the gain after contact was set)
-  }
   // passing: the protection against the rush, the route against the coverage
   const cov = dc === 'blitz' ? (rnd() < 0.6 ? 'c0' : 'c1') : dc === 'man' ? (rnd() < 0.75 ? 'c1' : 'c2') : dc === 'zone' ? (rnd() < 0.5 ? 'c3' : 'c2') : dc === 'prevent' ? 'c4' : dc === 'stack' ? (rnd() < 0.6 ? 'c1' : 'c3') : wpick(['c3', 'c2', 'c1', 'c4'], [4, 2.5, 2.5, 1]);
   const man = cov === 'c0' || cov === 'c1';
@@ -10418,14 +10217,13 @@ function cRes0(X, o, oc, dc, U, opt, pb) {
   const drop = rnd() < 0.12;
   return { k: 'inc', y: 0, rec, air, rt, cov, role, defBy, man, sp: spL, adv, drop, pbu: !drop && rnd() < (sepT < 1 ? 0.75 : sepT < 2 ? 0.5 : sepT < 3.5 ? 0.22 : 0.05) };
 }
-// ---------- the field engine (09-field.js): with "Players think for themselves" on, a run or pass is played out by all 22
+// ---------- the field engine (09-field.js): every run or pass is played out by all 22
 // players, as in the pro game, and the result comes back in the shape cPlay books. College ratings run 9-17 under the
 // pros' (by position), so each player's field card is lifted onto the pro scale, about where the average pro starter at
 // his position plays, and the gap between a blue blood and a cellar dweller stays as wide as it is. Offense is lifted a
 // little more than defense (FBS teams score 26-31 a game, not the NFL's 22), quarterbacks' accuracy a little less (they
 // complete 60-64%). A replay rebuilds the snap from its seed and the game's cards (g.fxc), exactly as it happened ----
 const C_FX_UP = { QB: 17.5, RB: 9.5, WR: 13, TE: 14, OL: 17.5, DL: 13.5, LB: 11.5, CB: 13.5, S: 14, K: 12, P: 12 }, C_FX_ACC = 6;
-const cFxOn = () => !CS.classic && (typeof S !== 'undefined' && S && S.set ? SET('field') : SET_DEFAULT.field) === 1;
 function cFxCard(X, p, pos) {
   const F = X.fxc || (X.fxc = { m: new Map(), a: [] }), k = p ? p.id : 'x' + pos;
   let i = F.m.get(k); if (i != null) return i;
@@ -10515,7 +10313,7 @@ function cNum(p) {
   return p;
 }
 // ---------- applying a snap: stats, spot, downs, clock, injuries ----------
-// (the field engine says who made the tackle, or that nobody did; the classic sim draws him)
+// (the field engine says who made the tackle, or that nobody did; on a heave he is drawn)
 function cTackle(X, d, U, run, near, by) {
   const L2 = run ? [...U.D.LB, ...U.D.DL, ...U.D.S, ...U.D.CB] : [...U.D.CB, ...U.D.S, ...U.D.LB];
   const w = p => (cA(p, 'TKL', 45) / 50) * (p.pos === 'LB' ? 1.3 : p.pos === 'S' ? 1.2 : p.pos === 'DL' ? (run ? 0.8 : 0.3) : run ? 0.55 : 1) * (p === near ? 2.2 : 1);
@@ -16308,7 +16106,7 @@ function filmPanel(g) {
   const F = filmData(g.gid);
   if (HM.filmPending() === g.gid) HM.filmMark(g.gid); // (opening the tab counts as watching it)
   const skip = `<button class="btn sm" data-act="filmSkip" data-id="${g.gid}">Skip the film room</button>`;
-  if (!F || !F.clips.length) return `<section class="panel"><p class="muted" style="margin:0 0 8px">${!F || F.why === 'nofilm' ? 'The film room needs a game played with "Players think for themselves" on.' : F.why === 'old' ? 'This game was played on an older version of the play engine, so its film can\'t be broken down.' : 'Nothing worth breaking down: no big plays against you and no turnovers.'}</p>${skip}</section>`;
+  if (!F || !F.clips.length) return `<section class="panel"><p class="muted" style="margin:0 0 8px">${!F || F.why === 'nofilm' ? 'This game was played on the old classic engine, so it has no film to break down.' : F.why === 'old' ? 'This game was played on an older version of the play engine, so its film can\'t be broken down.' : 'Nothing worth breaking down: no big plays against you and no turnovers.'}</p>${skip}</section>`;
   const pool = lnGamePool(g), cards = F.clips.map((c, n) => {
     const p = c.pid != null ? P(c.pid) : null, done = c.fix && HM.filmFixDone(c.fix), tm = T(c.p === 0 ? g.home : g.away);
     const sit = `${qLabel(c.q)} ${fmtClock(c.c)} · ${downStr({ dn: c.dn, tg: c.tg, yl: c.yl })}`;
@@ -17876,7 +17674,7 @@ const HELP = [
     <p>The owner has a personality and sets directives. Meet them and your job security rises; miss them repeatedly and you're fired, after which you can take another job. On the finance side, ticket prices, facilities and a new stadium affect revenue.</p>`],
   ['league', 'League life', () => `<p>Rivalries build from close games and playoff meetings. Each offseason the league votes on rule changes (overtime, kickoffs, two-point tries, the trade deadline, even expansion). If expansion passes, every team protects ${HM.PROTECT_N} players, and you choose yours.</p>
     <p>Awards, All-Pro teams, milestones, records and a Hall of Fame vote each year. Team history pages show franchise leaders, the best player each season and head-to-head records against every opponent.</p>`],
-  ['stats', 'Advanced stats glossary', () => `<dl class="gloss"><dt>CPOE</dt><dd>Completion percentage over expected: completions above what an average QB would hit on the same throws (depth, coverage, receiver, pressure, weather).</dd><dt>Rate under pressure / clean</dt><dd>Passer rating split by whether the rush got home.</dd><dt>Yards per route run</dt><dd>Receiving yards divided by every route run on pass plays, not just targets.</dd><dt>Drop rate</dt><dd>Drops per target.</dd><dt>YAC</dt><dd>Yards after the catch.</dd><dt>YCO</dt><dd>Rushing yards after first contact.</dd><dt>Broken / missed tackles</dt><dd>Tackles the ball carrier escaped; charged to the defender as a miss.</dd><dt>Pressures allowed</dt><dd>Charged to the offensive lineman who got beat, including sacks.</dd><dt>Coverage stats</dt><dd>Each target is charged to the defender in coverage closest to the receiver when the ball is thrown: targets, completions, yards and touchdowns allowed, passer rating allowed, and forced incompletions (breakups plus interceptions).</dd><dt>Pressure rate</dt><dd>For a lineman, pressures per pass-rush snap; for a blocker, pressures allowed per pass-block snap.</dd><dt>Percentile rankings</dt><dd>On every player card: where each stat ranks among qualified players at his position that season. 100 is the best in the league and 1 the worst, flipped for stats where lower is better. A player needs enough volume to qualify (for a passer, 14 dropbacks a team game); below that his row is faded.</dd><dt>Tracking stats</dt><dd>Measured on the field as the play happens. Time to throw: snap to release. Average depth of target: air yards per targeted throw. Separation at the throw: how much room the receiver had when the ball went his way (and, for a defender, how much the man he covered had). Catch rate over expected: catches above what the depth, window and pressure predicted. Time to pressure: snap to the moment a rusher got to the quarterback. Yards before contact: what the blocking gave a runner before the first hit. The clocks come from the field engine; on the classic engine only depth and separation are measured.</dd></dl>`],
+  ['stats', 'Advanced stats glossary', () => `<dl class="gloss"><dt>CPOE</dt><dd>Completion percentage over expected: completions above what an average QB would hit on the same throws (depth, coverage, receiver, pressure, weather).</dd><dt>Rate under pressure / clean</dt><dd>Passer rating split by whether the rush got home.</dd><dt>Yards per route run</dt><dd>Receiving yards divided by every route run on pass plays, not just targets.</dd><dt>Drop rate</dt><dd>Drops per target.</dd><dt>YAC</dt><dd>Yards after the catch.</dd><dt>YCO</dt><dd>Rushing yards after first contact.</dd><dt>Broken / missed tackles</dt><dd>Tackles the ball carrier escaped; charged to the defender as a miss.</dd><dt>Pressures allowed</dt><dd>Charged to the offensive lineman who got beat, including sacks.</dd><dt>Coverage stats</dt><dd>Each target is charged to the defender in coverage closest to the receiver when the ball is thrown: targets, completions, yards and touchdowns allowed, passer rating allowed, and forced incompletions (breakups plus interceptions).</dd><dt>Pressure rate</dt><dd>For a lineman, pressures per pass-rush snap; for a blocker, pressures allowed per pass-block snap.</dd><dt>Percentile rankings</dt><dd>On every player card: where each stat ranks among qualified players at his position that season. 100 is the best in the league and 1 the worst, flipped for stats where lower is better. A player needs enough volume to qualify (for a passer, 14 dropbacks a team game); below that his row is faded.</dd><dt>Tracking stats</dt><dd>Measured on the field as the play happens. Time to throw: snap to release. Average depth of target: air yards per targeted throw. Separation at the throw: how much room the receiver had when the ball went his way (and, for a defender, how much the man he covered had). Catch rate over expected: catches above what the depth, window and pressure predicted. Time to pressure: snap to the moment a rusher got to the quarterback. Yards before contact: what the blocking gave a runner before the first hit. The clocks come from the field engine; seasons played on the old classic engine have only depth and separation.</dd></dl>`],
   ['sim', 'Simulation settings', () => `<p>On the League & saves page you can change how aggressive AI teams are in trades, and how quickly players develop. Changes apply from then on.</p>`],
   ['editor', 'Custom leagues, logos and rosters', () => `<p>The <b>League editor</b> (under More) redesigns any team: name, abbreviation, colors and a logo built from emblems, badge shapes and stripes, or <b>your own image</b> (PNG, JPG, WebP or SVG). To do many teams at once, choose several images named after the teams, like <code>BUF.png</code>.</p>
     <p><b>Rosters</b> load from a spreadsheet. Download the current rosters as a CSV to see the columns, edit them in any spreadsheet app, and import the file, or paste rows straight from the spreadsheet. Only Team, Pos and a name are required; ratings use the scale the game shows and anything missing is built from the overall. You see what will change before anything happens, and you choose whether players left out of the file are released or kept.</p>
@@ -19391,15 +19189,8 @@ function cPlan() {
   <div class="grid2"><section class="panel"><h3>${opp != null ? `Week ${c.week}: ${m.h === u ? 'vs' : 'at'} ${cchip(CT(opp))} ${E(CT(opp).name)}` : 'Film study'}</h3>${filmBox}${opp != null ? `<div class="lbl" style="margin:14px 0 6px">By the numbers</div>${cScoutNumbers(opp)}` : ''}</section>
   <section class="panel stack" style="gap:10px"><h3 style="margin:0">Weekly plan</h3>
     <div><div class="lbl" style="margin-bottom:4px">Offense (${t.oc ? E(HC().OFF_SCH[t.oc.sch][0]) : 'no coordinator'})</div>${pSeg('off', OFF_PLANS, P.off)}<div class="muted" style="font-size:12px;margin-top:4px">${E(PLAN_TIP.off[P.off])}</div></div>
-    <div><div class="lbl" style="margin-bottom:4px">Defense (${t.dc ? E(HC().DEF_SCH[t.dc.sch][0]) : 'no coordinator'})</div>${pSeg('def', DEF_PLANS, P.def)}<div class="muted" style="font-size:12px;margin-top:4px">${E(PLAN_TIP.def[P.def])}</div></div>${cEngineRow()}</section></div>
+    <div><div class="lbl" style="margin-bottom:4px">Defense (${t.dc ? E(HC().DEF_SCH[t.dc.sch][0]) : 'no coordinator'})</div>${pSeg('def', DEF_PLANS, P.def)}<div class="muted" style="font-size:12px;margin-top:4px">${E(PLAN_TIP.def[P.def])}</div></div></section></div>
   ${cDepthChart()}`;
-}
-// the play engine for every game in the world (the same setting as the pro league page)
-function cEngineRow() {
-  const s = S(); if (!s || !s.uni) return '';
-  const cur = { ...HM.SET_DEFAULT, ...(s.set || {}) }.field;
-  return `<div><div class="lbl" style="margin-bottom:4px">Play engine</div><div class="seg" role="group">${HM.SET_OPTS.field.opts.map(([v, l]) => `<button data-act="simSet" data-k="field" data-v="${v}" aria-pressed="${cur === v}">${E(l)}</button>`).join('')}</div>
-    <div class="muted" style="font-size:12px;margin-top:4px">${cur === 1 ? 'Every snap is played out by all 22 players, and every play you watch is what happened. Seasons take longer to sim.' : 'Plays are rolled from the matchups. Seasons sim about ten times faster.'} Applies to college and pro games alike.</div></div>`;
 }
 function cDepthChart() {
   const c = CSx(), t = CT(c.userTid), L = HC().colDepth(t), pos = ui.cDepPos || 'QB', START = { QB: 1, RB: 1, WR: 3, TE: 1, OL: 5, DL: 4, LB: 3, CB: 3, S: 2, K: 1, P: 1 };
