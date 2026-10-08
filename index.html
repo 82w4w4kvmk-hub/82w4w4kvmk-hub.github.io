@@ -4374,6 +4374,16 @@ function devShape(p, age) {
   out.add = (out.ptA || 0) + out.sw + out.ev;
   return out;
 }
+// how each kind of rating moves: speed is mostly set by the time a player arrives and is the first thing age takes;
+// agility and burst a little more trainable; strength the most; technique and know-how keep growing and hold up late.
+// [growth, decline] multipliers, rescaled per position so the overall rating moves exactly as before
+const DEV_KIND = { SPD: [0.12, 1.35], AGI: [0.45, 1.2], EXP: [0.45, 1.2], MOB: [0.45, 1.2], STR: [1.3, 0.85], POW: [1.3, 0.85], ARM: [1, 1], KPW: [1, 1] };
+const DEV_KIND_COL = { SPD: 0.35, AGI: 0.7, EXP: 0.7, MOB: 0.7, STR: 1.4, POW: 1.4 }; // (college: strength-and-conditioning still adds some speed)
+const DEV_SD = { SPD: 0.8, AGI: 1.4, EXP: 1.4, MOB: 1.4 }, FOCUS_K = { SPD: 0.3, AGI: 0.65, EXP: 0.65, MOB: 0.65 }; // (a training focus on speed buys little)
+function devFactors(pos, up) {
+  const c = POS[pos], f = c.attrs.map(k => (DEV_KIND[k] || [1.15, 0.6])[up ? 0 : 1]), g = c.attrs.reduce((a, k, i) => a + c.w[i] * f[i], 0) || 1;
+  const out = {}; c.attrs.forEach((k, i) => { out[k] = f[i] / g; }); return out;
+}
 function develop(p) {
   // your career player: growth comes as skill points you spend yourself (aging decline still applies below)
   if (S.car && p.id === S.car.pid && typeof carSkillGain === 'function') {
@@ -4383,7 +4393,8 @@ function develop(p) {
   const age = p.age, nominal = devBase(p, age), sh = S.car && p.id === S.car.pid ? { add: 0 } : devShape(p, age);
   const b0 = devBase(p, age, true), cut = sh.stall && b0 > 0 ? -b0 * 0.85 : 0, ty = teamDevYr(p), base = b0 + cut + sh.add + ty;
   const before = { ...p.a }, oldPot = p.pot, fk = focusOf(p);
-  for (const k of POS[p.pos].attrs) p.a[k] = clamp(Math.round(p.a[k] + gauss(base + (fk ? (k === fk ? FOCUS_BONUS : -FOCUS_COST) : 0), 2.2)), 20, 99);
+  const F = devFactors(p.pos, base >= 0);
+  for (const k of POS[p.pos].attrs) p.a[k] = clamp(Math.round(p.a[k] + gauss(base * F[k] + (fk ? (k === fk ? FOCUS_BONUS * (FOCUS_K[k] ?? 1) : -FOCUS_COST) : 0), DEV_SD[k] || 2.2)), 20, 99);
   const old = p.ovr; p.ovr = calcOvr(p);
   const pr = potOffseason(p, p.ovr - old, nominal); p.pot = pr.pot;
   const dA = {}; for (const k of POS[p.pos].attrs) dA[k] = p.a[k] - before[k];
@@ -7428,7 +7439,7 @@ function autoFocusFor(p) {
   let best = null, bv = -1e9;
   const sch = p.tid >= 0 ? [coachOf(p.tid, 'OC')?.scheme, coachOf(p.tid, 'DC')?.scheme].filter(Boolean) : [];
   P.attrs.forEach((k, i) => {
-    const v = p.a[k] ?? 50; if (v >= 97) return;
+    const v = p.a[k] ?? 50; if (v >= 97 || k === 'SPD') return; // (speed barely trains: the staff works on what can move)
     const inScheme = sch.some(sc => SCHEMES[sc]?.fit[p.pos]?.[k]);
     const score = P.w[i] * (92 - v) * (inScheme ? 1.35 : 1);
     if (score > bv) { bv = score; best = k; }
@@ -7598,7 +7609,7 @@ function resolveBattles() {
   }
   // camp standouts: fringe players who produced earn a small bump
   const stand = roster(S.userTid).filter(p => (p.camp || 0) >= 9 && p.ovr < 68).sort((a, b) => b.camp - a.camp).slice(0, 3);
-  for (const p of stand) { const k = POS[p.pos].attrs[0]; p.a[k] = clamp(p.a[k] + randInt(1, 2), 20, 99); p.ovr = calcOvr(p); p.standout = S.season; }
+  for (const p of stand) { const k = POS[p.pos].attrs.find(x => !['SPD', 'AGI', 'EXP', 'MOB'].includes(x)) || POS[p.pos].attrs[0]; /* a camp standout shows it in his skills, not a faster 40 */ p.a[k] = clamp(p.a[k] + randInt(1, 2), 20, 99); p.ovr = calcOvr(p); p.standout = S.season; }
   if (stand.length) news(`Camp standouts: ${stand.map(p => `${p.pos} ${fullName(p)}`).join(', ')}. They played their way into the roster conversation.`, true);
 }
 // cut-down day: your roster must be at 53 before week 1. Suggest who goes.
@@ -11219,8 +11230,11 @@ function colDevelop(p, mine) {
   const before = p.ovr, gain = clamp(Math.round(gauss((p.pot - p.ovr) * 0.3 + 1.2 + coachB + focusB + listB + gemB + schB + (t0 ? ((t0.chem ?? 60) - 60) * 0.03 : 0), 2)), -1, 11);
   // your career player: the growth comes as skill points you spend yourself
   if (p.car && gain > 0 && S && S.car && typeof carSkillGain === 'function') { carSkillGainPts(gain * 2, 'Offseason development', p); p.devS = CS.season; return p.ovr - before; }
-  const w = ks.map(k => (fk.includes(k) ? 2.2 : 1));
-  for (let i = 0; i < Math.abs(gain) * 2; i++) { const k = ks[wIdx(w)]; p.a[k] = clamp(p.a[k] + Math.sign(gain), 20, 99); }
+  // which ratings the points go to: speed comes slowly (strength-and-conditioning adds some), strength fastest; as many
+  // points as it takes for the overall rating to move as much as it would have with every rating equally likely
+  const w = ks.map(k => (fk.includes(k) ? 2.2 : 1) * (gain > 0 ? DEV_KIND_COL[k] ?? 1.05 : 1)), sw = w.reduce((a, b) => a + b, 0) || 1, ow = POS[p.pos].w;
+  const exp = ks.reduce((a, k, i) => a + (w[i] / sw) * ow[i], 0) || 1, n0 = Math.abs(gain) * 2 * (1 / ks.length) / exp, n = Math.floor(n0) + (rnd() < n0 % 1 ? 1 : 0);
+  for (let i = 0; i < n; i++) { const k = ks[wIdx(w)]; p.a[k] = clamp(p.a[k] + Math.sign(gain), 20, 99); }
   p.ovr = calcOvr(p); p.pot = Math.max(p.pot, p.ovr); p.devS = CS.season;
   return p.ovr - before;
 }
