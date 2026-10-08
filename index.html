@@ -4094,7 +4094,10 @@ function draftPlayer(pid) {
 const hashU = (a, b) => { let h = 2166136261 ^ a; h = Math.imul(h ^ b, 16777619); h ^= h >>> 13; h = Math.imul(h, 2246822507); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 const hashG = (a, b) => { const u = Math.max(1e-9, hashU(a, b)), v = hashU(b + 7919, a + 104729); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
 // a GM with a good eye for talent reads the class with less noise
-const aiBoardScore = (p, tid) => { const g = rivalGm(tid), st = g?.style, nz = clamp(1 - (g?.eye || 0) * 0.3, 0.4, 1.6), wp = st === 'develop' ? 0.66 : st === 'winnow' ? 0.44 : 0.55; return (p.pot + hashG(p.id, tid * 2 + 1) * 5.5 * nz) * wp + (p.ovr + hashG(p.id, tid * 2 + 2) * 3.5 * nz) * (1 - wp) + DRAFT_ADJ[p.pos] + (p.gen ? 8 : 0) - (p.injLbl ? 1.5 : 0) + (p.colHonB || 0); };
+// how a GM's philosophy and coveted position move a prospect up his board (in points of grade); the leans roughly cancel across the league
+const GM_DRAFT_LEAN = { analytics: { QB: 1.5, CB: 0.6, WR: 0.6, DL: 0.6, RB: -2.5, LB: -1.2, S: -0.4 }, oldschool: { OL: 1, RB: 1.6, LB: 1, DL: 0.4, TE: 0.4, WR: -1, CB: -0.6 } };
+const gmDraftLean = (g, pos) => !g ? 0 : ((GM_DRAFT_LEAN[g.phil] || {})[pos] || 0) + (g.pet === pos ? 1.5 : 0);
+const aiBoardScore = (p, tid) => { const g = rivalGm(tid), st = g?.style, nz = clamp(1 - (g?.eye || 0) * 0.3, 0.4, 1.6), wp = st === 'develop' ? 0.66 : st === 'winnow' ? 0.44 : 0.55; return (p.pot + hashG(p.id, tid * 2 + 1) * 5.5 * nz) * wp + (p.ovr + hashG(p.id, tid * 2 + 2) * 3.5 * nz) * (1 - wp) + DRAFT_ADJ[p.pos] + gmDraftLean(g, p.pos) + (p.gen ? 8 : 0) - (p.injLbl ? 1.5 : 0) + (p.colHonB || 0); };
 function bestPickFor(tid, noise = 1.5, mine = false) {
   const d = S.draft, r = roster(tid);
   if (prospects().length < 3) topUpProspects();
@@ -4403,15 +4406,15 @@ function aiTradeOnce(opts = {}) {
         if (p.inj > 2 || p.age > 31 || p.ovr < 70 || p.pos === 'K' || p.pos === 'P' || p.contract.ntc) continue;
         if (S.phase === 'regular' && S.week > 4 && pct(Sl.rec) < 0.4 && p.age <= 25) continue; // rebuilding teams keep their young core
         const starters = Lb[p.pos].slice(0, POS[p.pos].start), weakest = Math.min(...starters.map(x => x.ovr));
-        const gain = p.ovr - weakest;
-        if (gain >= (opts.deadline ? 2 : 4) && (!best || gain > best.gain)) best = { p, S: Sl, gain };
+        const gain = p.ovr - weakest, want = gain * (gmValue(B.tid, p) / tradeValue(p));
+        if (gain >= (opts.deadline ? 2 : 4) && (!best || want > best.want)) best = { p, S: Sl, gain, want };
       }
     }
     if (!best) continue;
-    const { p } = best, sellerTid = best.S.tid, need = tradeValue(p) * (opts.deadline && p.age >= 28 ? 0.95 : 1.12) + 0.3; // sellers take less for veterans at the deadline
+    const { p } = best, sellerTid = best.S.tid, need = gmValue(sellerTid, p) * (opts.deadline && p.age >= 28 ? 0.95 : 1.12) + 0.3; // sellers take less for veterans at the deadline
     const starterIds = new Set(POS_ORDER.flatMap(pos => Lb[pos].slice(0, POS[pos].start).map(x => x.id)));
-    const assets = [...picksOf(B.tid).filter(pk => !(S.draft && S.draft.pid && S.draft.pid.indexOf(pk.id) > -1 && S.draft.pid.indexOf(pk.id) < S.draft.idx)).map(pk => ({ k: 'pk', o: pk, v: pickValue(pk) })),
-      ...roster(B.tid).filter(x => !starterIds.has(x.id) && x.age <= 26 && tradeValue(x) > 1).map(x => ({ k: 'pl', o: x, v: tradeValue(x) }))].sort((a, b) => b.v - a.v);
+    const assets = [...picksOf(B.tid).filter(pk => !(S.draft && S.draft.pid && S.draft.pid.indexOf(pk.id) > -1 && S.draft.pid.indexOf(pk.id) < S.draft.idx)).map(pk => ({ k: 'pk', o: pk, v: gmPickValue(sellerTid, pk) })),
+      ...roster(B.tid).filter(x => !starterIds.has(x.id) && x.age <= 26 && tradeValue(x) > 1).map(x => ({ k: 'pl', o: x, v: gmValue(sellerTid, x) }))].sort((a, b) => b.v - a.v);
     const pkg = []; let sum = 0;
     for (const a of assets) { if (sum >= need || pkg.length >= 4) break; if (sum + a.v <= need * 1.4) { pkg.push(a); sum += a.v; } }
     if (sum < need) continue;
@@ -4873,17 +4876,18 @@ function genOfferForUser() {
   for (const B of buyers.slice(0, 6)) {
     const Lb = lineup(B);
     const targets = active(u).filter(p => !p.inj && p.age <= 31 && p.ovr >= 68 && p.pos !== 'K' && p.pos !== 'P' && !(p.contract.ntc) && !S.offers.some(o => o.get.includes(p.id)))
-      .map(p => ({ p, gain: p.ovr - Math.min(...Lb[p.pos].slice(0, POS[p.pos].start).map(x => x.ovr)) })).filter(x => x.gain >= 4).sort((a, b) => b.gain - a.gain);
+      .map(p => { const gain = p.ovr - Math.min(...Lb[p.pos].slice(0, POS[p.pos].start).map(x => x.ovr)); return { p, gain, want: gain * gmValue(B.tid, p) / tradeValue(p) }; }).filter(x => x.gain >= 4).sort((a, b) => b.want - a.want);
     if (!targets.length) continue;
-    const p = targets[0].p, want = tradeValue(p) * (0.95 + rnd() * 0.18);
+    const p = targets[0].p, gB = rivalGm(B.tid), want = gmValue(B.tid, p) * (0.95 + rnd() * 0.18);
     const starterIds = new Set(POS_ORDER.flatMap(pos => Lb[pos].slice(0, POS[pos].start).map(x => x.id)));
     const assets = [...picksOf(B.tid).filter(pk => !(S.draft && S.draft.pid && S.draft.pid.indexOf(pk.id) > -1 && S.draft.pid.indexOf(pk.id) < S.draft.idx)).map(pk => ({ k: 'pk', o: pk, v: pickValue(pk) })),
-      ...active(B.tid).filter(x => !starterIds.has(x.id) && x.age <= 27 && tradeValue(x) > 2).map(x => ({ k: 'pl', o: x, v: tradeValue(x) }))].sort((a, b) => b.v - a.v);
+      ...active(B.tid).filter(x => !starterIds.has(x.id) && x.age <= 27 && tradeValue(x) > 2).map(x => ({ k: 'pl', o: x, v: gmValue(B.tid, x) }))].sort((a, b) => b.v - a.v);
     const pkg = []; let sum = 0;
     for (const a of assets) { if (sum >= want || pkg.length >= 3) break; if (sum + a.v <= want * 1.35) { pkg.push(a); sum += a.v; } }
+    const why = gB ? gmPhilMult(gB, p).why[0] : null;
     if (sum < want * 0.95) continue;
     S.offers.push({ id: (S.nextOfferId = (S.nextOfferId || 0) + 1), tid: B.tid, give: pkg.filter(a => a.k === 'pl').map(a => a.o.id), givePk: pkg.filter(a => a.k === 'pk').map(a => a.o.id), get: [p.id], getPk: [],
-      exp: expiryKey(), note: `${B.city} want ${fullName(p)} for their ${p.pos === 'QB' ? 'quarterback room' : 'playoff push'}.`, vIn: r1(sum), vOut: tradeValue(p) });
+      exp: expiryKey(), note: `${B.city} want ${fullName(p)} for their ${p.pos === 'QB' ? 'quarterback room' : 'playoff push'}.${why && gB ? ` GM ${gB.fn} ${gB.ln}: ${why[0].toUpperCase() + why.slice(1)}.` : ''}`, vIn: r1(sum), vOut: tradeValue(p) });
     news(`Trade offer: ${B.abbr} are calling about ${p.pos} ${fullName(p)}. Check your inbox.`, true);
     return;
   }
@@ -7187,7 +7191,7 @@ function marketDay() {
     for (const s of mk.suit) {
       if (s.day > S.faDay) { continue; }
       if (s.day === S.faDay && rnd() < 0.6 && mk.suit.length >= 2) news(`${fullName(p)} (${p.pos}) visits ${team(s.tid).abbr} today${mk.suit.length > 1 ? `; he has also met with ${mk.suit.filter(x => x !== s).map(x => team(x.tid).abbr).join(' and ')}` : ''}.`);
-      const gst = rivalGm(s.tid)?.style, sty = gst === 'winnow' ? 1.07 : gst === 'cheap' ? 0.9 : gst === 'develop' && p.age >= 29 ? 0.9 : 1;
+      const gg = rivalGm(s.tid), gst = gg?.style, sty = (gst === 'winnow' ? 1.07 : gst === 'cheap' ? 0.9 : gst === 'develop' && p.age >= 29 ? 0.9 : 1) * (gg ? clamp(1 + (gmPhilMult(gg, p).m - 1) * 0.5, 0.86, 1.12) : 1);
       const top = bestBid(p), room = aiSpend(s.tid) * (gst === 'cheap' ? 0.8 : 1), cap = mv * 1.3 * sty;
       let want = s.sal ? s.sal : r1(mv * (0.9 + rnd() * 0.12) * sty);
       if (top && top !== s && faBidValue(p, top) >= faBidValue(p, s)) want = r1(Math.min(cap, top.sal * (1.02 + rnd() * 0.05) * (1 + faAppeal(p, top.tid).d - faAppeal(p, s.tid).d)));
@@ -7355,16 +7359,32 @@ const GM_STYLES = {
   trader: ['Trade-happy', 'Always dealing. Easier to trade with and asks for less of a premium.'],
   balanced: ['Balanced', 'No strong lean. Values players about the way the market does.'],
 };
+// philosophy: how a front office judges players, on top of its style. Analytics shops pay for production and the premium positions,
+// old-school shops for the trenches and the run game. Each GM also has one position he covets, so the same player is worth more to some teams than others.
+const GM_PHIL = {
+  analytics: ['Analytics', 'Trusts the numbers: pays for production over ratings, puts a premium on quarterbacks, pass rushers, receivers and corners, and won\'t pay much for running backs or off-ball linebackers.', { QB: 1.12, WR: 1.06, CB: 1.06, DL: 1.06, TE: 0.96, OL: 0.98, S: 0.94, LB: 0.86, RB: 0.72, K: 0.9, P: 0.9 }, 0.2, 1.08],
+  oldschool: ['Old school', 'Wins in the trenches: pays for linemen, running backs and linebackers, trusts the tape over the stat sheet, and likes proven veterans.', { OL: 1.12, DL: 1.08, RB: 1.18, LB: 1.12, TE: 1.06, QB: 1, WR: 0.92, CB: 0.94, S: 1, K: 1, P: 1 }, 0, 0.94],
+  book: ['By the book', 'Values players about the way the market does, with a little weight on production.', {}, 0.08, 1],
+};
+const GM_PETS = ['QB', 'RB', 'WR', 'TE', 'OL', 'DL', 'LB', 'CB', 'S'];
+// drawn from a hash of the team and hire year, not the game's random numbers, so older saves pick theirs up without changing anything else
+function gmPhilSet(g) {
+  const k = (g.since || 0) * 31 + ((g.fn || 'x').charCodeAt(0) || 0), u = hashU(g.tid * 7 + 401, k);
+  g.phil = u < 0.36 ? 'analytics' : u < 0.66 ? 'oldschool' : 'book';
+  g.pet = GM_PETS[Math.floor(hashU(k + 97, g.tid * 13 + 5) * GM_PETS.length)];
+  return g;
+}
 function newRivalGm(tid) {
   const style = wpick(Object.keys(GM_STYLES), [3, 3, 2, 2, 3]);
   // eye: how well he judges talent (hidden). Some front offices are simply better than others, until they're replaced.
-  return { tid, ...fakeName(), style, age: randInt(38, 62), since: S.season, rel: randInt(-6, 8), w: 0, l: 0, po: 0, bad: 0, last: null, eye: r1(clamp(gauss(0, 1), -2, 2)) };
+  return gmPhilSet({ tid, ...fakeName(), style, age: randInt(38, 62), since: S.season, rel: randInt(-6, 8), w: 0, l: 0, po: 0, bad: 0, last: null, eye: r1(clamp(gauss(0, 1), -2, 2)) });
 }
 function rivalGm(tid) {
   if (tid === S.userTid || tid == null || tid < 0) return null;
   S.gms = S.gms || {};
   if (!S.gms[tid]) S.gms[tid] = newRivalGm(tid);
   if (S.gms[tid].eye == null) S.gms[tid].eye = r1(clamp(gauss(0, 1), -2, 2)); // saves from before GMs had an eye
+  if (S.gms[tid].phil == null) gmPhilSet(S.gms[tid]);
   return S.gms[tid];
 }
 const relLabel = r => r >= 25 ? 'Close ally' : r >= 10 ? 'Friendly' : r > -10 ? 'Neutral' : r > -25 ? 'Wary' : 'Hostile';
@@ -7373,17 +7393,51 @@ function bumpRel(tid, d, why) {
   const before = relLabel(g.rel); g.rel = clamp(Math.round(g.rel + d), -50, 50); g.last = why || g.last;
   if (relLabel(g.rel) !== before) news(`Your relationship with ${team(tid).abbr} GM ${g.fn} ${g.ln} is now ${relLabel(g.rel).toLowerCase()}.`, true);
 }
-// how an AI front office values a player, by style
+// production: his average percentile rank (qualified, non-style stats), early in a season blended with last year's. null when there's nothing to judge.
+const GMP_C = { k: null, m: new Map() };
+function gmProd(p) {
+  const k = PCT_PRO.stamp(); if (GMP_C.k !== k) { GMP_C.k = k; GMP_C.m.clear(); }
+  if (GMP_C.m.has(p.id)) return GMP_C.m.get(p.id);
+  const avg = P => { if (!P) return null; const rs = P.groups.flatMap(g => g.rows).filter(r => r.q && !r.nt); return rs.length ? rs.reduce((a, r) => a + r.pct, 0) / rs.length : null; };
+  let v = null;
+  try {
+    const P = percentiles(p), a = avg(P);
+    if (P && P.season === S.season && P.G < 6) { const b = avg(percentiles(p, S.season - 1)), w = P.G / 6; v = a == null ? b : b == null ? (P.G >= 3 ? a : null) : a * w + b * (1 - w); }
+    else v = a;
+  } catch (e) { v = null; }
+  GMP_C.m.set(p.id, v); return v;
+}
+const POS_PLURAL = { QB: 'quarterbacks', RB: 'running backs', WR: 'receivers', TE: 'tight ends', OL: 'offensive linemen', DL: 'pass rushers', LB: 'linebackers', CB: 'corners', S: 'safeties', K: 'kickers', P: 'punters' };
+// how much a GM's philosophy moves a player's value, with the reasons shown to you
+function gmPhilMult(g, p) {
+  const ph = GM_PHIL[g.phil] || GM_PHIL.book, why = [], pl = p.pos === 'DL' && g.phil !== 'analytics' ? 'defensive linemen' : POS_PLURAL[p.pos] || p.pos;
+  let m = ph[2][p.pos] || 1;
+  if (m >= 1.05) why.push(`${ph[0].toLowerCase()} front offices pay for ${pl}`); else if (m <= 0.95) why.push(`${ph[0].toLowerCase()} front offices don't pay much for ${pl}`);
+  if (g.pet === p.pos) { m *= 1.12; why.push(`he covets ${pl}`); }
+  if (ph[3]) { const pr = gmProd(p); if (pr != null) { const f = 1 + (pr - 50) / 50 * ph[3]; m *= f; if (Math.abs(f - 1) >= 0.06) why.push(f > 1 ? 'his numbers grade out well' : 'his numbers grade out poorly'); } }
+  if (g.phil === 'oldschool' && p.age >= 26 && p.age <= 30 && p.ovr >= 72) { m *= 1.05; why.push('he likes proven veterans'); }
+  return { m, why };
+}
+// how an AI front office values a player, by style and philosophy
 function gmValue(tid, p) {
   const g = rivalGm(tid), v = tradeValue(p); if (!g) return v;
+  let b;
   switch (g.style) {
-    case 'develop': return v * (p.age <= 24 ? 1.2 : p.age >= 29 ? 0.8 : 1);
-    case 'winnow': return v * (p.ovr >= 75 && p.age >= 26 ? 1.18 : p.age <= 23 && p.ovr < 70 ? 0.85 : 1);
-    case 'cheap': return Math.max(0.2, v - Math.max(0, capHit(p) - marketValue(p)) * 0.4 - Math.max(0, capHit(p) - 8) * 0.08);
-    default: return v;
+    case 'develop': b = v * (p.age <= 24 ? 1.2 : p.age >= 29 ? 0.8 : 1); break;
+    case 'winnow': b = v * (p.ovr >= 75 && p.age >= 26 ? 1.18 : p.age <= 23 && p.ovr < 70 ? 0.85 : 1); break;
+    case 'cheap': b = Math.max(0.2, v - Math.max(0, capHit(p) - marketValue(p)) * 0.4 - Math.max(0, capHit(p) - 8) * 0.08); break;
+    default: b = v;
   }
+  return Math.max(0.2, b * clamp(gmPhilMult(g, p).m, 0.7, 1.4));
 }
-function gmPickValue(tid, pk) { const g = rivalGm(tid), v = pickValue(pk); return g && g.style === 'develop' ? v * 1.2 : g && g.style === 'winnow' ? v * 0.82 : v; }
+function gmPickValue(tid, pk) { const g = rivalGm(tid), v = pickValue(pk); if (!g) return v; return v * (g.style === 'develop' ? 1.2 : g.style === 'winnow' ? 0.82 : 1) * (GM_PHIL[g.phil] || GM_PHIL.book)[4]; }
+// the market for a player: what every other front office thinks he's worth, highest first
+function gmInterest(pid) {
+  const p = S.players[pid]; if (!p) return [];
+  const base = tradeValue(p);
+  const styWhy = g => g.style === 'develop' ? (p.age <= 24 ? ['he builds with young players'] : p.age >= 29 ? ['he sells aging veterans'] : []) : g.style === 'winnow' ? (p.ovr >= 75 && p.age >= 26 ? ['he is buying proven starters'] : p.age <= 23 && p.ovr < 70 ? ['he wants help now, not projects'] : []) : g.style === 'cheap' && capHit(p) > marketValue(p) ? ['he balks at the contract'] : [];
+  return S.teams.filter(t => t.tid !== p.tid && t.tid !== S.userTid).map(t => { const g = rivalGm(t.tid), v = gmValue(t.tid, p); return { tid: t.tid, gm: g.fn + ' ' + g.ln, phil: g.phil, style: g.style, v: r1(v), d: Math.round((v / base - 1) * 100), why: [...styWhy(g), ...gmPhilMult(g, p).why] }; }).sort((a, b) => b.v - a.v);
+}
 const DIFF = { easy: { trade: 0.94, ask: 0.95, owner: 0.75, cap: 1.04 }, normal: { trade: 1, ask: 1, owner: 1, cap: 1 }, hard: { trade: 1.12, ask: 1.06, owner: 1.3, cap: 0.97 } };
 const diff = () => DIFF[S.diff] || DIFF.normal;
 function setDifficulty(v) { if (DIFF[v]) S.diff = v; }
@@ -7399,7 +7453,7 @@ function rivalGmSeasonEnd() {
     g.bad = pct(t.rec) < 0.4 ? g.bad + 1 : 0;
     if ((g.bad >= 2 && rnd() < 0.55) || (g.bad >= 3) || (g.age >= 68 && rnd() < 0.4)) {
       const old = g; S.gms[t.tid] = newRivalGm(t.tid); const n = S.gms[t.tid];
-      news(`${t.abbr} ${old.age >= 68 && old.bad < 2 ? 'GM ' + old.fn + ' ' + old.ln + ' retired' : 'fired GM ' + old.fn + ' ' + old.ln}. New GM ${n.fn} ${n.ln} is known for a "${GM_STYLES[n.style][0].toLowerCase()}" approach.`);
+      news(`${t.abbr} ${old.age >= 68 && old.bad < 2 ? 'GM ' + old.fn + ' ' + old.ln + ' retired' : 'fired GM ' + old.fn + ' ' + old.ln}. New GM ${n.fn} ${n.ln} is known for a "${GM_STYLES[n.style][0].toLowerCase()}" approach${n.phil !== 'book' ? ` and runs ${n.phil === 'analytics' ? 'an analytics' : 'an old-school'} front office` : ''}.`);
     } else if (g.rel) g.rel = Math.round(g.rel * 0.85);
   }
 }
@@ -13685,7 +13739,7 @@ return {
   newLeague, setUser, save, load, simWeek, simToEndOfRegular, simPlayoffRound, reSign, toFreeAgency, faNextDay, toDraft, draftPlayer, aiDraftPick,
   simDraftToUser, simDraftToEnd, autoPickUser, startSeason, signPlayer, release, evaluateTrade, executeTrade, ensureDepth, teamRatings, roster, payroll, capRoom,
   team, freeAgents, prospects, marketValue, tradeValue, userRosterIssue, confSeeds, divStandings, pct, phaseLabel, fullName, nm, careerTotals,
-  compactState, saveBreakdown, TV, GRADE_PTS, restructurePreview, restructure, payCutPreview, askPayCut, appealSuspension, mentorOf, menteeOf, canMentor, setMentor, endMentor, marketSize, MARKET_NAME, fanMood, merchLeaders, starMerch, rsFuture, GM_STYLES, rivalGm, relLabel, gmPremium, setDifficulty, DIFF, inCamp, rosterMax, CAMP_MAX, playPreseasonGame, finishCamp, cutCandidates, resolveBattles, treatInjury, rushBack, PRACTICE, practiceOf, setPractice, practiceEffects, setReturner, returnerScore, autoReturner, returnersFor, discLabel, AGGR_NAME, tendText, hcTend, coachProfile, coachTree, disputeAction, visitFA, marketInfo, onMarket, stEdge, SET_OPTS, SET_DEFAULT, setSimSetting, h2hFor, franchiseSeasonLeaders, SEASON_LEAD_KEYS, proComparison, GRADE_CURVE, OFF_CALLS, DEF_CALLS, CALL_TIPS, offScore, defScore, lineup, r1, draftScore, picksOf, pickValue, pickLabel, projSlot, deadFor, deadIfCut, capYear, passerRating, autoFixRoster, minSalary, seasonPayroll,
+  compactState, saveBreakdown, TV, GRADE_PTS, restructurePreview, restructure, payCutPreview, askPayCut, appealSuspension, mentorOf, menteeOf, canMentor, setMentor, endMentor, marketSize, MARKET_NAME, fanMood, merchLeaders, starMerch, rsFuture, GM_STYLES, GM_PHIL, rivalGm, relLabel, gmPremium, gmValue, gmPickValue, gmInterest, setDifficulty, DIFF, inCamp, rosterMax, CAMP_MAX, playPreseasonGame, finishCamp, cutCandidates, resolveBattles, treatInjury, rushBack, PRACTICE, practiceOf, setPractice, practiceEffects, setReturner, returnerScore, autoReturner, returnersFor, discLabel, AGGR_NAME, tendText, hcTend, coachProfile, coachTree, disputeAction, visitFA, marketInfo, onMarket, stEdge, SET_OPTS, SET_DEFAULT, setSimSetting, h2hFor, franchiseSeasonLeaders, SEASON_LEAD_KEYS, proComparison, GRADE_CURVE, OFF_CALLS, DEF_CALLS, CALL_TIPS, offScore, defScore, lineup, r1, draftScore, picksOf, pickValue, pickLabel, projSlot, deadFor, deadIfCut, capYear, passerRating, autoFixRoster, minSalary, seasonPayroll,
   active, available, PS_MAX, psSalary, psEligible, placeIR, activateIR, signToPS, promotePS, moveToPS,
   ROLES, ROLE_NAME, coachOf, coachRat, staffBudget, staffSpend, hireCoach, fireCoach, userStaffGaps, trainerMult,
   userView, deepScout, scoutSd, scoutPointsFor,
@@ -15155,6 +15209,7 @@ function tradeView() {
   const givePk = [...ui.givePk].map(id => allPk.get(id)).filter(p => p && p.own === u), getPk = [...ui.getPk].map(id => allPk.get(id)).filter(p => p && p.own === o.tid);
   const give = [...ui.give].map(P).filter(p => p && p.tid === u), get = [...ui.get].map(P).filter(p => p && p.tid === o.tid);
   const vGive = give.reduce((a, p) => a + HM.tradeValue(p), 0) + givePk.reduce((a, p) => a + HM.pickValue(p), 0), vGet = get.reduce((a, p) => a + HM.tradeValue(p), 0) + getPk.reduce((a, p) => a + HM.pickValue(p), 0);
+  const tGive = give.reduce((a, p) => a + HM.gmValue(o.tid, p), 0) + givePk.reduce((a, p) => a + HM.gmPickValue(o.tid, p), 0), tGet = get.reduce((a, p) => a + HM.gmValue(o.tid, p), 0) + getPk.reduce((a, p) => a + HM.gmPickValue(o.tid, p), 0), gmN = (HM.rivalGm(o.tid) || {}).ln;
   const listOf = (ps, pks) => [...ps.map(p => E(p.pos + ' ' + p.ln)), ...pks.map(p => E(HM.pickLabel(p)))].join(', ') || 'Nothing yet';
   const salD = get.reduce((a, p) => a + p.contract.sal, 0) - give.reduce((a, p) => a + p.contract.sal, 0);
   const closed = s.phase === 'playoffs' || (s.phase === 'regular' && s.week > HM.TRADE_DEADLINE);
@@ -15167,8 +15222,8 @@ function tradeView() {
   ${gmCard(o.tid)}
   ${closed ? `<div class="note err">Trading is closed right now. It reopens ${s.phase === 'regular' ? 'after the season' : 'after the playoffs'}.</div>` : ''}
   <section class="panel"><div class="grid3" style="align-items:center">
-    <div><div class="lbl">You send</div><div class="big num" style="font-size:34px">${vGive.toFixed(1)}</div><div class="muted" style="font-size:12.5px">${listOf(give, givePk)}</div></div>
-    <div><div class="lbl">You receive</div><div class="big num" style="font-size:34px">${vGet.toFixed(1)}</div><div class="muted" style="font-size:12.5px">${listOf(get, getPk)}</div></div>
+    <div><div class="lbl">You send</div><div class="big num" style="font-size:34px">${vGive.toFixed(1)}</div><div class="muted" style="font-size:12.5px">${listOf(give, givePk)}</div>${gmN && (give.length || givePk.length) ? `<div class="muted num" style="font-size:12px" title="What the other GM thinks it's worth, from his style and philosophy">${E(gmN)}'s view: ${tGive.toFixed(1)}</div>` : ''}</div>
+    <div><div class="lbl">You receive</div><div class="big num" style="font-size:34px">${vGet.toFixed(1)}</div><div class="muted" style="font-size:12.5px">${listOf(get, getPk)}</div>${gmN && (get.length || getPk.length) ? `<div class="muted num" style="font-size:12px" title="What the other GM thinks it's worth, from his style and philosophy">${E(gmN)}'s view: ${tGet.toFixed(1)}</div>` : ''}</div>
     <div class="stack"><div class="muted" style="font-size:12.5px">Payroll change: <b class="num">${salD >= 0 ? '+' : ''}${money(salD)}</b> · Your cap space after: <b class="num">${money(HM.capRoom(u) - salD)}</b></div>
       <div class="row"><button class="btn primary" data-act="propose" ${closed || (!give.length && !get.length && !givePk.length && !getPk.length) ? 'disabled' : ''}>Propose trade</button><button class="btn" data-act="clearTrade">Clear</button></div></div>
   </div>${msg ? `<div style="margin-top:12px">${msg}</div>` : ''}</section>
@@ -15366,6 +15421,7 @@ function playerModal(p) {
     ${disputePanel(p)}
     ${playerExtras(p)}
     ${injuryPanel(p)}
+    ${gmInterestPanel(p)}
     ${contractTools(p)}
     ${p.tid === -1 ? marketNote(p) : ''}
     ${!isP && p.tid >= -1 ? `<div class="row">${moodPill(p)}${persPill(p)}${p.tradeReq ? '<span class="pill l">Has requested a trade</span>' : ''}<span class="muted" style="font-size:12.5px">Morale ${p.mor ?? 60}/100${p.pers === 'leader' ? ' · Lifts the locker room' : p.pers === 'diva' ? ' · Mood swings with playing time and losing' : p.pers === 'grinder' ? ' · Hard to upset' : ''}</span></div>` : ''}
@@ -18390,7 +18446,7 @@ const HELP = [
   ['college', 'College mode', () => `<p>Choose "College coach" on the title screen. Recruit from a board of up to 30 targets with 40 to 65 hours a week depending on your program's prestige (texts, calls, assistant contacts, home visits, scouting), official visits to home games and NIL pledges. Redshirt freshmen to save a year, keep players out of the transfer portal with NIL and a talk, and poach from it. The world is the real 2026 FBS: 138 schools in the actual conferences, with the Deep South Conference and Big Eighteen strongest and the smaller leagues thinner. Twelve games, conference title games, a 12-team playoff and bowls. Seniors and early entrants form a draft class you can import into a pro league from its draft page.</p>`],
   ['penalties', 'Penalties', () => `<p>Flags include false starts, offside, holding, pass interference, roughing the passer and personal fouls, with holding on returns too. A flag wipes out the play it happened on. Each player has a <b>discipline</b> rating (on his card). Undisciplined players, divas and teams with weaker head coaches draw more flags, and road offenses false-start more in loud stadiums. The box score and team stats show penalties and yards.</p>`],
   ['disputes', 'Contract disputes', () => `<p>Stars who are badly underpaid with a year or two left may go public through their agent in the offseason. At training camp a dispute can turn into a <b>holdout</b> (he misses games until he gets a deal or gives in) or a <b>hold-in</b> (he plays, but below his level, and doesn't develop). The player card gives your options: negotiate an extension, promise talks, fine a holdout, or let him seek a trade. Long disputes can end in a trade demand.</p>`],
-  ['gms', 'Rival general managers', () => `<p>Every AI team has a named GM with a style: <b>draft and develop</b> (loves youth and picks), <b>win now</b> (pays for veterans), <b>penny-pincher</b> (avoids big contracts), <b>trade-happy</b> (asks for less of a premium) or <b>balanced</b>. Styles shape their trades, drafting and free-agent bids. Your relationship with each GM changes how much extra value he wants: completed trades help, while lowball offers, declined offers and outbidding him for a free agent hurt. GMs who keep losing get fired. The trade page shows who you're dealing with, and League pulse lists every front office.</p>`],
+  ['gms', 'Rival general managers', () => `<p>Every AI team has a named GM with a style: <b>draft and develop</b> (loves youth and picks), <b>win now</b> (pays for veterans), <b>penny-pincher</b> (avoids big contracts), <b>trade-happy</b> (asks for less of a premium) or <b>balanced</b>. Styles shape their trades, drafting and free-agent bids. Your relationship with each GM changes how much extra value he wants: completed trades help, while lowball offers, declined offers and outbidding him for a free agent hurt. GMs who keep losing get fired. The trade page shows who you're dealing with, and League pulse lists every front office.</p><p>Each GM also has a <b>philosophy</b>. <b>Analytics</b> front offices pay for production (his percentile rankings) and the premium positions: quarterbacks, pass rushers, receivers and corners, and pay little for running backs and off-ball linebackers. <b>Old school</b> front offices pay for linemen, running backs and linebackers, go by the tape rather than the stat sheet, and like proven veterans. <b>By the book</b> GMs value players about the way the market does. Every GM also covets one position and pays about 12% more there. Philosophies shape trades, draft boards and free-agent bids, so the same player can be worth much more to one team than another. Open one of your players to see which front offices value him most, and the trade builder shows how the other GM values each side.</p>`],
   ['camp', 'Training camp and cut-down day', () => `<p>After the draft you can carry up to ${HM.CAMP_MAX} players. When the season starts, camp opens: close competitions become <b>position battles</b>, and three preseason games (mostly backups) decide them along with camp ratings. Fringe players who produce can become <b>camp standouts</b> and earn a small bump. Before week 1 your active roster must be at 53: release players, move them to the practice squad, or let the staff make the cuts.</p>`],
   ['injuries', 'Injuries and the medical staff', () => `<p>When a player suffers an injury of four weeks or more, you choose: <b>surgery</b> (full recovery time, comes back at full strength) or <b>rehab</b> (back in about two-thirds of the time, higher risk of getting hurt again that season and a chance to lose a step). Within four weeks of returning you can <b>rush him back</b>: he plays at about 94% and is three times as likely to get hurt. Major knee and Achilles injuries can permanently cost speed and agility. A better head trainer shortens injuries and reduces those risks.</p>`],
   ['practice', 'Practice and fatigue', () => `<p>Each week, set practice <b>intensity</b> (light, normal, hard) and <b>focus</b> (game plan, fundamentals, conditioning, rest) on the depth page, or let the staff decide. Hard practice and a game-plan focus sharpen you for Sunday but raise injuries and fatigue. Fatigue above 40 costs you on game day. Fundamentals cut penalties and help young players develop; conditioning helps in the fourth quarter.</p>`],
@@ -18679,17 +18735,29 @@ function penaltyLine(g, i) { const t = g.ts[i]; return `${t.pen || 0}-${t.peny |
 const relBar = r => `<div class="relbar" title="Relationship ${r > 0 ? '+' : ''}${r}"><i style="left:50%;width:${Math.abs(r)}%;${r < 0 ? 'transform:translateX(-100%);background:var(--loss)' : 'background:var(--win)'}"></i></div>`;
 function gmCard(tid) {
   const g = HM.rivalGm(tid); if (!g) return '';
-  const st = HM.GM_STYLES[g.style], prem = Math.round((HM.gmPremium(tid) - 1) * 100);
-  return `<section class="panel gmcard"><div class="ph"><h3>Across the table: ${E(g.fn + ' ' + g.ln)}</h3><span class="pill">${E(st[0])}</span></div>
-    <div class="grid2" style="gap:12px"><p class="muted" style="margin:0;font-size:12.5px">${E(st[1])} ${prem > 0 ? `Wants about ${prem}% more value than he gives up.` : `Will take a deal at fair value${prem < 0 ? ' or a little under' : ''}.`}</p>
+  const st = HM.GM_STYLES[g.style], ph = HM.GM_PHIL[g.phil] || HM.GM_PHIL.book, prem = Math.round((HM.gmPremium(tid) - 1) * 100);
+  return `<section class="panel gmcard"><div class="ph"><h3>Across the table: ${E(g.fn + ' ' + g.ln)}</h3><span class="row" style="gap:6px"><span class="pill">${E(st[0])}</span><span class="pill" title="${E(ph[1])}">${E(ph[0])}</span>${g.pet ? `<span class="pill" title="He pays about 12% more for players at this position">Covets ${E(g.pet)}</span>` : ''}</span></div>
+    <div class="grid2" style="gap:12px"><p class="muted" style="margin:0;font-size:12.5px">${E(st[1])} ${E(ph[1])} ${prem > 0 ? `Wants about ${prem}% more value than he gives up.` : `Will take a deal at fair value${prem < 0 ? ' or a little under' : ''}.`}</p>
     <div class="stack" style="gap:4px"><div class="row" style="justify-content:space-between;font-size:12.5px"><span class="lbl">Relationship</span><b>${E(HM.relLabel(g.rel))}</b></div>${relBar(g.rel)}<span class="muted" style="font-size:11.5px">${g.last ? 'Recent: ' + E(g.last) + '. ' : ''}Completed trades help; lowball offers, declined offers and beating him in free agency hurt.</span></div></div></section>`;
 }
 function gmsTab() {
   const s = S(), rows = s.teams.filter(t => t.tid !== s.userTid).map(t => ({ t, g: HM.rivalGm(t.tid) }));
-  return `<section class="panel"><h3>Front offices</h3><p class="muted" style="margin:0 0 8px;font-size:12.5px">Every AI team has a general manager with a style that shapes how they trade, draft and spend. GMs who keep losing get fired. Your relationship with each one changes what it takes to make a deal.</p>${table('gms', [
+  return `<section class="panel"><h3>Front offices</h3><p class="muted" style="margin:0 0 8px;font-size:12.5px">Every AI team has a general manager with a style that shapes how they trade, draft and spend, and a philosophy that shapes how he judges players: analytics front offices pay for production and the premium positions, old-school ones for the trenches and the run game. Each also covets one position. The same player can be worth a lot more to one team than another. GMs who keep losing get fired. Your relationship with each one changes what it takes to make a deal.</p>${table('gms', [
     { k: 't', l: 'Team', f: r => tlink(r.t), v: r => r.t.name }, { k: 'n', l: 'GM', f: r => E(r.g.fn + ' ' + r.g.ln), v: r => r.g.ln }, { k: 'st', l: 'Style', f: r => `<span title="${E(HM.GM_STYLES[r.g.style][1])}">${E(HM.GM_STYLES[r.g.style][0])}</span>`, v: r => r.g.style },
+    { k: 'ph', l: 'Philosophy', f: r => { const ph = HM.GM_PHIL[r.g.phil] || HM.GM_PHIL.book; return `<span title="${E(ph[1])}">${E(ph[0])}</span>`; }, v: r => r.g.phil }, { k: 'pet', l: 'Covets', f: r => E(r.g.pet || ''), v: r => r.g.pet || '' },
     { k: 'since', l: 'Since', n: 1, f: r => r.g.since, v: r => r.g.since }, { k: 'rec', l: 'Record as GM', nosort: 1, f: r => `${r.g.w}-${r.g.l}${r.g.po ? ` · ${r.g.po} playoff trip${r.g.po > 1 ? 's' : ''}` : ''}` },
     { k: 'rel', l: 'With you', n: 1, f: r => `${E(HM.relLabel(r.g.rel))} <span class="muted num">${r.g.rel > 0 ? '+' : ''}${r.g.rel}</span>`, v: r => r.g.rel }], rows, { sort: { k: 'rel', d: 'desc' } })}</section>`;
+}
+
+// the market for one of your players: which front offices value him most and least, and why
+function gmInterestPanel(p) {
+  const s = S(); if (p.tid !== s.userTid || p.ps || p.pos === 'K' || p.pos === 'P' || s.phase === 'playoffs') return '';
+  const L = HM.gmInterest(p.id); if (L.length < 6) return '';
+  const base = HM.tradeValue(p), cap1 = t => t.charAt(0).toUpperCase() + t.slice(1), row = x => `<div class="row" style="justify-content:space-between;gap:8px;font-size:12.5px"><span>${chip(T(x.tid))} <span class="muted">${E(x.gm)}</span></span><span class="muted" style="flex:1;text-align:right">${E(cap1(x.why.slice(0, 2).join("; ")))}</span><b class="num ${x.d > 4 ? 'W' : x.d < -4 ? 'L' : ''}" style="min-width:44px;text-align:right">${x.d > 0 ? '+' : ''}${x.d}%</b></div>`;
+  return `<section class="panel"><div class="ph"><h3>Trade interest</h3><span class="muted num">market value ${base.toFixed(1)}</span></div>
+    <p class="muted" style="margin:0 0 8px;font-size:12.5px">How each front office values him against the market, from its style and philosophy. Shop him to the top of this list.</p>
+    <div class="lbl">Values him most</div><div class="stack" style="gap:3px;margin-bottom:8px">${L.slice(0, 4).map(row).join('')}</div>
+    <div class="lbl">Values him least</div><div class="stack" style="gap:3px">${L.slice(-3).reverse().map(row).join('')}</div></section>`;
 }
 
 // ---------- training camp ----------
