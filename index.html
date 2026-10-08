@@ -1527,7 +1527,7 @@ function pbMatch(pkg, form) {
 // v across the field (the sidelines at about +-26.7). Field spots: offense 0-4 the line (left to right), 5 quarterback,
 // 6 back, 7 tight end, 8 and 9 wide receivers, 10 the third receiver (or second tight end, or fullback); defense 0-3 the
 // line, 4-6 linebackers (or nickel and dime backs), 7 and 8 corners, 9 and 10 safeties.
-let FX_HELP_PRS = 0.3, FX_PSLOPE = 16, FX_HALF = 2.4, FX_BRK = 0.3, FX_SPREAD = 0.6, FX_RSHED = 0.15, FX_SY_SHED = 2, FX_SY_PUSH = 0.4; const fxH = (x, y) => Math.sqrt(x * x + y * y); const FLD_V = 23, FX_DT = 0.1, FX_SIDE = 26.6, FX_DBG = {};
+let FX_EDGE = 0.18, FX_HELP_PRS = 0.03, FX_PSLOPE = 14, FX_HALF = 2.4, FX_BRK = 0.3, FX_SPREAD = 0.6, FX_RSHED = 0.15, FX_SY_SHED = 2, FX_SY_PUSH = 0.4; const fxH = (x, y) => Math.sqrt(x * x + y * y); const FLD_V = 25, FX_DT = 0.1, FX_SIDE = 26.6, FX_DBG = {};
 function fxRng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 const fxGauss = r => { let u = 0; while (!u) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); };
 
@@ -1708,8 +1708,9 @@ function fxSetup(X, r) {
   const O = O0.map(([u, v], i) => fxAgent('o', i, X.O[i], u, v)), D = D0.map(([u, v], i) => fxAgent('d', i, X.D[i], u, v));
   // (every field a snap can pick up exists from the start, as on the players: one shape for every snap keeps the lookups fast)
   const W = { X, r, L, fl, form: formK, front, ucQ, pkg, cov, run, sy: fxShort(X), O, D, all: [...O, ...D], t: 0, ball: null, car: null, ev: [], over: null, qb: O[5], fr: [], st: {}, fam: undefined, kick: undefined, esc: undefined, caught: undefined, scram: undefined, hole: undefined, hist: undefined, hc: undefined, gen: undefined, toss: undefined, sv: undefined, scr: undefined, scheme: undefined, rv: undefined, readOpt: undefined, raDone: undefined, mesh: undefined, keep: undefined, kb: undefined, hotB: undefined, hand: undefined, scrT: undefined, good: undefined, freeR: undefined, flights: undefined, drill: undefined, drawD: undefined, downU: undefined, downC: undefined, bV: undefined, bU: undefined, awayOk: undefined, escRun: undefined, bail: undefined, prd: undefined, zr: undefined };
-  // the edge for this snap (home field, coaching, chemistry) nudges everyone's ratings a touch
-  const e = clamp(X.edge || 0, -6, 6) * 0.5; for (const a of O) fxNudge(a, e); for (const a of D) fxNudge(a, -e);
+  // the edge for this snap (home field, coaching, chemistry) nudges everyone's ratings a touch: at half a point a point it
+  // came out about four times the old engine's, home teams winning 65% by 6 points, so it's scaled to the NFL's (about 55%, +2)
+  const e = clamp(X.edge || 0, -6, 6) * FX_EDGE; for (const a of O) fxNudge(a, e); for (const a of D) fxNudge(a, -e);
   return W;
 }
 // (a nudged card is kept too: a game's edge only takes a handful of values)
@@ -1759,11 +1760,12 @@ function fxSpace(W, fam) {
     for (const [rt, dd] of alt) { const wp = mk(a, rt, dd); if (free(wp[wp.length - 1], k)) { a.rt = rt; a.wp = wp; a.end = fxRoute(rt, dd, () => 0.5).end; a.deep = FX_DEEP.has(rt); return; } }
   });
 }
-// the defense against anything: the rush, man or zone, a blitz now and then
+// the defense against anything: the rush, man or zone, a blitz now and then (a linebacker most often, sometimes the
+// nickel back or a safety)
 function fxDefRoles(W) {
   const { X, r, D, O, L, cov, pkg, fl } = W, man = cov === 'c0' || cov === 'c1', MO = FX_MAN[pkg === 'nickel' || pkg === 'dime' ? 'nick' : 'base'];
   for (let i = 0; i < 4; i++) D[i].role = 'rush';
-  const blitz = X.dc === 'blitz' || cov === 'c0' ? (cov === 'c0' ? [4, 5] : [r() < 0.5 ? 5 : 4]) : X.dc === 'stack' && r() < 0.3 ? [10] : r() < 0.12 ? [[4, 5, 6][Math.floor(r() * 3)]] : [];
+  const blitz = X.dc === 'blitz' || cov === 'c0' ? (cov === 'c0' ? [4, 5] : [r() < 0.5 ? 5 : 4]) : X.dc === 'stack' && r() < 0.3 ? [10] : r() < 0.2 ? [[4, 5, 4, 5, 6, 9, 10][Math.floor(r() * 7)]] : [];
   for (let i = 4; i <= 10; i++) {
     const a = D[i];
     if (blitz.includes(i)) { a.role = 'rush'; a.blitz = true; continue; }
@@ -1799,9 +1801,10 @@ function fxProtect(W) {
   const pairs = []; for (const b of ol) for (const d of rushers) pairs.push([Math.abs(b.v - d.v) + (d.blitz ? 1.5 : 0), b, d]); pairs.sort((x, y) => x[0] - y[0]);
   const bUsed = new Set(), dUsed = new Set();
   for (const [dd, b, d] of pairs) { if (bUsed.has(b) || dUsed.has(d) || dd > 6) continue; b.as = d; bUsed.add(b); dUsed.add(d); }
-  // (the protection call: a spare blocker slides to help on the most dangerous man within reach, the best rusher, an edge
-  // rusher before an inside one, rather than just doubling whoever's next to him)
-  for (const b of ol) if (!bUsed.has(b)) { const sc = x => Math.abs(x.v - b.v) * 0.8 - x.c.PRS * FX_HELP_PRS - (Math.abs(x.v) > 4 ? 1.5 : 0); const d = rushers.filter(x => dUsed.has(x) && Math.abs(x.v - b.v) < 7).sort((x, y) => sc(x) - sc(y))[0]; b.as = d || null; b.help = true; }
+  // (the protection call: a spare blocker slides to help on the most dangerous man within reach, an edge rusher before an
+  // inside one, the slide's direction a call that varies and leans only a little toward the better rusher; sending it to
+  // the best one every time cancelled him out, so a great rusher got no more sacks than an average one)
+  for (const b of ol) if (!bUsed.has(b)) { const jit = new Map(rushers.map(x => [x, W.r() * 2.5])), sc = x => Math.abs(x.v - b.v) * 0.8 - x.c.PRS * FX_HELP_PRS - (Math.abs(x.v) > 4 ? 2.5 : 0) - jit.get(x); const d = rushers.filter(x => dUsed.has(x) && Math.abs(x.v - b.v) < 7).sort((x, y) => sc(x) - sc(y))[0]; b.as = d || null; b.help = true; }
   W.freeR = rushers.filter(d => !dUsed.has(d));
   // (a quarterback who reads the blitz before the snap knows where it's coming from and where his hot throw is)
   const Q = O[5]; W.hotB = rushers.some(d => d.blitz) && W.r() < clamp(0.55 + (Q.c.AWR - 68) * 0.02 + (Q.c.VIS - 68) * 0.01, 0.25, 0.92);
@@ -2483,7 +2486,10 @@ function fxBlocks(W) {
       let push = pass ? clamp(0.3 + net * 0.03, -0.3, 1.3) : clamp(-0.15 + (W.sy ? FX_SY_PUSH : 0) + net * 0.05, -1.6, 1.6);
       if (bl.length > 1) push = Math.min(push, pass ? 0.1 : -0.3);
       // Copy the lineup: fxEngage can append a helper to the live list before the next tick.
-      bc = d.bcalc = { pass, role: bl[0].role, bl: bl.slice(), push, rate: (pass ? 0.6 : FX_RSHED * (W.sy ? FX_SY_SHED : 1)) * Math.exp(net / (pass ? FX_PSLOPE : 9)), chances: [] };
+      // (how fast a pass rusher gets off his block: an even matchup about one in four within two and a half seconds, and a
+      // big edge either way about twice or half as often, leveling off at the extremes; when the rate grew without limit
+      // nearly every rusher got free in the end, the rating decided only how soon, and a great end got no more sacks)
+      bc = d.bcalc = { pass, role: bl[0].role, bl: bl.slice(), push, rate: pass ? 0.62 * Math.exp(0.75 * Math.tanh(net / FX_PSLOPE)) : FX_RSHED * (W.sy ? FX_SY_SHED : 1) * Math.exp(net / 9), chances: [] };
     }
     const push = bc.push;
     d.vu = eu * push; d.vv = ev * push;
@@ -9052,10 +9058,10 @@ function genWatch(wk) {
 }
 // ---------- betting lines ----------
 // A sportsbook line for every game: point spread, moneyline and over/under. Fit to this sim: each point of team
-// rating is worth about 2.1 points of margin, home field about 2, and games land within about 13 points of the
+// rating is worth about 2.55 points of margin, home field about 1.5, and games land within about 13 points of the
 // expected margin two times in three (all measured over thousands of simmed games, using exact team ratings, not the rounded ones shown). The line moves when injuries
 // change a lineup; the one posted at kickoff is kept with the game so you can see who covered.
-const LINE_K = 2.1, LINE_SD = 13, LINE_HFA = 2, LINE_TOT_K = 0.65, LINE_VIG = 0.0225;
+const LINE_K = 2.55, LINE_SD = 13, LINE_HFA = 1.5, LINE_TOT_K = 0.65, LINE_VIG = 0.0225;
 const normCdf = x => { const t = 1 / (1 + 0.2316419 * Math.abs(x)), d = 0.3989423 * Math.exp(-x * x / 2), p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); return x > 0 ? 1 - p : p; };
 const halfPt = v => Math.round(v * 2) / 2;
 function moneyline(p) {
@@ -10397,7 +10403,10 @@ function cFxRes(X, o, oc, dc, U, opt) {
   const rb1 = run && car && car !== qb ? car : O.RB[0], rb2 = O.RB.find(x => x && x !== rb1) || null, te2 = more([O.TE], 'TE', o)[1] || null;
   const off = [...O.OL, qb, rb1, O.TE, O.WR[0], O.WR[1], pers >= 20 ? rb2 || O.WR[2] : pers >= 12 ? te2 || O.WR[2] : O.WR[2]];
   const LB = more(D.LB, 'LB', d), CB = more(D.CB, 'CB', d);
-  const def = [...D.DL, pk === 'dime' ? CB[3] || LB[0] : LB[0], LB[1] || null, nick ? CB[2] || LB[2] || null : LB[2] || CB[2] || null, CB[0] || null, CB[1] || null, D.S[0], D.S[1]];
+  // (on passing plays the line rotates, as in the pros: the ends spelled by the fifth man on nearly half the snaps, the
+  // tackles by the sixth on about three in ten, less on third and long)
+  const DLs = [...D.DL]; if (!run) { const more2 = more(D.DL, 'DL', d), long = s.dn >= 3 && s.tg >= 7; for (const [k, b, p] of [[0, more2[4], 0.45], [3, more2[4], 0.45], [1, more2[5], 0.3], [2, more2[5], 0.3]]) if (b && !DLs.includes(b) && rnd() < p * (long ? 0.55 : 1)) DLs[k] = b; }
+  const def = [...DLs, pk === 'dime' ? CB[3] || LB[0] : LB[0], LB[1] || null, nick ? CB[2] || LB[2] || null : LB[2] || CB[2] || null, CB[0] || null, CB[1] || null, D.S[0], D.S[1]];
   const OP = ['OL', 'OL', 'OL', 'OL', 'OL', 'QB', 'RB', 'TE', 'WR', 'WR', 'WR'], DP = ['DL', 'DL', 'DL', 'DL', 'LB', 'LB', 'LB', 'CB', 'CB', 'S', 'S'];
   const cov = cCov(dc);
   // home field, the game plan and the film study tilt everyone a touch (the talent is already in the cards)
