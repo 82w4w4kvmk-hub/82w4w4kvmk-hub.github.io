@@ -2715,7 +2715,7 @@ function fxResult(W, rec) {
     R.k = passC ? 'comp' : W.scram ? 'scramble' : 'run'; R.car = c.i; R.y = o.k === 'td' ? 100 - L : spot(W.downC === c ? W.downU : c.u); R.td = o.k === 'td'; R.oob = o.k === 'oob' || !!st.pushOut; R.tk = st.tk ? st.tk.i : null;
     if (passC) { R.tgt = c.i; R.air = th ? th.air : null; R.yac = Math.max(0, R.y - Math.max(0, R.air || 0)); }
     if (W.scram && (W.downC === c ? W.downU : c.u) < L && !R.td) { R.k = 'sack'; R.y = Math.min(-1, spot(W.downC === c ? W.downU : c.u)); R.by = st.tk ? st.tk.i : null; }
-    R.bc = st.contact ? spot(st.contact.u) : R.y;
+    R.bc = st.contact ? Math.min(spot(st.contact.u), R.y) : R.y;
   } else { R.k = 'sack'; R.y = Math.min(-1, spot(qbU)); R.by = st.tk ? st.tk.i : null; }
   R.win = st.win; R.dR = st.dR; R.dd = st.dd; R.tt = th ? th.t : null; R.miss = st.miss || []; R.prs = st.prs ? st.prs.i : null; R.hot = st.hot ?? 9; R.sep = th && th.sep != null ? +th.sep.toFixed(1) : null; R.cv = th && th.cv != null ? th.cv : null; R.prsT = st.prs && st.prsT != null ? +st.prsT.toFixed(1) : null; R.rt = W.O.map(a => a.rt || null);
   if (W.X.dbgW) R.W = W;
@@ -3416,7 +3416,7 @@ function* gameGen(ht, at, opt = {}) {
     const { off, def, R } = fxSnap(o, d, X, qbRun ? {} : { 6: car });
     const c = R.car === 5 ? off[5] : R.car === 6 ? off[6] : car, cl = sl(c, o); lastRole = R.car ?? 6; EPX.car = c;
     let yds = R.td ? dist : clamp(R.y ?? 0, -8, dist); if (st.yl + yds < 0) yds = -st.yl;
-    inc(cl, 'yco', Math.max(0, yds - Math.max(R.bc ?? yds, 0))); inc(cl, 'ybc', Math.min(yds, R.bc ?? yds)); lastBc = R.bc ?? null;
+    inc(cl, 'yco', Math.max(0, yds - Math.max(R.bc ?? yds, 0))); inc(cl, 'ybc', Math.min(yds, R.bc ?? yds)); lastBc = R.bc == null ? null : Math.min(R.bc, yds);
     for (const i of R.miss || []) { const m = def[i]; if (m) { inc(sl(m, d), 'mtk'); inc(cl, 'btk'); } }
     inc(cl, 'ra'); inc(cl, 'ry', yds); cl.rl = Math.max(cl.rl || 0, yds); g.ts[o].ra++; g.ts[o].ry += yds;
     injure(c, o, 0.002);
