@@ -4372,7 +4372,7 @@ function evaluateTrade(otherTid, give, get, givePk = [], getPk = []) {
 }
 function executeTrade(otherTid, give, get, givePk = [], getPk = []) {
   const ev = evaluateTrade(otherTid, give, get, givePk, getPk);
-  if (!ev.ok) { const g = rivalGm(otherTid), key = S.season + '-' + S.phase + '-' + (S.week || S.faDay || 0); if (g && ev.vOut && ev.vIn < ev.vOut * 0.7 && g.lowball !== key) { g.lowball = key; bumpRel(otherTid, -2, 'lowball offers'); } return ev; }
+  if (!ev.ok) { const g = rivalGm(otherTid), key = S.season + '-' + S.phase + '-' + (S.week || S.faDay || 0); if (g && ev.vOut && ev.vIn < ev.vOut * 0.7 && g.lowball !== key) { g.lowball = key; bumpRel(otherTid, -2, 'lowball offers'); } if (ev.vOut != null) dlLeak(otherTid, give); return ev; }
   (S.utrades || (S.utrades = [])).push({ s: S.season, ph: S.phase, tid: otherTid, give: give.slice(), get: get.slice(), givePk: givePk.slice(), getPk: getPk.slice(), vIn: ev.vIn, vOut: ev.vOut });
   bumpRel(otherTid, 3 + Math.min(4, Math.max(0, (ev.vIn - ev.need) / 3)), 'a trade');
   const names = (ids, pids) => [...ids.map(id => `${S.players[id].pos} ${fullName(S.players[id])}`), ...pids.map(id => 'a ' + pickLabel(S.picks.find(p => p.id === id)) + ' pick')].join(', ') || 'nothing';
@@ -4411,23 +4411,30 @@ function aiTradeOnce(opts = {}) {
       }
     }
     if (!best) continue;
-    const { p } = best, sellerTid = best.S.tid, need = gmValue(sellerTid, p) * (opts.deadline && p.age >= 28 ? 0.95 : 1.12) + 0.3; // sellers take less for veterans at the deadline
+    if (aiDeal(B, best.p, opts)) return true;
+  }
+  return false;
+}
+// buyer B tries to buy player p: the seller prices him (and what comes back) his own way. Returns what B gave up when it's done.
+function aiDeal(B, p, opts = {}) {
+  {
+    const Lb = lineup(B), sellerTid = p.tid; if (sellerTid < 0 || sellerTid === B.tid || sellerTid === S.userTid) return false;
+    const need = gmValue(sellerTid, p) * blockDisc(sellerTid, p) * (opts.deadline && p.age >= 28 ? 0.95 : 1.12) + 0.3; // sellers take less for veterans at the deadline
     const starterIds = new Set(POS_ORDER.flatMap(pos => Lb[pos].slice(0, POS[pos].start).map(x => x.id)));
     const assets = [...picksOf(B.tid).filter(pk => !(S.draft && S.draft.pid && S.draft.pid.indexOf(pk.id) > -1 && S.draft.pid.indexOf(pk.id) < S.draft.idx)).map(pk => ({ k: 'pk', o: pk, v: gmPickValue(sellerTid, pk) })),
       ...roster(B.tid).filter(x => !starterIds.has(x.id) && x.age <= 26 && tradeValue(x) > 1).map(x => ({ k: 'pl', o: x, v: gmValue(sellerTid, x) }))].sort((a, b) => b.v - a.v);
     const pkg = []; let sum = 0;
     for (const a of assets) { if (sum >= need || pkg.length >= 4) break; if (sum + a.v <= need * 1.4) { pkg.push(a); sum += a.v; } }
-    if (sum < need) continue;
+    if (sum < need) return false;
     const outPl = pkg.filter(a => a.k === 'pl').map(a => a.o), outSal = outPl.reduce((s, x) => s + x.contract.sal, 0);
-    if (payroll(B.tid) + p.contract.sal - outSal > S.cap || payroll(sellerTid) - p.contract.sal + outSal > S.cap) continue;
-    if (active(B.tid).length + 1 - outPl.length > ROSTER_MAX || active(sellerTid).length - 1 + outPl.length > ROSTER_MAX) continue;
+    if (payroll(B.tid) + p.contract.sal - outSal > S.cap || payroll(sellerTid) - p.contract.sal + outSal > S.cap) return false;
+    if (active(B.tid).length + 1 - outPl.length > ROSTER_MAX || active(sellerTid).length - 1 + outPl.length > ROSTER_MAX) return false;
     const desc = pkg.map(a => a.k === 'pk' ? `a ${a.o.y} round ${a.o.rd} pick` : `${a.o.pos} ${fullName(a.o)}`).join(', ');
     p.tid = B.tid; onTeamChange(p); for (const x of outPl) { x.tid = sellerTid; onTeamChange(x); } for (const a of pkg) if (a.k === 'pk') a.o.own = sellerTid;
     syncDraftOrder(); ensureDepth(B, true); ensureDepth(team(sellerTid), true);
-    news(`Trade: ${B.abbr} acquire ${p.pos} ${fullName(p)} (${dispR(p.ovr)} OVR) from ${team(sellerTid).abbr} for ${desc}.`);
-    return true;
+    if (!opts.quiet) news(`Trade: ${B.abbr} acquire ${p.pos} ${fullName(p)} (${dispR(p.ovr)} OVR) from ${team(sellerTid).abbr} for ${desc}.`);
+    return desc;
   }
-  return false;
 }
 function maybeAiTrades(chance, max = 1) { const c = Math.min(0.95, chance * SET('trade')); for (let i = 0; i < max; i++) if (rnd() < c) aiTradeOnce(); if (SET('trade') > 1.5 && rnd() < c * 0.5) aiTradeOnce(); }
 
@@ -4878,18 +4885,26 @@ function genOfferForUser() {
     const targets = active(u).filter(p => !p.inj && p.age <= 31 && p.ovr >= 68 && p.pos !== 'K' && p.pos !== 'P' && !(p.contract.ntc) && !S.offers.some(o => o.get.includes(p.id)))
       .map(p => { const gain = p.ovr - Math.min(...Lb[p.pos].slice(0, POS[p.pos].start).map(x => x.ovr)); return { p, gain, want: gain * gmValue(B.tid, p) / tradeValue(p) }; }).filter(x => x.gain >= 4).sort((a, b) => b.want - a.want);
     if (!targets.length) continue;
-    const p = targets[0].p, gB = rivalGm(B.tid), want = gmValue(B.tid, p) * (0.95 + rnd() * 0.18);
+    if (makeAiOfferFor(B, targets[0].p)) return;
+  }
+}
+// buyer B puts an offer for your player p in your inbox, sized to what his front office thinks p is worth. Returns the offer or null.
+function makeAiOfferFor(B, p, note0) {
+  {
+    if (!S.offers) S.offers = [];
+    if (S.offers.length >= 4 || S.offers.some(o => o.get.includes(p.id)) || ntcBlocks(p, B.tid)) return null;
+    const Lb = lineup(B), gB = rivalGm(B.tid), want = gmValue(B.tid, p) * (0.95 + rnd() * 0.18);
     const starterIds = new Set(POS_ORDER.flatMap(pos => Lb[pos].slice(0, POS[pos].start).map(x => x.id)));
     const assets = [...picksOf(B.tid).filter(pk => !(S.draft && S.draft.pid && S.draft.pid.indexOf(pk.id) > -1 && S.draft.pid.indexOf(pk.id) < S.draft.idx)).map(pk => ({ k: 'pk', o: pk, v: pickValue(pk) })),
       ...active(B.tid).filter(x => !starterIds.has(x.id) && x.age <= 27 && tradeValue(x) > 2).map(x => ({ k: 'pl', o: x, v: gmValue(B.tid, x) }))].sort((a, b) => b.v - a.v);
     const pkg = []; let sum = 0;
     for (const a of assets) { if (sum >= want || pkg.length >= 3) break; if (sum + a.v <= want * 1.35) { pkg.push(a); sum += a.v; } }
     const why = gB ? gmPhilMult(gB, p).why[0] : null;
-    if (sum < want * 0.95) continue;
+    if (sum < want * 0.95) return null;
     S.offers.push({ id: (S.nextOfferId = (S.nextOfferId || 0) + 1), tid: B.tid, give: pkg.filter(a => a.k === 'pl').map(a => a.o.id), givePk: pkg.filter(a => a.k === 'pk').map(a => a.o.id), get: [p.id], getPk: [],
-      exp: expiryKey(), note: `${B.city} want ${fullName(p)} for their ${p.pos === 'QB' ? 'quarterback room' : 'playoff push'}.${why && gB ? ` GM ${gB.fn} ${gB.ln}: ${why[0].toUpperCase() + why.slice(1)}.` : ''}`, vIn: r1(sum), vOut: tradeValue(p) });
-    news(`Trade offer: ${B.abbr} are calling about ${p.pos} ${fullName(p)}. Check your inbox.`, true);
-    return;
+      exp: expiryKey(), note: `${note0 || `${B.city} want ${fullName(p)} for their ${p.pos === 'QB' ? 'quarterback room' : 'playoff push'}.`}${why && gB ? ` GM ${gB.fn} ${gB.ln}: ${why[0].toUpperCase() + why.slice(1)}.` : ''}`, vIn: r1(sum), vOut: tradeValue(p) });
+    if (!note0) news(`Trade offer: ${B.abbr} are calling about ${p.pos} ${fullName(p)}. Check your inbox.`, true);
+    return S.offers[S.offers.length - 1];
   }
 }
 function genDraftOfferForUser() {
@@ -5148,7 +5163,7 @@ function weekEnd(userGame) {
   feedAfterWeek(games);
   if (wk === 7 || wk === 13) midseasonDev(wk);
   if (S.week <= tradeDeadline()) maybeAiTrades(0.3);
-  if (S.week === tradeDeadline()) deadlineFrenzy();
+  if (S.week === tradeDeadline()) dlClose();
   pruneOffers();
   if (S.week < tradeDeadline() && rnd() < 0.33 * SET('trade')) { S.week++; genOfferForUser(); S.week--; }
   playersOfWeek(games, wk);
@@ -5176,6 +5191,7 @@ function weekEnd(userGame) {
     news(`Week ${wk}: ${w ? 'Beat' : userGame.score[0] === userGame.score[1] ? 'Tied' : 'Lost to'} the ${opp.name} ${Math.max(...userGame.score)}-${Math.min(...userGame.score)}.`, true); }
   S.week++;
   if (S.week > S.schedule.length) endRegularSeason();
+  else if (S.week === tradeDeadline()) dlOpen();
   uniAfterPro();
   return userGame;
 }
@@ -6181,38 +6197,85 @@ function assetsOf(tid, opts = {}) {
   return [...pks, ...pls];
 }
 // pick a package whose value lands in [lo, hi], preferring few pieces
-function pickPackage(assets, lo, hi, maxN = 4) {
+// (kMin and kMax: how many players the package may hold, so both rosters stay legal)
+function pickPackage(assets, lo, hi, maxN = 4, kMin = 0, kMax = 99) {
   // smallest total that clears lo (and stays under hi), fewest pieces first
   const srt = assets.filter(a => a.v <= hi).sort((a, b) => b.v - a.v).slice(0, 22);
   let best = null;
-  const dfs = (i, pkg, sum) => {
-    if (sum >= lo) { if (!best || sum < best.sum - 0.01 || (Math.abs(sum - best.sum) < 0.01 && pkg.length < best.pkg.length)) best = { pkg: pkg.slice(), sum }; return; }
+  const dfs = (i, pkg, sum, k) => {
+    if (sum >= lo && k >= kMin) { if (!best || sum < best.sum - 0.01 || (Math.abs(sum - best.sum) < 0.01 && pkg.length < best.pkg.length)) best = { pkg: pkg.slice(), sum }; return; }
     if (pkg.length >= maxN || i >= srt.length) return;
-    for (let j = i; j < srt.length; j++) { const s2 = sum + srt[j].v; if (s2 > hi) continue; if (best && s2 >= best.sum && s2 >= lo) continue; pkg.push(srt[j]); dfs(j + 1, pkg, s2); pkg.pop(); }
+    for (let j = i; j < srt.length; j++) { const pl = srt[j].k === 'pl' ? 1 : 0; if (k + pl > kMax || (sum >= lo && !pl)) continue; const s2 = sum + srt[j].v; if (s2 > hi) continue; if (best && s2 >= best.sum && s2 >= lo) continue; pkg.push(srt[j]); dfs(j + 1, pkg, s2, k + pl); pkg.pop(); }
   };
-  dfs(0, [], 0);
+  dfs(0, [], 0, 0);
   return best ? best.pkg : null;
 }
 function pkgToIds(pkg) { return { give: pkg.filter(a => a.k === 'pl').map(a => a.o.id), givePk: pkg.filter(a => a.k === 'pk').map(a => a.o.id), v: r1(pkg.reduce((s, a) => s + a.v, 0)) }; }
-// offers other teams would make for one of your players right now
-function shopPlayer(pid, n = 4) {
-  const p = S.players[pid]; if (!p || p.tid !== S.userTid) return [];
-  const out = [], tv = tradeValue(p);
-  for (const B of shuffle(S.teams.filter(t => t.tid !== S.userTid))) {
-    if (ntcBlocks(p, B.tid)) continue;
-    const Lb = lineup(B), weakest = Math.min(...Lb[p.pos].slice(0, POS[p.pos].start).map(x => x.ovr));
-    const fits = p.ovr >= weakest + 2 || (p.age <= 25 && p.pot >= 72);
-    if (!fits) continue;
-    const hi = (tv - 0.3) / 1.1, lo = hi * (0.72 + rnd() * 0.2);
-    const pool = assetsOf(B.tid).filter(() => rnd() < 0.7);
-    const pkg = pickPackage(pool, lo, hi, 3); if (!pkg) continue;
-    const ids = pkgToIds(pkg), ev = evaluateTrade(B.tid, [p.id], ids.give, [], ids.givePk);
-    if (!ev.ok) continue;
-    out.push({ tid: B.tid, get: ids.give, getPk: ids.givePk, v: ids.v });
-    if (out.length >= n) break;
+// ---------- shopping players around: every team that's interested names the best package it would accept ----------
+// want: 'best' (most value), 'picks', 'young' (players 25 and under), a position ('QB', 'WR', ...: the package has to include one), or 'cap' (take back less salary)
+const SHOP_WANTS = { best: 'Best offer', picks: 'Draft picks', young: 'Young players', cap: 'Cap relief' };
+function shopAround(o = {}) {
+  const u = S.userTid, mine = (o.pids || []).map(id => S.players[id]).filter(p => p && p.tid === u), myPk = (o.pks || []).map(id => S.picks.find(x => x.id === id)).filter(pk => pk && pk.own === u);
+  if (!mine.length && !myPk.length) return { offers: [], msg: 'Pick at least one player or pick to shop.' };
+  if (S.phase === 'playoffs' || (S.phase === 'regular' && S.week > tradeDeadline())) return { offers: [], msg: 'Trading is closed right now.' };
+  const want = o.want || 'best', pos = POS[want] ? want : null, salOut = mine.reduce((a, p) => a + capHit(p), 0);
+  // word gets around: a starter you shop who isn't already on the block hears about it (once a season)
+  if (o.real) for (const p of mine) if (p.ovr >= 70 && !p.tradeReq && !(S.block || []).includes(p.id) && p.shopS !== S.season) { p.shopS = S.season; p.mor = clamp((p.mor ?? 60) - 4, 0, 100); news(`Word is out that the ${team(u).name} are shopping ${p.pos} ${fullName(p)}.`, true); }
+  const offers = [], skip = { fit: 0, value: 0, room: 0, pkg: 0, deal: 0 };
+  for (const B of S.teams) {
+    if (B.tid === u || mine.some(p => ntcBlocks(p, B.tid))) continue;
+    const Lb = lineup(B), useful = mine.some(p => { const st = (Lb[p.pos] || []).slice(0, POS[p.pos].start); return !st.length || p.ovr >= Math.min(...st.map(x => x.ovr)) + 2 || (p.age <= 25 && p.pot >= 72); });
+    if (mine.length && !useful) { skip.fit++; continue; }
+    const worth = mine.reduce((a, p) => a + gmValue(B.tid, p), 0) + myPk.reduce((a, pk) => a + gmPickValue(B.tid, pk), 0);
+    const extra = Math.max(0, mine.length - 1) * 0.8, hi = (worth - 0.3) / gmPremium(B.tid) - extra; if (hi < 0.8) { skip.value++; continue; }
+    let pool = null, req = null;
+    for (const starters of [false, true]) {
+      pool = assetsOf(B.tid, { starters }).map(a => ({ ...a, v: a.k === 'pk' ? gmPickValue(B.tid, a.o) : gmValue(B.tid, a.o) * blockDisc(B.tid, a.o) }));
+      if (want === 'picks') pool = pool.filter(a => a.k === 'pk');
+      if (want === 'young') pool = pool.filter(a => a.k === 'pl' && a.o.age <= 25);
+      if (want === 'cap') pool = pool.filter(a => a.k === 'pk' || a.o.contract.yrs <= 1 || capHit(a.o) <= salOut * 0.35);
+      if (pos) { req = pool.filter(a => a.k === 'pl' && a.o.pos === pos && a.v <= hi && a.o.ovr >= 60).sort((x, y) => y.o.ovr - x.o.ovr)[0] || null; if (!req) continue; }
+      if (!starters && pool.reduce((a, x) => a + (x.v <= hi ? x.v : 0), 0) < hi * 0.65) continue;
+      break;
+    }
+    if (!pool || (pos && !req)) { skip.pkg++; continue; }
+    const kMin = Math.max(0, active(B.tid).length + mine.length - rosterMax()) - (req ? 1 : 0), kMax = rosterMax() - active(u).length + mine.length - (req ? 1 : 0);
+    if (kMax < Math.max(0, kMin)) { skip.room++; continue; }
+    // a full roster has to send bodies back: its cheapest backups go in as throw-ins. A team that can't fit the salary sends some back (seed).
+    const build = seed => {
+      const fill = [], kMin2 = kMin - seed.length, kMax2 = kMax - seed.length; if (kMax2 < Math.max(0, kMin2)) return null;
+      if (kMin2 > 0) { const L2 = lineup(B), st = new Set(POS_ORDER.flatMap(ps => L2[ps].slice(0, POS[ps].start).map(x => x.id))), sd = new Set(seed.map(a => a.o.id)); fill.push(...active(B.tid).filter(x => !st.has(x.id) && !sd.has(x.id) && !x.inj && !x.contract.ntc && x.pos !== 'K' && x.pos !== 'P' && (!req || x.id !== req.o.id)).sort((a, b) => tradeValue(a) - tradeValue(b)).slice(0, kMin2).map(x => ({ k: 'pl', o: x, v: gmValue(B.tid, x) }))); if (fill.length < kMin2) return null; }
+      const used = new Set([...fill, ...seed].map(a => a.o.id)), rest = pool.filter(a => a !== req && !(a.k === 'pl' && used.has(a.o.id))), base = (req ? req.v : 0) + [...fill, ...seed].reduce((a, x) => a + x.v, 0), room = kMax2 - fill.length;
+      if (base > hi) return null;
+      let pkg = null;
+      for (const f of [0.9, 0.78, 0.65]) { const left = hi - base; pkg = left < 0.5 && (req || fill.length || seed.length) ? [] : pickPackage(rest, Math.max(0, hi * f - base), Math.max(0.1, left), Math.max(1, (req ? 3 : 4) - fill.length - seed.length), 0, room); if (pkg) break; }
+      if (!pkg || (!pkg.length && (want === 'picks' || want === 'young'))) return null;
+      pkg = [...(req ? [req] : []), ...seed, ...fill, ...pkg]; if (!pkg.length) return null;
+      const ids = pkgToIds(pkg); return { pkg, ids, salM: seed.map(a => a.o.id), body: fill.map(a => a.o.id), ev: evaluateTrade(B.tid, mine.map(p => p.id), ids.give, myPk.map(pk => pk.id), ids.givePk) };
+    };
+    let R = build([]);
+    if (R && !R.ev.ok && /can't fit/.test(R.ev.reason)) {
+      // match salary: their biggest contracts that he'd still be worth more than, until they fit
+      const over = payroll(B.tid) + salOut - S.cap, seed = []; let got = 0;
+      for (const a of assetsOf(B.tid, { starters: true }).filter(a => a.k === 'pl' && a !== req && (!req || a.o.id !== req.o.id)).map(a => ({ ...a, v: gmValue(B.tid, a.o) })).filter(a => a.v < hi * 0.7).sort((x, y) => capHit(y.o) - capHit(x.o))) { if (got >= over || seed.length >= 2) break; if ((want === 'picks' || want === 'young') && seed.reduce((t, x) => t + x.v, 0) + a.v > hi * 0.6) continue; seed.push(a); got += capHit(a.o); }
+      if (got >= over) R = build(seed) || R;
+    }
+    if (!R) { skip.pkg++; continue; }
+    const { pkg, ids, ev, salM, body } = R;
+    if (!ev.ok) { skip.deal++; (skip.why || (skip.why = [])).push(ev.reason); continue; }
+    const salIn = ids.give.reduce((a, id) => a + capHit(S.players[id]), 0);
+    if (want === 'cap' && salIn >= salOut) continue;
+    const g = rivalGm(B.tid), why = mine.length ? gmPhilMult(g, mine[0]).why[0] || (dlNeedMult(B.tid, mine[0].pos) > 1 ? `they need a ${mine[0].pos} before the deadline` : '') : '';
+    offers.push({ tid: B.tid, get: ids.give, getPk: ids.givePk, salM, body, v: r1(pkg.reduce((a, x) => a + (x.k === 'pk' ? pickValue(x.o) : tradeValue(x.o)), 0)), sal: r1(salIn - salOut), why });
   }
-  return out.sort((a, b) => b.v - a.v);
+  offers.sort((a, b) => b.v - a.v);
+  const cap = (skip.why || []).filter(r => /cap/.test(r)).length;
+  return { offers: offers.slice(0, o.n || 12), skip, msg: offers.length ? null : cap >= 3 ? "Teams that want him can't fit the salary under the cap. Add a pick, or ask for players back to match salary." : skip.fit >= S.teams.length - 4 ? "Nobody needs him: he wouldn't start for any team that could use him." : 'Nobody wants to pay for that right now. Try asking for something else.' };
 }
+// offers for one of your players (the trade block uses this)
+function shopPlayer(pid, n = 4) { return shopAround({ pids: [pid], n }).offers; }
+// take one of the offers you got by shopping
+function shopTake(o) { return executeTrade(o.tid, o.pids || [], o.get, o.pks || [], o.getPk); }
 // what it would take to get another team's player
 function tradeAsk(targetPid) {
   const t = S.players[targetPid]; if (!t || t.tid < 0 || t.tid === S.userTid) return { ok: false, msg: 'Pick a player on another team.' };
@@ -7428,7 +7491,7 @@ function gmValue(tid, p) {
     case 'cheap': b = Math.max(0.2, v - Math.max(0, capHit(p) - marketValue(p)) * 0.4 - Math.max(0, capHit(p) - 8) * 0.08); break;
     default: b = v;
   }
-  return Math.max(0.2, b * clamp(gmPhilMult(g, p).m, 0.8, 1.3));
+  return Math.max(0.2, b * clamp(gmPhilMult(g, p).m, 0.8, 1.3) * dlNeedMult(tid, p.pos));
 }
 function gmPickValue(tid, pk) { const g = rivalGm(tid), v = pickValue(pk); if (!g) return v; return v * (g.style === 'develop' ? 1.2 : g.style === 'winnow' ? 0.82 : 1) * (GM_PHIL[g.phil] || GM_PHIL.book)[4]; }
 // the market for a player: what every other front office thinks he's worth, highest first
@@ -8325,6 +8388,128 @@ function autoSeasonLine() {
   const res = h && h.champ === u ? `won the ${LEAGUE.final}` : po ? `lost in the ${PO_ROUNDS[po.po - 1] || 'playoffs'}` : 'missed the playoffs';
   return { s: S.season, w: t.rec.w, l: t.rec.l, t: t.rec.t || 0, res, champ: h ? h.champ : null, won: !!(h && h.champ === u) };
 }
+// ---------- deadline week: the trade market in the days before the deadline ----------
+// Contenders shop for a need, and the longer it goes unfilled the more they pay. Sellers drop their price on players in the last year
+// of a deal as the deadline nears. Each day brings deals, rumors and calls about your players; offers that get turned down can leak.
+const DL_DAYS = ['Three days out', 'Two days out', 'One day out', 'Deadline day'];
+const DL_DESP = ['', 'Kicking tires', 'Shopping', 'Desperate'];
+const dlOn = () => S.phase === 'regular' && S.week === tradeDeadline() && !!S.dlm && S.dlm.s === S.season && !S.dlm.closed;
+// where a contender is weakest against the league's starters, and whether he lost a starter there
+function dlNeed(t, avg) {
+  const L = lineup(t), r = roster(t.tid); let best = null;
+  for (const pos of POS_ORDER) {
+    if (pos === 'K' || pos === 'P') continue;
+    const st = (L[pos] || []).slice(0, POS[pos].start); if (!st.length) continue;
+    const weak = Math.min(...st.map(x => x.ovr)), hurt = r.find(p => p.pos === pos && p.inj >= 3 && p.ovr >= weak + 5);
+    const sc = (avg[pos] - weak) + (hurt ? 6 : 0) + (pos === 'QB' ? 2 : 0);
+    if (!best || sc > best.sc) best = { pos, sc, hurt };
+  }
+  return best && best.sc >= 3 ? best : null;
+}
+function dlOpen() {
+  if (S.phase !== 'regular' || S.week !== tradeDeadline()) return null;
+  if (S.dlm && S.dlm.s === S.season) return S.dlm;
+  const avg = {};
+  for (const pos of POS_ORDER) { const w = S.teams.map(t => (lineup(t)[pos] || []).slice(0, POS[pos].start)).filter(x => x.length).map(x => Math.min(...x.map(p => p.ovr))); avg[pos] = w.length ? w.reduce((a, b) => a + b, 0) / w.length : 60; }
+  const buyers = [], sellers = [];
+  for (const t of S.teams) {
+    if (t.tid === S.userTid) continue;
+    if (isContender(t)) {
+      const n = dlNeed(t, avg); if (!n) continue;
+      const g = rivalGm(t.tid), desp = clamp((n.sc >= 7 || n.hurt ? 2 : 1) + (g && g.style === 'winnow' ? 1 : 0), 1, 3);
+      buyers.push({ tid: t.tid, pos: n.pos, desp, why: n.hurt ? `lost ${fullName(n.hurt)} to injury` : `weak at ${n.pos}`, met: null });
+    } else if (pct(t.rec) < 0.45) sellers.push(t.tid);
+  }
+  buyers.sort((a, b) => b.desp - a.desp);
+  S.dlm = { s: S.season, day: 0, buyers, sellers, wire: [], leaks: 0, deals: 0 };
+  const top = buyers.slice(0, 3).map(b => `${team(b.tid).abbr} (${b.pos})`).join(', ');
+  news(`Deadline week: ${buyers.length} contender${buyers.length === 1 ? ' is' : 's are'} shopping${top ? `, led by ${top}` : ''}, and ${sellers.length} team${sellers.length === 1 ? ' is' : 's are'} open to selling. Trades close after week ${S.week}.`, true);
+  return S.dlm;
+}
+const dlWire = (m, k, text, imp) => { m.wire.push({ d: m.day, k, text }); if (m.wire.length > 60) m.wire.shift(); news(text, imp); };
+// a desperate buyer pays more at his need position, and more each day it goes unfilled
+function dlNeedMult(tid, pos) {
+  if (!dlOn()) return 1;
+  const b = S.dlm.buyers.find(x => x.tid === tid); if (!b || b.met || b.pos !== pos) return 1;
+  return 1 + b.desp * (0.03 + 0.015 * S.dlm.day);
+}
+// sellers give a little more on players in the last year of a deal each day closer to the deadline
+const dlSellDisc = (tid, p) => (dlOn() && S.dlm.sellers.includes(tid) && p.contract && p.contract.yrs <= 1 ? 0.025 * (S.dlm.day + 1) : 0);
+// upgrades a buyer could get at his need, most gettable first: players being shopped, then rentals, then the rest. On sellers' rosters, and on yours.
+function dlTargets(b, withUser) {
+  const B = team(b.tid), st = (lineup(B)[b.pos] || []).slice(0, POS[b.pos].start), weak = st.length ? Math.min(...st.map(x => x.ovr)) : 0;
+  const pool = [...S.dlm.sellers, ...(withUser ? [S.userTid] : [])].flatMap(tid => active(tid)).filter(p => p.pos === b.pos && !p.inj && !p.ps && p.age <= 32 && !(p.contract && p.contract.ntc) && p.ovr >= weak + 3);
+  const sc = p => (onAiBlock(p) ? 8 : 0) + (p.contract.yrs <= 1 ? 4 : 0) + (p.ovr - weak) * 0.5 - tradeValue(p) / 25;
+  return pool.sort((x, y) => sc(y) - sc(x));
+}
+const dlTarget = (b, withUser) => dlTargets(b, withUser)[0] || null;
+const dlName = p => fullName(p).replace(/\.$/, '');
+function dlDay(m) {
+  const day = m.day, cap = day >= 3 ? 3 : day >= 2 ? 2 : 1; let made = 0;
+  // yesterday's rumors: some of them come true
+  for (const r of m.wire.filter(x => x.k === 'rumor' && x.d === day - 1 && x.pid != null)) {
+    const b = m.buyers.find(x => x.tid === r.tid), p = S.players[r.pid];
+    if (!b || b.met || !p || p.tid !== r.of || p.tid === S.userTid || made >= cap || rnd() > 0.55) continue;
+    const got = aiDeal(team(b.tid), p, { deadline: true, quiet: true });
+    if (got) { b.met = p.id; made++; m.deals++; dlWire(m, 'deal', `Deadline deal: ${team(b.tid).abbr} land ${p.pos} ${dlName(p)} from ${team(r.of).abbr} for ${got}, the move the rumors pointed to.`); }
+  }
+  // buyers still looking
+  for (const b of m.buyers) {
+    if (b.met || made >= cap) continue;
+    if (rnd() > 0.04 + 0.05 * b.desp + 0.05 * day) continue;
+    let p = null, from = null, got = null;
+    for (const q of dlTargets(b, false).slice(0, 4)) { from = q.tid; got = aiDeal(team(b.tid), q, { deadline: true, quiet: true }); if (got) { p = q; break; } }
+    if (got) { b.met = p.id; made++; m.deals++; dlWire(m, 'deal', `Deadline deal: ${team(b.tid).abbr} get ${p.pos} ${dlName(p)} (${dispR(p.ovr)} OVR) from ${team(from).abbr} for ${got} to fill their hole at ${b.pos}.`); }
+  }
+  if (day >= 3) return made;
+  // the ones who come up empty get more desperate
+  for (const b of m.buyers) if (!b.met && b.desp < 3 && rnd() < 0.35) { b.desp++; if (b.desp === 3) dlWire(m, 'heat', `${team(b.tid).abbr} are getting desperate at ${b.pos} with the deadline ${day >= 2 ? 'tomorrow' : 'days away'}.`); }
+  // rumors, and calls about your players
+  let n = 0;
+  for (const b of shuffle(m.buyers.filter(x => !x.met))) {
+    if (n >= 3) break;
+    const p = dlTargets(b, true).find(q => !m.wire.some(x => x.k === 'rumor' && x.tid === b.tid && x.pid === q.id)); if (!p) continue; n++;
+    if (p.tid === S.userTid) {
+      const o = makeAiOfferFor(team(b.tid), p, `${team(b.tid).city} are ${b.desp >= 3 ? 'desperate' : 'looking'} at ${b.pos} before the deadline.`);
+      dlWire(m, 'call', o ? `${team(b.tid).abbr} called about your ${p.pos} ${dlName(p)}. Their offer is in your inbox.` : `${team(b.tid).abbr} asked about your ${p.pos} ${dlName(p)}, but couldn't put a package together.`, true);
+    } else { m.wire.push({ d: day, k: 'rumor', tid: b.tid, of: p.tid, pid: p.id, text: `Sources: ${team(b.tid).abbr} have talked to ${team(p.tid).abbr} about ${p.pos} ${dlName(p)}.` }); news(m.wire[m.wire.length - 1].text); }
+  }
+  return made;
+}
+function dlNext() {
+  const m = dlOpen(); if (!m || m.closed) return 'The deadline market is closed.';
+  if (m.day >= 3) return `It's deadline day. Trades close when you play week ${S.week}.`;
+  dlDay(m); m.day++;
+  if (m.day === 3) news(`Deadline day. Trades close when week ${S.week} is played.`, true);
+  return null;
+}
+// the week is played: whatever days are left go by, then the deadline passes
+function dlClose() {
+  const m = dlOpen(); if (!m || m.closed) return;
+  while (m.day < 3) { dlDay(m); m.day++; }
+  dlDay(m); m.closed = true;
+  const left = m.buyers.filter(b => !b.met).map(b => team(b.tid).abbr);
+  news(`The trade deadline has passed: ${m.deals} deadline deal${m.deals === 1 ? '' : 's'} got done${left.length ? `; ${left.slice(0, 4).join(', ')}${left.length > 4 ? ' and others' : ''} came up empty` : ''}.`);
+}
+// a turned-down offer can leak, and the player you tried to move hears about it
+function dlLeak(otherTid, give) {
+  if (!dlOn()) return;
+  const ps = give.map(id => S.players[id]).filter(p => p && p.ovr >= 68); if (!ps.length || rnd() > 0.35) return;
+  const p = ps.sort((a, b) => b.ovr - a.ovr)[0]; S.dlm.leaks++;
+  p.mor = clamp((p.mor ?? 60) - 6, 0, 100);
+  dlWire(S.dlm, 'leak', `Leak: ${team(S.userTid).abbr} offered ${p.pos} ${dlName(p)} to ${team(otherTid).abbr}. He has heard about it.`, true);
+}
+// what the trade page shows
+function dlMarket() {
+  const m = dlOpen(); if (!m || m.closed) return null;
+  const blocks = aiBlocks();
+  return {
+    day: m.day, label: DL_DAYS[m.day], week: S.week, deals: m.deals, leaks: m.leaks,
+    buyers: m.buyers.map(b => ({ tid: b.tid, pos: b.pos, desp: b.desp, heat: DL_DESP[b.desp], why: b.why, met: b.met, gm: rivalGm(b.tid) })),
+    sellers: m.sellers.map(tid => ({ tid, block: (blocks[tid] || []).slice(0, 3).map(x => ({ pid: x.pid, why: x.why, rental: (S.players[x.pid].contract || {}).yrs <= 1 })) })),
+    wire: m.wire.slice().reverse().map(x => ({ d: x.d, k: x.k, text: x.text, day: DL_DAYS[x.d] })),
+  };
+}
 // ---------- expected points: what a down, distance and field position are worth ----------
 // fit to public NFL expected-points curves: about +0.9 at your own 25, +2.3 at midfield, +3.8 at their 25, +5.9 at their 1
 function epValue(dn, tg, yl) {
@@ -8378,12 +8563,6 @@ function faPrioText(p) { const P = faPrio(p); return P.top.map(k => FA_KEYS[k]).
 
 // ---------- smarter trades ----------
 // the trade deadline: contenders buy, sellers move veterans for picks
-function deadlineFrenzy() {
-  const n0 = (S.tradeLog || []).length, tries = randInt(3, 7); let done = 0;
-  for (let i = 0; i < tries * 2 && done < tries; i++) if (aiTradeOnce({ deadline: true })) done++;
-  if (done) news(`Trade deadline: ${done} deal${done > 1 ? 's' : ''} got done around the league as contenders loaded up and sellers cashed in veterans for picks.`);
-  void n0;
-}
 // draft day: teams jump up for a player sliding down the board, especially at a position of need
 function aiDraftFallers() {
   const d = S.draft; if (!d || !d.pid || d.idx >= 64) return null;
@@ -8820,7 +8999,7 @@ function aiBlocks() {
 }
 const onAiBlock = p => !!(p && p.tid >= 0 && p.tid !== S.userTid && (aiBlocks()[p.tid] || []).some(x => x.pid === p.id));
 // a team gives a little on a player it is already shopping
-const blockDisc = (tid, p) => (onAiBlock(p) ? 0.85 : 1);
+const blockDisc = (tid, p) => (onAiBlock(p) ? 0.85 : 1) - dlSellDisc(tid, p);
 function leagueBlock() {
   const B = aiBlocks(), out = [];
   for (const tid in B) for (const x of B[tid]) { const p = S.players[x.pid]; if (p) out.push({ p, tid: +tid, why: x.why, v: tradeValue(p) }); }
@@ -13746,7 +13925,7 @@ return {
   newLeague, setUser, save, load, simWeek, simToEndOfRegular, simPlayoffRound, reSign, toFreeAgency, faNextDay, toDraft, draftPlayer, aiDraftPick,
   simDraftToUser, simDraftToEnd, autoPickUser, startSeason, signPlayer, release, evaluateTrade, executeTrade, ensureDepth, teamRatings, roster, payroll, capRoom,
   team, freeAgents, prospects, marketValue, tradeValue, userRosterIssue, confSeeds, divStandings, pct, phaseLabel, fullName, nm, careerTotals,
-  compactState, saveBreakdown, TV, GRADE_PTS, restructurePreview, restructure, payCutPreview, askPayCut, appealSuspension, mentorOf, menteeOf, canMentor, setMentor, endMentor, marketSize, MARKET_NAME, fanMood, merchLeaders, starMerch, rsFuture, GM_STYLES, GM_PHIL, rivalGm, relLabel, gmPremium, gmValue, gmPickValue, gmInterest, gmRead, GM_READS, setDifficulty, DIFF, inCamp, rosterMax, CAMP_MAX, playPreseasonGame, finishCamp, cutCandidates, resolveBattles, treatInjury, rushBack, PRACTICE, practiceOf, setPractice, practiceEffects, setReturner, returnerScore, autoReturner, returnersFor, discLabel, AGGR_NAME, tendText, hcTend, coachProfile, coachTree, disputeAction, visitFA, marketInfo, onMarket, stEdge, SET_OPTS, SET_DEFAULT, setSimSetting, h2hFor, franchiseSeasonLeaders, SEASON_LEAD_KEYS, proComparison, GRADE_CURVE, OFF_CALLS, DEF_CALLS, CALL_TIPS, offScore, defScore, lineup, r1, draftScore, picksOf, pickValue, pickLabel, projSlot, deadFor, deadIfCut, capYear, passerRating, autoFixRoster, minSalary, seasonPayroll,
+  compactState, saveBreakdown, TV, GRADE_PTS, restructurePreview, restructure, payCutPreview, askPayCut, appealSuspension, mentorOf, menteeOf, canMentor, setMentor, endMentor, marketSize, MARKET_NAME, fanMood, merchLeaders, starMerch, rsFuture, GM_STYLES, GM_PHIL, rivalGm, relLabel, gmPremium, gmValue, gmPickValue, gmInterest, gmRead, GM_READS, dlMarket, dlNext, DL_DAYS, shopAround, shopTake, SHOP_WANTS, setDifficulty, DIFF, inCamp, rosterMax, CAMP_MAX, playPreseasonGame, finishCamp, cutCandidates, resolveBattles, treatInjury, rushBack, PRACTICE, practiceOf, setPractice, practiceEffects, setReturner, returnerScore, autoReturner, returnersFor, discLabel, AGGR_NAME, tendText, hcTend, coachProfile, coachTree, disputeAction, visitFA, marketInfo, onMarket, stEdge, SET_OPTS, SET_DEFAULT, setSimSetting, h2hFor, franchiseSeasonLeaders, SEASON_LEAD_KEYS, proComparison, GRADE_CURVE, OFF_CALLS, DEF_CALLS, CALL_TIPS, offScore, defScore, lineup, r1, draftScore, picksOf, pickValue, pickLabel, projSlot, deadFor, deadIfCut, capYear, passerRating, autoFixRoster, minSalary, seasonPayroll,
   active, available, PS_MAX, psSalary, psEligible, placeIR, activateIR, signToPS, promotePS, moveToPS,
   ROLES, ROLE_NAME, coachOf, coachRat, staffBudget, staffSpend, hireCoach, fireCoach, userStaffGaps, trainerMult,
   userView, deepScout, scoutSd, scoutPointsFor,
@@ -13754,7 +13933,7 @@ return {
   pruneOffers, acceptOffer, declineOffer, takeJob, teamRank,
   careerRecords, franchiseLeaders, REC_KEYS, REC_LABEL, hofScore, hofOutlook, hofWatch, LEAD_KEYS, mainTeam,
   weekBegin, weekEnd, watchWeek, uniBgStep, weekRestStep, weekFlush, weekPending: () => !!(S && S.weekLazy), poBegin, poEnd, poPairs, coachStart, coachFinish, runGen, scoutingReport, setGamePlan, OFF_PLANS, DEF_PLANS, gamePlanFor,
-  optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, deadlineFrenzy, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carSeasons, carGameLine, carHofStatus, carDraftProjection, carSocPost, carSocReply, carSocBlock, carSocMute, carSocIdeas, socCharPen, socAbout, carSocDelete, carSocMore, carSocPrompt, carSocLabelPrompt, carSocWrite, carSocQueue, carSocView, carSocSeen, socShowAt, socRead, socCtx, socCheck, SOC_MAX, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
+  optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carSeasons, carGameLine, carHofStatus, carDraftProjection, carSocPost, carSocReply, carSocBlock, carSocMute, carSocIdeas, socCharPen, socAbout, carSocDelete, carSocMore, carSocPrompt, carSocLabelPrompt, carSocWrite, carSocQueue, carSocView, carSocSeen, socShowAt, socRead, socCtx, socCheck, SOC_MAX, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
   injStatus, injuryReport, toggleRest, gameKey, pkgFor, setPackage, marketComps, positionMarket, hotSeat, hotSeatHeat,
   PROTECT_N, defaultProtect, ACHIEVEMENTS, RULES_DEFAULT, PROPOSALS, castVote, expandLeague: (n, pr) => { const r = expandLeague(n, pr); topUpProspects(); return r; }, MILESTONES, MS_NAME, stadiumTag, tradeDeadline,
   TRAITS, traitsKnown, POS_MOVES, positionPreview, changePosition, AGENT_STYLES, agentOf, capHit, voidCapHit, toggleBlock, shopPlayer, tradeAsk, mockDraft, visitProspect, VISITS_PER_YEAR,
@@ -14005,6 +14184,11 @@ const actions = {
   doPos: d => { const err = HM.changePosition(+d.id, d.v); ui.confirm = null; if (err) toast(err); else { persist(); toast('Position changed.'); } },
   blockTgl: d => { HM.toggleBlock(+d.id); if (ui.shop) delete ui.shop[+d.id]; persist(); toast((S().block || []).includes(+d.id) ? 'Added to the trade block.' : 'Removed from the trade block.'); },
   shop: d => { ui.shop = ui.shop || {}; ui.shop[+d.id] = HM.shopPlayer(+d.id); },
+  dlNext: () => { const r = HM.dlNext(); if (r) toast(r); persist(); },
+  shopOpen: d => { ui.sh = { pids: [+d.id], pk: '', want: 'best', res: null }; ui.view = 'trade'; ui.tradeTab = 'shop'; ui.modal = null; ui.sh.res = HM.shopAround({ pids: ui.sh.pids, want: 'best', real: true }); persist(); window.scrollTo(0, 0); },
+  shopGo: () => { const sh = ui.sh; if (!sh) return; sh.res = HM.shopAround({ pids: sh.pids.filter(x => x != null), pks: sh.pk ? [+sh.pk] : [], want: sh.want, real: true }); persist(); },
+  shopTake: d => { const sh = ui.sh, o = sh && sh.res && sh.res.offers[+d.i]; if (!o) return; const r = HM.shopTake({ ...o, pids: sh.pids.filter(x => x != null), pks: sh.pk ? [+sh.pk] : [] }); if (!r.ok) { toast(r.reason); return; } ui.sh = { pids: [], pk: '', want: sh.want, res: null }; persist(); toast('Trade completed.'); },
+  shopEdit: d => { const sh = ui.sh, o = sh && sh.res && sh.res.offers[+d.i]; if (!o) return; ui.tradeTid = o.tid; ui.give = new Set(sh.pids.filter(x => x != null)); ui.givePk = new Set(sh.pk ? [+sh.pk] : []); ui.get = new Set(o.get); ui.getPk = new Set(o.getPk); ui.tradeMsg = null; ui.tradeTab = 'build'; window.scrollTo(0, 0); },
   shopAccept: d => { const pid = +d.id, o = (ui.shop || {})[pid]?.[+d.i]; if (!o) return; const r = HM.executeTrade(o.tid, [pid], o.get, [], o.getPk); if (!r.ok) toast(r.reason); else { delete ui.shop[pid]; persist(); toast('Trade completed.'); } },
   tradeAsk: d => { const r = HM.tradeAsk(+d.id); if (!r.ok) { toast(r.msg); return; } ui.tradeTid = r.tid; ui.get = new Set([+d.id]); ui.give = new Set(r.give); ui.getPk = new Set(); ui.givePk = new Set(r.givePk); ui.tradeMsg = { ok: true, reason: `${r.msg}${r.starters ? ' It includes a starter.' : ''} Adjust it or press Propose.` }; ui.view = 'trade'; ui.tradeTab = 'build'; ui.modal = null; window.scrollTo(0, 0); },
   visit: d => { const err = HM.visitProspect(+d.id); if (err) toast(err); else { persist(); toast('Visit done. His traits and character are on his card.'); } },
@@ -14123,6 +14307,7 @@ document.addEventListener('click', e => { if (ui.searchOpen && !e.target.closest
 app.addEventListener('change', e => {
   const el = e.target;
   if (el.id === 'tfPos' || el.id === 'tfMin' || el.id === 'tfAge' || el.id === 'tfSal' || el.id === 'tfAvail') { const f = ui.tf || (ui.tf = {}); if (el.id === 'tfAvail') f.avail = el.checked; else f[{ tfPos: 'pos', tfMin: 'min', tfAge: 'age', tfSal: 'sal' }[el.id]] = el.id === 'tfPos' ? el.value : +el.value; render(); }
+  if (/^shP[012]$/.test(el.id) || el.id === 'shPk' || el.id === 'shWant') { const sh = ui.sh || (ui.sh = { pids: [], pk: '', want: 'best', res: null }); if (el.id === 'shPk') sh.pk = el.value; else if (el.id === 'shWant') sh.want = el.value; else { const i = +el.id[3]; sh.pids[i] = el.value ? +el.value : null; sh.pids = sh.pids.filter((x, j) => x == null || sh.pids.indexOf(x) === j); } sh.res = null; render(); }
   if (el.id === 'tradeTeam') { ui.tradeTid = +el.value; ui.get = new Set(); ui.getPk = new Set(); ui.tradeMsg = null; render(); }
   if (el.id === 'cfPos' && ui.cf) { ui.cf.pos = el.value; ui.cf.arch = null; render(); }
   if (el.id === 'cfArch' && ui.cf) { ui.cf.arch = el.value; render(); }
@@ -14170,7 +14355,7 @@ document.addEventListener('keydown', e => {
   if (/^[0-9]$/.test(e.key)) { const i = e.key === '0' ? 9 : +e.key - 1; if (NAV[i]) { ui.view = NAV[i][0]; ui.modal = null; window.scrollTo(0, 0); render(); } }
 });
 
-const UNDOABLE = { release: 'release', propose: 'trade', shopAccept: 'trade', offerAccept: 'trade', sign: 'signing', signPS: 'signing', negSubmit: 'contract', doPos: 'position change', draft: 'draft pick', autopick: 'draft pick', hire: 'hire', fire: 'firing', resign: 're-signing', tag: 'franchise tag', opt5: 'option decision', stadium: 'stadium project', upgradeFac: 'facilities upgrade', toPS: 'practice squad move', promote: 'promotion', ir: 'IR move', activate: 'IR move', expandGo: 'expansion', addRing: 'Ring of Honor change', retNum: 'retired number', edPlayer: 'player edit', edTeam: 'team edit', rosterApply: 'roster import', dzSave: 'team edit', dzBulk: 'logo upload', offerDecline: 'declined offer' };
+const UNDOABLE = { release: 'release', propose: 'trade', shopAccept: 'trade', shopTake: 'trade', offerAccept: 'trade', sign: 'signing', signPS: 'signing', negSubmit: 'contract', doPos: 'position change', draft: 'draft pick', autopick: 'draft pick', hire: 'hire', fire: 'firing', resign: 're-signing', tag: 'franchise tag', opt5: 'option decision', stadium: 'stadium project', upgradeFac: 'facilities upgrade', toPS: 'practice squad move', promote: 'promotion', ir: 'IR move', activate: 'IR move', expandGo: 'expansion', addRing: 'Ring of Honor change', retNum: 'retired number', edPlayer: 'player edit', edTeam: 'team edit', rosterApply: 'roster import', dzSave: 'team edit', dzBulk: 'logo upload', offerDecline: 'declined offer' };
 const UNDO_CLEARS = ['week', 'quickWeek', 'toPO', 'po', 'poQuick', 'poAll', 'toFA', 'faDay', 'toDraft', 'toMyPick', 'draftAll', 'start', 'smartSim', 'coachWeek', 'coachPo', 'newLeague', 'wipe', 'openSlot', 'importSave', 'takeJob', 'firedNew', 'begin', 'autoPlay'];
 // the rest of a watched week's games, played a game at a time behind the pregame show and the broadcast; anything else the
 // user does first finishes them (the live viewer's own buttons don't need to)
@@ -15219,8 +15404,9 @@ function tradeView() {
   const listOf = (ps, pks) => [...ps.map(p => E(p.pos + ' ' + p.ln)), ...pks.map(p => E(HM.pickLabel(p)))].join(', ') || 'Nothing yet';
   const salD = get.reduce((a, p) => a + p.contract.sal, 0) - give.reduce((a, p) => a + p.contract.sal, 0);
   const closed = s.phase === 'playoffs' || (s.phase === 'regular' && s.week > HM.TRADE_DEADLINE);
-  const tab = ui.tradeTab || 'build', tabSeg = seg('tradeTab', tab, [['build', 'Trade builder'], ['finder', 'Trade finder'], ['market', 'On the market'], ['block', 'Your trade block']]);
-  if (tab !== 'build') return `<div class="pagehead"><div><h2>Trades</h2><p>Find players to target, see who other teams are shopping, and list your own players.</p></div>${tabSeg}</div>${tab === 'finder' ? tradeFinderPanel() : tab === 'market' ? tradeMarketPanel() : tradeBlockPanel()}`;
+  const dlm = HM.dlMarket(), tab0 = ui.tradeTab || (dlm ? 'deadline' : 'build'), tab = tab0 === 'deadline' && !dlm ? 'build' : tab0;
+  const tabSeg = seg('tradeTab', tab, [['build', 'Trade builder'], ...(dlm ? [['deadline', `Deadline · ${dlm.label}`]] : []), ['shop', 'Shop players'], ['finder', 'Trade finder'], ['market', 'On the market'], ['block', 'Your trade block']]);
+  if (tab !== 'build') return `<div class="pagehead"><div><h2>Trades</h2><p>Find players to target, shop your own around the league, see who other teams are shopping, and list your own players.</p></div>${tabSeg}</div>${tab === 'deadline' ? deadlinePanel(dlm) : tab === 'shop' ? shopPanel() : tab === 'finder' ? tradeFinderPanel() : tab === 'market' ? tradeMarketPanel() : tradeBlockPanel()}`;
   const msg = ui.tradeMsg ? `<div class="note ${ui.tradeMsg.ok ? 'ok' : 'err'}">${E(ui.tradeMsg.reason)}</div>` : '';
   return `<div class="pagehead"><div><h2>Trades</h2><p>Pick players and draft picks from both sides and propose. Teams value young, cheap, high-upside players and early picks, and want a little extra to say yes. A pick's value depends on where it's projected to land; future years are discounted. The deadline is after week ${HM.TRADE_DEADLINE}. During the draft you can trade picks to move up or down.</p></div>
     <label class="row"><span class="lbl">Trade with</span><select id="tradeTeam">${others.map(t => `<option value="${t.tid}" ${t.tid === o.tid ? 'selected' : ''}>${E(t.city + ' ' + t.name)} (${recStr(t.rec)})</option>`).join('')}</select></label></div>
@@ -15395,6 +15581,7 @@ function playerModal(p) {
   const u = s.userTid;
   if (p.tid === u) {
     if (!p.ps && !p.ir) acts.push(`<button class="btn" data-act="blockTgl" data-id="${p.id}">${(s.block || []).includes(p.id) ? 'Take off trade block' : 'Put on trade block'}</button>`);
+    if (!p.ps && !p.ir && !(s.phase === 'playoffs' || (s.phase === 'regular' && s.week > HM.TRADE_DEADLINE))) acts.push(`<button class="btn" data-act="shopOpen" data-id="${p.id}" title="See what every interested team would give for him">Shop him</button>`);
     if (p.expiring) acts.push(`<button class="btn primary" data-act="neg" data-kind="resign" data-id="${p.id}">Negotiate new deal</button>`);
     else if (!p.ps && p.contract.yrs <= 2 && s.phase !== 'playoffs') acts.push(`<button class="btn${p.holdout ? ' primary' : ''}" data-act="neg" data-kind="ext" data-id="${p.id}">${p.holdout ? 'Negotiate to end holdout' : 'Negotiate extension'}</button>`);
     if (!p.ir && !p.ps && (p.inj || 0) >= 4) acts.push(`<button class="btn" data-act="ir" data-id="${p.id}">Place on injured reserve</button>`);
@@ -17816,6 +18003,51 @@ function tradeBlockPanel() {
     <p class="muted" style="font-size:12px;margin:8px 0 0">Want someone? Open his card and press "What would it take?" to have his team name a price from your roster.</p></section>`;
 }
 
+// ---------- shopping your players around the league ----------
+function shopPanel() {
+  const s = S(), u = s.userTid, sh = ui.sh || (ui.sh = { pids: [], pk: '', want: 'best', res: null });
+  const closed = s.phase === 'playoffs' || (s.phase === 'regular' && s.week > HM.TRADE_DEADLINE);
+  const mine = HM.active(u).filter(p => !p.ps && !p.ir).sort((a, b) => HM.tradeValue(b) - HM.tradeValue(a)), pks = HM.picksOf(u);
+  const opt = (v, cur, l) => `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${E(l)}</option>`;
+  const pSel = i => `<select id="shP${i}" aria-label="Player ${i + 1} to shop">${opt('', '', i ? '(none)' : 'Pick a player')}${mine.map(p => opt(p.id, sh.pids[i] ?? '', `${p.pos} ${p.fn[0]}. ${p.ln} · ${rv(p.ovr)} · ${p.age}`)).join('')}</select>`;
+  const wants = [...Object.entries(HM.SHOP_WANTS), ...HM.POS_ORDER.filter(p => p !== 'K' && p !== 'P').map(p => [p, `A ${p}`])];
+  const out = sh.pids.map(P).filter(Boolean), outV = out.reduce((a, p) => a + HM.tradeValue(p), 0) + (sh.pk ? HM.pickValue(pks.find(x => x.id === +sh.pk) || {}) || 0 : 0);
+  const piece = (id, o) => { const q = P(id); return q ? `<div>${plink(q)} <span class="muted" style="font-size:12px">${q.pos} · ${rv(q.ovr)} OVR · ${q.age} · ${money(q.contract.sal)} × ${q.contract.yrs}${(o.salM || []).includes(id) ? ' · <i>to match salary</i>' : (o.body || []).includes(id) ? ' · <i>throw-in</i>' : ''}</span></div>` : ''; };
+  const pkPiece = id => { const pk = (s.picks || []).find(x => x.id === id); return pk ? `<div>${E(HM.pickLabel(pk, true))} <span class="muted" style="font-size:12px">pick</span></div>` : ''; };
+  const res = sh.res;
+  const rows = res ? (res.offers.length ? res.offers.map((o, i) => { const g = HM.rivalGm(o.tid); return `<div class="row offer" style="justify-content:space-between;align-items:flex-start;gap:12px;padding:8px 0;border-top:1px solid var(--line)">
+      <div style="min-width:150px">${tlink(T(o.tid))}<div class="muted" style="font-size:11.5px">${g ? E(g.fn + ' ' + g.ln + ' · ' + (HM.GM_PHIL[g.phil] || HM.GM_PHIL.book)[0]) : ''}</div>${o.why ? `<div class="muted" style="font-size:11.5px">${E(o.why.charAt(0).toUpperCase() + o.why.slice(1))}</div>` : ''}</div>
+      <div style="flex:1;font-size:12.5px">${o.get.map(id => piece(id, o)).join('')}${o.getPk.map(pkPiece).join('')}</div>
+      <div class="stack" style="gap:2px;text-align:right;font-size:12px;min-width:120px"><span class="num">value <b>${o.v.toFixed(1)}</b> <span class="muted">for ${outV.toFixed(1)}</span></span><span class="num muted">payroll ${o.sal >= 0 ? '+' : '−'}${money(Math.abs(o.sal))}</span></div>
+      <div class="stack" style="gap:4px"><button class="btn sm primary" data-act="shopTake" data-i="${i}" ${closed ? 'disabled' : ''}>Accept</button><button class="btn sm" data-act="shopEdit" data-i="${i}">Edit in builder</button></div></div>`; }).join('') : `<p class="muted" style="margin:0;font-size:12.5px">${E(res.msg || 'No offers.')}</p>`) : '';
+  return `<section class="panel"><div class="ph"><h3>Shop players</h3><span class="muted" style="font-size:12.5px">Your cap space: ${money(HM.capRoom(u))}</span></div>
+    <p class="muted" style="margin:0 0 10px;font-size:12.5px">Pick up to three of your players (and a pick, if you like), say what you want back, and every team that's interested names the best package its front office would accept right now, by its own style, philosophy and needs. Accept one, or open it in the trade builder to adjust. Word gets around: a starter you shop who isn't on your trade block hears about it.</p>
+    <div class="row" style="gap:10px;flex-wrap:wrap;margin-bottom:10px">${pSel(0)}${pSel(1)}${pSel(2)}
+      <select id="shPk" aria-label="Pick to include">${opt('', sh.pk, 'No pick')}${pks.map(pk => opt(pk.id, sh.pk, HM.pickLabel(pk, true))).join('')}</select>
+      <label class="row"><span class="lbl">Want back</span><select id="shWant">${wants.map(([v, l]) => opt(v, sh.want, l)).join('')}</select></label>
+      <button class="btn primary" data-act="shopGo" ${closed || (!out.length && !sh.pk) ? 'disabled' : ''}>Shop ${out.length > 1 ? 'them' : 'him'}</button></div>
+    ${closed ? '<div class="note err">Trading is closed right now.</div>' : ''}
+    ${res ? `<div class="lbl" style="margin:4px 0">${res.offers.length} offer${res.offers.length === 1 ? '' : 's'}</div><div>${rows}</div>` : ''}</section>`;
+}
+
+// ---------- deadline week: who's buying, who's selling, and the wire ----------
+function deadlinePanel(m) {
+  const s = S(), heatCls = d => d >= 3 ? 'L' : d >= 2 ? '' : 'muted';
+  const buyers = table('dlBuy', [
+    { k: 't', l: 'Team', f: b => `${chip(T(b.tid))} <span class="muted num">${recStr(T(b.tid).rec)}</span>`, v: b => T(b.tid).rec.w },
+    { k: 'pos', l: 'Shopping for', f: b => `<b>${b.pos}</b> <span class="muted" style="font-size:12px" title="${b.gm ? E(HM.GM_STYLES[b.gm.style][0] + ' · ' + (HM.GM_PHIL[b.gm.phil] || HM.GM_PHIL.book)[0]) : ''}">${E(b.why)}</span>`, v: b => b.pos },
+    { k: 'h', l: 'Mood', f: b => b.met && P(b.met) ? `<span class="muted">Got ${plink(P(b.met))}</span>` : b.met ? '<span class="muted">Done</span>' : `<b class="${heatCls(b.desp)}">${E(b.heat)}</b>`, v: b => b.met ? -1 : b.desp }], m.buyers, { sort: { k: 'h', d: 'desc' }, empty: 'No contender is shopping this year.' });
+  const sellers = m.sellers.filter(x => x.block.length).map(x => `<div style="display:grid;grid-template-columns:auto 40px 1fr;gap:8px;align-items:baseline;font-size:12.5px;margin-bottom:6px">${chip(T(x.tid))}<span class="muted num">${recStr(T(x.tid).rec)}</span><span>${x.block.map(b => { const p = P(b.pid); return p ? `${plink(p)} <span class="muted">${p.pos} ${rv(p.ovr)}${b.rental ? ', rental' : ''}</span>` : ''; }).filter(Boolean).join(' · ')}</span></div>`).join('');
+  const kind = { deal: ['Deal', 'w'], rumor: ['Rumor', ''], call: ['Your phone', 'w'], leak: ['Leak', 'l'], heat: ['Heat', ''] };
+  const wire = m.wire.length ? m.wire.slice(0, 30).map(w => `<div class="row" style="gap:8px;font-size:12.5px;align-items:baseline"><span class="muted" style="min-width:96px">${E(w.day)}</span><span class="pill ${(kind[w.k] || [])[1] || ''}" style="min-width:70px;text-align:center">${E((kind[w.k] || [w.k])[0])}</span><span>${E(w.text)}</span></div>`).join('') : '<p class="muted" style="margin:0;font-size:12.5px">Quiet so far. Rumors and deals show up here as the days go by.</p>';
+  return `<section class="panel"><div class="ph"><h3>Deadline week · ${E(m.label)}</h3><span class="row" style="gap:8px">${m.deals ? `<span class="pill">${m.deals} deal${m.deals > 1 ? 's' : ''} done</span>` : ''}${m.day < 3 ? `<button class="btn primary" data-act="dlNext">Next day</button>` : `<span class="pill l">Trades close when week ${m.week} is played</span>`}</span></div>
+    <p class="muted" style="margin:0 0 4px;font-size:12.5px">Contenders are shopping for one need each. The longer a need goes unfilled, the more they will pay for that position, and the more they'll offer for your players there. Sellers give a little more each day on players in the last year of their deals, who would walk anyway. Offers of yours that get turned down can leak, and the player hears about it.</p>
+    <p class="muted" style="margin:0;font-size:12.5px">Each day brings deals, rumors and calls. Playing the week runs out the clock: whatever days are left go by, then the deadline passes.</p></section>
+  <div class="grid2"><section class="panel"><div class="ph"><h3>Buyers · ${m.buyers.length}</h3></div>${buyers}</section>
+  <section class="panel"><div class="ph"><h3>Sellers · ${m.sellers.length}</h3><span class="muted" style="font-size:12.5px">who they're shopping</span></div>${sellers || '<p class="muted" style="margin:0;font-size:12.5px">No seller is shopping anyone right now.</p>'}</section></div>
+  <section class="panel"><div class="ph"><h3>The wire</h3></div><div class="stack" style="gap:5px">${wire}</div></section>`;
+}
+
 // ---------- trade finder & the league's trade blocks ----------
 function tradeFinderPanel() {
   const s = S(), f = ui.tf || (ui.tf = { pos: 'WR', min: 0, age: 0, sal: 0, avail: false });
@@ -18416,7 +18648,7 @@ const HELP = [
   ['cap', 'Salary cap and contracts', () => `<p>Every team has the same cap (${money(S().cap)}), and it stays there every season. What counts is the <b>cap hit</b>, which is the salary plus any bonus spread over void years. Guaranteed money you still owe a player you cut becomes <b>dead money</b>, split across this year and next.</p>
     <p><b>Extensions:</b> players with two or fewer years left can be extended; the cap planner on the Roster page shows future years. <b>Franchise tag:</b> one expiring star a year, for one season, at the top of his position's market. <b>Fifth-year option:</b> first-round picks can be kept a fifth year at a set price.</p>
     <p><b>Negotiating:</b> trade salary against years, guarantees, incentives, a no-trade clause or void years. Agents have styles, and how a player feels about your team moves his price a few percent. The market panel shows comparable recent deals.</p>`],
-  ['trades', 'Trades', () => `<p>AI teams value young, cheap, high-upside players and early picks, and want a little extra to say yes. Put players on the <b>trade block</b> to collect offers, or ask <b>what would it take</b> for any player. Pick values depend on where the pick is projected to land, and future years are discounted. AI teams trade with each other and send you offers during the season.</p>`],
+  ['trades', 'Trades', () => `<p>AI teams value young, cheap, high-upside players and early picks, and want a little extra to say yes. Put players on the <b>trade block</b> to collect offers, or ask <b>what would it take</b> for any player. To move a player, <b>shop him</b> (from his card, or the Shop players tab): pick up to three players and a pick, say what you want back (the best offer, picks, young players, a position, or cap relief), and every interested team names the best package it would accept, by its own valuation. Accept one or open it in the trade builder. The same request gives the same offers until something changes, and a starter you shop who isn't on your trade block hears about it. Pick values depend on where the pick is projected to land, and future years are discounted. AI teams trade with each other and send you offers during the season.</p>`],
   ['draft', 'Scouting and the draft', () => `<p>Prospect ratings are your scouts' estimates, shown with a ± range. Better scouts narrow it. <b>Scouting a player closely</b> (${S().scoutPts ?? 0} assignments left) tightens his range, and <b>pre-draft visits</b> (${HM.VISITS_PER_YEAR} a year) reveal personality and hidden traits.</p>
     <p>The <b>combine</b> runs after the season: the 40, bench, vertical, 3-cone, shuttle, broad jump and a graded position drill. The 3-cone and shuttle reflect agility, and the drills hint at hands, footwork or throwing. Mock drafts show where the media expects players to go.</p>
     <p>After each draft the media grades every class, and three years later the class gets graded again on how the players actually turned out.</p>`],
@@ -18452,6 +18684,7 @@ const HELP = [
   ['college', 'College mode', () => `<p>Choose "College coach" on the title screen. Recruit from a board of up to 30 targets with 40 to 65 hours a week depending on your program's prestige (texts, calls, assistant contacts, home visits, scouting), official visits to home games and NIL pledges. Redshirt freshmen to save a year, keep players out of the transfer portal with NIL and a talk, and poach from it. The world is the real 2026 FBS: 138 schools in the actual conferences, with the Deep South Conference and Big Eighteen strongest and the smaller leagues thinner. Twelve games, conference title games, a 12-team playoff and bowls. Seniors and early entrants form a draft class you can import into a pro league from its draft page.</p>`],
   ['penalties', 'Penalties', () => `<p>Flags include false starts, offside, holding, pass interference, roughing the passer and personal fouls, with holding on returns too. A flag wipes out the play it happened on. Each player has a <b>discipline</b> rating (on his card). Undisciplined players, divas and teams with weaker head coaches draw more flags, and road offenses false-start more in loud stadiums. The box score and team stats show penalties and yards.</p>`],
   ['disputes', 'Contract disputes', () => `<p>Stars who are badly underpaid with a year or two left may go public through their agent in the offseason. At training camp a dispute can turn into a <b>holdout</b> (he misses games until he gets a deal or gives in) or a <b>hold-in</b> (he plays, but below his level, and doesn't develop). The player card gives your options: negotiate an extension, promise talks, fine a holdout, or let him seek a trade. Long disputes can end in a trade demand.</p>`],
+  ['deadline', 'Deadline week', () => `<p>The week before the trade deadline is its own market. When it opens, contenders each name a need (their weakest starter against the league, or a starter they lost to injury) and sellers put players on the block. The Trades page gets a <b>Deadline</b> tab that counts down four days: three days out, two, one, then deadline day. Press <b>Next day</b> to move through them, or just play the week and they go by on their own.</p><p>Each day brings deals around the league, rumors (some come true the next day) and calls about your players. A contender that comes up empty gets more desperate and pays more for its need position each day, so a starter at that spot is worth the most on deadline day. Sellers give a little more each day on players in the last year of their contracts. Offers of yours that get turned down can leak to the press, and the player you tried to move takes it personally.</p>`],
   ['gms', 'Rival general managers', () => `<p>Every AI team has a named GM with a style: <b>draft and develop</b> (loves youth and picks), <b>win now</b> (pays for veterans), <b>penny-pincher</b> (avoids big contracts), <b>trade-happy</b> (asks for less of a premium) or <b>balanced</b>. Styles shape their trades, drafting and free-agent bids. Your relationship with each GM changes how much extra value he wants: completed trades help, while lowball offers, declined offers and outbidding him for a free agent hurt. GMs who keep losing get fired. The trade page shows who you're dealing with, and League pulse lists every front office.</p><p>Each GM also has a <b>philosophy</b>. <b>Analytics</b> front offices pay for production (his percentile rankings) and the premium positions: quarterbacks, pass rushers, receivers and corners, and pay little for running backs and off-ball linebackers. <b>Old school</b> front offices pay for linemen, running backs and linebackers, go by the tape rather than the stat sheet, and like proven veterans. <b>By the book</b> GMs value players about the way the market does. Every GM also covets one position and pays more there. Philosophies shape trades, draft boards and free-agent bids, so the same player can be worth much more to one team than another. Open one of your players for the word around the league on who would want him: a rough read, not a price, and sometimes wrong.</p>`],
   ['camp', 'Training camp and cut-down day', () => `<p>After the draft you can carry up to ${HM.CAMP_MAX} players. When the season starts, camp opens: close competitions become <b>position battles</b>, and three preseason games (mostly backups) decide them along with camp ratings. Fringe players who produce can become <b>camp standouts</b> and earn a small bump. Before week 1 your active roster must be at 53: release players, move them to the practice squad, or let the staff make the cuts.</p>`],
   ['injuries', 'Injuries and the medical staff', () => `<p>When a player suffers an injury of four weeks or more, you choose: <b>surgery</b> (full recovery time, comes back at full strength) or <b>rehab</b> (back in about two-thirds of the time, higher risk of getting hurt again that season and a chance to lose a step). Within four weeks of returning you can <b>rush him back</b>: he plays at about 94% and is three times as likely to get hurt. Major knee and Achilles injuries can permanently cost speed and agility. A better head trainer shortens injuries and reduces those risks.</p>`],
@@ -18544,7 +18777,7 @@ const guideStart = () => ({ done: [] });
 
 // ---------- one-time tips on complicated screens (remembered on this device, for every save) ----------
 const TIPS = {
-  'pro:trade': 'Build a trade by adding players and picks from both sides. The bar shows how the other GM values it; they accept when it tips their way. The trade finder suggests deals that work.',
+  'pro:trade': 'Build a trade by adding players and picks from both sides, then propose it: the other GM tells you if you are close. Shop players gets an offer from every interested team for players you want to move; the trade finder turns up players to go after.',
   'pro:fa': 'Free agents want money, years and guarantees, and some care about winning or playing time. Offer their asking price to sign now, or negotiate. Asking prices drop as free agency goes on.',
   'pro:draft': 'Your scouts\' grades are estimates: the more you scout a player, the narrower his range. Build your board, then draft, or trade up and down while you\'re on the clock.',
   'pro:finance': 'Revenue comes from tickets, TV money and merchandise. Winning and a full stadium raise it; the owner watches the budget as well as the record.',
