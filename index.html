@@ -851,6 +851,8 @@ select[data-focus]{max-width:210px}
 .scompose.sm{margin-top:8px}.scompose.sm textarea{min-height:44px;font-size:13px;margin-bottom:6px}
 .spost{background:var(--panel);border:1px solid var(--line);border-radius:var(--r,12px);padding:14px 16px}
 .spost.del{opacity:.72}
+.spost.about{border-left:3px solid var(--accent)}
+.sideas{gap:6px;flex-wrap:wrap;margin-top:8px}.sideas .btn{font-weight:500;text-transform:none;letter-spacing:0}
 .sme,.sreply{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:start}
 .sbody{min-width:0}
 .shead{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;font-size:13.5px}
@@ -4068,7 +4070,7 @@ function projRanks() {
   return out;
 }
 const DRAFT_ADJ = { QB: 3, DL: 1.5, OL: 1, CB: 1, WR: 1, LB: 0, S: -0.5, TE: -1, RB: -1.5, K: -16, P: -17 };
-const draftScore = p => p.sc.pot * 0.55 + p.sc.ovr * 0.45 + DRAFT_ADJ[p.pos] + (p.gen ? 8 : 0) - (p.injLbl ? 1.5 : 0) + (p.colHonB || 0);
+const draftScore = p => p.sc.pot * 0.55 + p.sc.ovr * 0.45 + DRAFT_ADJ[p.pos] + (p.gen ? 8 : 0) - (p.injLbl ? 1.5 : 0) + (p.colHonB || 0) - (p.car ? socCharPen() : 0);
 function draftPlayer(pid) {
   const d = S.draft; if (!d || d.idx >= d.order.length) return 'The draft is over.';
   const p = S.players[pid]; if (!p || p.tid !== -2) return 'That prospect is not available.';
@@ -12478,8 +12480,8 @@ function carStage() {
   if (c.stage === 'pro') {
     const p = S.players[c.pid];
     if (!p) { c.stage = 'ret'; c.ret = c.ret || { s: S.season, why: 'Retired.' }; }
-    else if (p.tid === -1) { c.stage = 'fa'; carLog(`Released by the ${c.proTeams.length ? team(c.proTeams[c.proTeams.length - 1].tid).name : 'team'}. Time to find a new team.`, 'move'); carFaOffers(true); }
-    else if (p.tid >= 0 && c.proTeams.length && c.proTeams[c.proTeams.length - 1].tid !== p.tid) { const from = c.proTeams[c.proTeams.length - 1].tid; c.proTeams.push({ tid: p.tid, s: S.season }); c.trust = 45; carLog(`Traded from the ${team(from).name} to the ${team(p.tid).city} ${team(p.tid).name}.`, 'move'); }
+    else if (p.tid === -1) { c.stage = 'fa'; carLog(`Released by the ${c.proTeams.length ? team(c.proTeams[c.proTeams.length - 1].tid).name : 'team'}. Time to find a new team.`, 'move'); socAbout('released', c.proTeams.length ? team(c.proTeams[c.proTeams.length - 1].tid).name : 'team'); carFaOffers(true); }
+    else if (p.tid >= 0 && c.proTeams.length && c.proTeams[c.proTeams.length - 1].tid !== p.tid) { const from = c.proTeams[c.proTeams.length - 1].tid; c.proTeams.push({ tid: p.tid, s: S.season }); c.trust = 45; carLog(`Traded from the ${team(from).name} to the ${team(p.tid).city} ${team(p.tid).name}.`, 'move'); socAbout('traded'); }
     if (p && p.tid === S.userTid) { const nb = pick(S.teams.filter(t => t.tid !== p.tid)).tid; S.uni.bgTid = nb; setUser(nb); }
   }
 }
@@ -12562,6 +12564,7 @@ function carColGame(g, cid) {
   const fb = { 'A+': 2.2, A: 1.6, 'A-': 1.1, 'B+': 0.7, B: 0.4, F: -1, D: -0.6 }[grade] || 0;
   carFame(fb * (1 + carCTeam(p.tid).pres / 200)); c.trust = clamp(r1(c.trust + fb * 0.6), 0, 100);
   carSkillGainPts({ 'A+': 0.8, A: 0.5, 'A-': 0.3 }[grade] || 0, null, p); // big games teach you something
+  socAfterGame(grade);
   if (grade === 'A+') carLog(`${carGameLine(p.pos, st)} in ${sc[0] > sc[1] ? 'a win over' : 'a loss to'} ${carCTeam(opp).name}. One of the best games of your career.`, 'game');
 }
 function carProGame(g, pid) {
@@ -12573,6 +12576,7 @@ function carProGame(g, pid) {
   const fb = { 'A+': 1.6, A: 1.1, 'A-': 0.8, 'B+': 0.5, B: 0.3, F: -0.8, D: -0.5 }[grade] || 0;
   carFame(fb * (g.po ? 2 : 1)); c.trust = clamp(r1(c.trust + fb * 0.6), 0, 100);
   carSkillGainPts({ 'A+': 0.8, A: 0.5, 'A-': 0.3 }[grade] || 0, null, p);
+  socAfterGame(grade);
   if (grade === 'A+' || (g.po === 4 && sc[0] > sc[1])) carLog(`${carGameLine(p.pos, st)} ${g.po === 4 ? `in the ${LEAGUE.final}${sc[0] > sc[1] ? ': you are a champion' : ''}` : `against the ${team(opp).name}`}.`, 'game');
 }
 function carGameLine(pos, st) {
@@ -12593,7 +12597,7 @@ function carCommit(tid) {
   const c = S.car, r = carPlayer(); if (!r || c.stage !== 'hs') return 'Not in high school.';
   if (r.signed) return 'You already signed.';
   if (!r.off.includes(+tid)) return 'That school has not offered you.';
-  r.commit = +tid; r.cf = 100; r.list = [+tid]; c.commit = +tid; carLog(`Committed to ${carCTeam(+tid).name}.`, 'commit');
+  r.commit = +tid; r.cf = 100; r.list = [+tid]; c.commit = +tid; carLog(`Committed to ${carCTeam(+tid).name}.`, 'commit'); socAbout('commit', null, { school: carCTeam(+tid).name }, true);
   carFame(2); return null;
 }
 function carDecommit() {
@@ -12675,7 +12679,7 @@ function carProDay(p) {
 }
 function carDraftProjection(p) {
   const po = colToProOvr(p.ovr), pp = Math.min(99, po + Math.max(4, (p.pot - p.ovr) * 0.5 + 10));
-  const me = pp * 0.55 + po * 0.45 + (DRAFT_ADJ[p.pos] || 0) + honB((p.hon || []).map(h => h.t + ' ' + h.s));
+  const me = pp * 0.55 + po * 0.45 + (DRAFT_ADJ[p.pos] || 0) + honB((p.hon || []).map(h => h.t + ' ' + h.s)) - socCharPen();
   const others = prospects().filter(x => x.cid !== p.id && !x.car).map(draftScore).sort((a, b) => b - a);
   const rank = others.filter(v => v > me).length + 1;
   const label = rank <= 10 ? 'a top-10 pick' : rank <= 32 ? 'a first-round pick' : rank <= 64 ? 'a second-round pick' : rank <= 110 ? 'a day-two pick (rounds 2-3)' : rank <= 224 ? 'a late-round pick' : 'likely undrafted';
@@ -12732,7 +12736,7 @@ function carDraftStep(all) {
   const p = S.players[c.pid]; if (!p || p.tid !== -2) return 'You are not in the draft pool.';
   let n = 0;
   while (S.phase === 'draft' && d.idx < d.order.length && p.tid === -2 && (all || n < 1)) { if (d.order[d.idx] === S.userTid) autoPickUser(); else { aiDraftPick(); if (d.order[d.idx] === S.userTid && d.idx < d.order.length) {} } n++; if (!all && n >= 1) break; }
-  if (p.tid >= 0) { const t = team(p.tid); c.draft = { rd: p.draft.rd, pk: p.draft.ovrPick, tid: p.tid }; carLog(`Drafted by the ${t.city} ${t.name} in round ${p.draft.rd} (pick ${p.draft.ovrPick}).`, 'draft'); carFame((p.draft.rd === 1 ? 6 : 2)); carFinishDraft(); }
+  if (p.tid >= 0) { const t = team(p.tid); c.draft = { rd: p.draft.rd, pk: p.draft.ovrPick, tid: p.tid }; carLog(`Drafted by the ${t.city} ${t.name} in round ${p.draft.rd} (pick ${p.draft.ovrPick}).`, 'draft'); carFame((p.draft.rd === 1 ? 6 : 2)); carFinishDraft(); socAbout('drafted', `round ${c.draft.rd}, pick ${c.draft.pk}`, null, true); }
   else if (S.phase !== 'draft') { carFinishDraft(); }
   return null;
 }
@@ -12767,11 +12771,14 @@ function carFaOffers(fresh) {
   const c = S.car, p = S.players[c.pid]; if (!p) return [];
   const key = `${S.season}|${S.phase}|${S.faDay || 0}|${S.week || 0}`; if (!fresh && c.fa && c.fa.k === key) return c.fa.offers;
   const mv = marketValue(p), out = [];
+  // a record of blowups online scares some teams off and lowers what the rest will pay
+  const pen = socCharPen();
   for (const t of shuffle(S.teams.slice())) {
     if (active(t.tid).length >= rosterMax()) continue;
+    if (pen && rnd() < pen * 0.06) continue;
     const L = lineup(t), st = (L[p.pos] || []).slice(0, POS[p.pos].start), weak = st.length ? Math.min(...st.map(x => x.ovr)) : 0, backup = (L[p.pos] || [])[POS[p.pos].start];
     const role = p.ovr >= weak ? 'Starter' : backup && p.ovr >= backup.ovr - 2 ? 'Backup' : null; if (!role) continue;
-    const sal = r1(Math.max(vetMin(p), mv * (0.82 + rnd() * 0.3) * (role === 'Starter' ? 1 : 0.7)));
+    const sal = r1(Math.max(vetMin(p), mv * (0.82 + rnd() * 0.3) * (role === 'Starter' ? 1 : 0.7) * (1 - pen * 0.03)));
     if (sal > capRoom(t.tid)) continue; // only teams that can actually fit the deal make an offer
     out.push({ tid: t.tid, sal, yrs: askYears(p), role, contender: isContender(t) });
     if (out.length >= 6) break;
@@ -12787,7 +12794,7 @@ function carSignFA(i) {
   const e = signPlayer(p.id, o.tid, { sal: o.sal, yrs: o.yrs, car: true }, true);
   if (e) { c.fa.offers.splice(+i, 1); if (!c.fa.offers.length) c.fa = null; return `The ${team(o.tid).city} ${team(o.tid).name} pulled their offer: they no longer have the cap room.`; } // their books changed since they called
   carLog(`Signed with the ${team(o.tid).city} ${team(o.tid).name}: ${o.yrs} year${o.yrs > 1 ? 's' : ''}, $${o.sal}M a year (${o.role.toLowerCase()}).`, 'money');
-  c.fa = null; carStage(); return null;
+  c.fa = null; carStage(); socAbout('signed', `${o.yrs} year${o.yrs > 1 ? 's' : ''}, $${o.sal}M a year`, null, true); return null;
 }
 function carTradeRequest() { const p = carPlayer(), c = S.car; if (!p || c.stage !== 'pro') return 'Not on a pro team.'; if (p.tradeReq) return 'You already asked for a trade.'; p.tradeReq = true; c.trust = clamp(c.trust - 10, 0, 100); carLog('Asked for a trade.', 'move'); return null; }
 
@@ -13133,6 +13140,18 @@ const SOC_TT = {
   hater: ['still overrated since high school', 'been saying it for years. nobody listens', 'here we go again', 'same guy, same results'],
   turned: ['ok. I was wrong about you. respect', 'never thought I\'d say this but… he\'s him', 'fine. you earned it'],
   blocked: ['blocked by {me} lmaooo 📸', 'he blocked me 😂 soft'],
+  defend: ['nobody asked you', 'go worry about your own team', 'scoreboard 😂', 'stay in your lane', 'imagine coming in here with that', 'you\'re in his mentions for a reason'],
+  rivalBack: ['cope', 'enjoy {rec} lol', 'y\'all always this sensitive?', 'talk to me after the season', 'mad at a reply lmao'],
+};
+// posts other people make about you: what happened, who posts it, and what they say
+const SOC_ABOUT = {
+  big: { who: ['beat', 'nfl', 'fan'], sit: 'win', t: { beat: ['{fn} {me} tonight: {line}.', '{me} was the story against {opp}: {line}.'], nfl: ['{me} might be the most underrated {pos} in the country', 'somebody put {me} on a highlight show. {line}'], fan: ['{me} is HIM. {line}', 'we are so lucky to have {me}'] } },
+  bad: { who: ['beat', 'troll', 'fan'], sit: 'loss', t: { beat: ['Rough day for {me} against {opp}: {line}.', 'Not {me}\'s best: {line}.'], troll: ['{line}. and people wanted him to start 🤡', 'reminder that {me} put up {line}'], fan: ['{me} needs a bounce back game bad', 'what was that today {me}'] } },
+  commit: { who: ['beat', 'recfan'], sit: 'school', t: { beat: ['{me} has committed to {school}.', 'Commitment: {fn} {me} picks {school}.'], recfan: ['WE GOT HIM 🙌 {school}', '{me} to {school}. let\'s go'] } },
+  drafted: { who: ['beat', 'fan'], sit: 'hype', t: { beat: ['The {team} select {fn} {me}, {pos}, {ev}.', 'Pick is in: {me} to the {team} ({ev}).'], fan: ['welcome to the {team} {me}!!', 'love this pick. {me} 🔥'] } },
+  signed: { who: ['beat', 'fan'], sit: 'hype', t: { beat: ['{me} signs with the {team}: {ev}.', 'Done deal: {me} to the {team}, {ev}.'], fan: ['huge signing. welcome {me}', '{me} is a {team} now 🙌'] } },
+  traded: { who: ['beat', 'fan'], sit: 'neutral', t: { beat: ['Trade: {me} is headed to the {team}.', '{me} has been traded to the {team}.'], fan: ['wait we got {me}??', 'welcome to the {team} {me}'] } },
+  released: { who: ['beat', 'troll'], sit: 'sad', t: { beat: ['The {ev} have released {me}.', '{me} has been released by the {ev}.'], troll: ['saw this coming a mile away', 'free agent {me} lmao. who\'s next'] } },
 };
 const SOC_CLAP = {
   win: ['he cooked you lmao', 'troll got deleted 😂', 'W response', 'ratio\'d by the man himself'],
@@ -13145,7 +13164,7 @@ function socFill(tpl, ctx, extra) {
   const x = extra || {};
   const inc = ctx.inc && ctx.inc.length ? ` (${ctx.inc[0].s})` : '';
   return tpl.replace(/\{(\w+)\}/g, (m, k) => {
-    const v = { me: ctx.ln, fn: ctx.fn, team: ctx.short || 'the team', opp: (ctx.last && ctx.last.oppShort) || (ctx.next && ctx.next.oppShort) || 'them', next: (ctx.next && ctx.next.oppShort) || (ctx.last && ctx.last.oppShort) || 'next week', line: (ctx.last && ctx.last.line) || 'nothing', rec: ctx.rec || '0-0', coach: ctx.coach ? 'Coach ' + ctx.coach.split(' ').pop() : 'the coach', mate: x.mate || ((ctx.mates || [])[0] || {}).name || 'his teammate', pos: ctx.pos, school: x.school || (ctx.schools || [])[0] || 'State', inc }[k];
+    const v = { me: ctx.ln, fn: ctx.fn, team: ctx.short || 'the team', opp: (ctx.last && ctx.last.oppShort) || (ctx.next && ctx.next.oppShort) || 'them', next: (ctx.next && ctx.next.oppShort) || (ctx.last && ctx.last.oppShort) || 'next week', line: (ctx.last && ctx.last.line) || 'nothing', rec: ctx.rec || '0-0', coach: ctx.coach ? 'Coach ' + ctx.coach.split(' ').pop() : 'the coach', mate: x.mate || ((ctx.mates || [])[0] || {}).name || 'his teammate', pos: ctx.pos, school: x.school || (ctx.schools || [])[0] || 'State', inc, ev: x.ev || '' }[k];
     return v == null ? m : v;
   });
 }
@@ -13192,8 +13211,8 @@ function socReplies(post, ctx, n, wave) {
     else acct = socAccount(k, ctx);
     if (acct.school) ex.school = acct.school;
     if (mate) ex.mate = mate.name;
-    if (so.blocked.includes(acct.h)) { i--; continue; }
-    const r = { id: so.seq++, k, name: acct.name, h: acct.h, st: socStance(k, sit), text: '', ai: 0, d: so.n + wave, t: wave === 0 ? Math.round(3 + rnd() * 55 * (1 + i / 6)) : Math.round(2 + rnd() * 40), likes: Math.max(0, Math.round(post.reach * (0.002 + rnd() * rnd() * 0.05))) };
+    if (so.blocked.includes(acct.h) || (so.muted || []).includes(acct.h)) { i--; continue; }
+    const r = { id: so.seq++, k, name: acct.name, h: acct.h, st: socStance(k, sit), text: '', ai: 0, d: so.n + wave, t: wave === 0 ? (i === 0 ? Math.round(2 + rnd() * 4) : Math.round(3 + rnd() * 55 * (1 + i / 6))) : Math.round(2 + rnd() * 40), likes: Math.max(0, Math.round(post.reach * (0.002 + rnd() * rnd() * 0.05))) };
     if (acct.v) r.v = 1; if (acct.mid != null) r.mid = acct.mid; if (acct.team) r.team = acct.team; if (acct.school) r.school = acct.school;
     r.text = socPickText(k, sit, ctx, ex, used);
     out.push(r);
@@ -13206,7 +13225,16 @@ function socReplies(post, ctx, n, wave) {
     if (rnd() > chance) continue;
     const kind = tr.turned ? 'turned' : tr.type === 'band' && (loss || badGame || post.lab.sev >= 2) ? 'bandBad' : tr.type === 'stat' && !(ctx.last) ? 'bait' : tr.type;
     tr.n++;
+    if ((so.muted || []).includes(tr.h)) continue;
     out.push({ id: so.seq++, k: 'troll', tr: tr.id, ty: tr.type, name: tr.name, h: tr.h, st: tr.turned ? 'grudging respect' : SOC_TROLLS[tr.type], text: socPickTroll(kind, ctx, used), ai: 0, d: so.n + wave, t: Math.round(5 + rnd() * 60), likes: Math.round(post.reach * rnd() * 0.02) });
+  }
+  // your fans don't let rival fans have the last word
+  for (const rv of out.filter(r => r.k === 'rival' || (r.k === 'troll' && r.ty === 'bait'))) {
+    if (rnd() > 0.45) continue;
+    const a = socAccount('fan', ctx), at = rv.t + Math.round(6 + rnd() * 30);
+    const def = { id: so.seq++, k: 'fan', name: a.name, h: a.h, to: rv.id, st: 'defending him, arguing with the rival fan', text: socPickTroll('defend', ctx, used), ai: 0, d: rv.d, t: at, likes: Math.round(rv.likes * (0.5 + rnd())) };
+    out.push(def);
+    if (rnd() < 0.5) out.push({ ...rv, id: so.seq++, to: def.id, st: 'arguing back with his fan', text: socPickTroll('rivalBack', ctx, used), ai: 0, t: at + Math.round(5 + rnd() * 25), likes: Math.round(rv.likes * rnd()) });
   }
   return out;
 }
@@ -13297,6 +13325,10 @@ function socApply(fx, post, ctx) {
   if (lab.sev >= 2 && pro && p && p.tid >= 0 && lab.tgt === 'team') for (const x of roster(p.tid)) if (x !== p && x.mor != null) x.mor = clamp(x.mor - (lab.sev >= 4 ? 5 : 2), 0, 100);
   if (lab.sev >= 2 && !['refs', 'media', 'troll'].includes(lab.tgt) || lab.sev >= 4) so.inc.push({ s: ctx.season, stage: c.stage, sev: lab.sev, tgt: lab.tgt, text: post.text.slice(0, 90), pid: post.id });
   if (fx.flag) so.flag = (so.flag || 0) + 1;
+  // three serious incidents in one pro season: the team has seen enough
+  if (pro && p && p.tid >= 0 && lab.sev >= 3 && so.cut !== ctx.season && so.inc.filter(x => x.s === ctx.season && x.stage === 'pro' && x.sev >= 3).length >= 3) {
+    const t = team(p.tid); so.cut = ctx.season; release(p.id, true); fx.notes.push(`The ${t.name} released you. Three blowups in one season was the limit.`); fx.cut = 1;
+  }
   if (fx.fallout) so.out.push({ post: post.id, due: so.n + 1 });
   const tw = { coach: 'the coaching staff', team: fx.mate ? fx.mate : 'teammates', org: col ? 'the program' : 'the front office', fans: 'the fans', refs: 'the officials', media: 'the media', troll: 'a troll', opp: ctx.last ? ctx.last.oppShort : 'an opponent' }[lab.tgt];
   if (lab.sev >= 2) carLog(`A post aimed at ${tw || 'everyone'} blew up online (${lab.sev >= 4 ? 'way out of line' : lab.sev >= 3 ? 'out of line' : 'controversial'}).${fx.notes.length ? ' ' + fx.notes.join(' ') : ''}`, 'social');
@@ -13307,6 +13339,7 @@ function socApply(fx, post, ctx) {
 function socStep() {
   const c = S.car; if (!c || !c.socV) return; const so = c.soc;
   so.n++; so.at = Date.now();
+  if (so.pend && so.pend.length) { const L = so.pend; so.pend = []; for (const x of L.slice(0, 3)) socAboutMake(x.kind, x.ev, x.x); }
   // the fallout from a post that crossed the line
   const due = so.out.filter(x => x.due <= so.n);
   if (due.length && !c.dec && !c.ev) {
@@ -13357,7 +13390,63 @@ function socSelfPost(text, ctx) {
   so.posts.unshift(post); socTrim();
 }
 
-// ---------- answering replies: clap back, block ----------
+// ---------- posts about you: big games, bad games, commitments, the draft, signings, trades ----------
+// called from the career code; inside a calendar step the post waits for the step's end so it lands on the new day
+function socAbout(kind, ev, extra, now) {
+  const c = S.car; if (!c || !c.socV || !SOC_ABOUT[kind]) return; const so = c.soc;
+  if (!now) { (so.pend || (so.pend = [])).push({ kind, ev: ev || '', x: extra || {} }); return; }
+  socAboutMake(kind, ev || '', extra || {});
+}
+function socAboutMake(kind, ev, x) {
+  const so = socS(), A = SOC_ABOUT[kind], ctx = socCtx(), c = S.car;
+  let k = pick(A.who), acct;
+  const tr = k === 'troll' ? pick(so.trolls.filter(t => !t.blocked && !t.turned && !(so.muted || []).includes(t.h))) : null;
+  if (k === 'troll' && !tr) k = 'fan';
+  if (k === 'beat') acct = { ...socBeat(ctx), v: 1 };
+  else if (tr) acct = { name: tr.name, h: tr.h, tr: tr.id, ty: tr.type };
+  else acct = socAccount(k === 'recfan' && !x.school ? 'fan' : k, { ...ctx, schools: x.school ? [x.school] : ctx.schools });
+  const ex = { ev, school: x.school };
+  const text = socFill(pick(A.t[k] || A.t.fan || A.t.beat), ctx, ex);
+  const lab = { tgt: 'none', tone: 'neutral', sev: 0 };
+  const post = { id: so.seq++, n: so.n, s: ctx.season, stage: c.stage, wk: socWeek(), by: { k, name: acct.name, h: acct.h, v: acct.v ? 1 : 0, tr: acct.tr, ty: acct.ty, out: acct.out }, about: kind, ev, x, text, ai: 0, lab, sit: A.sit, reach: 0, likes: 0, rts: 0, rep: [], at: Date.now(), fx: { fame: 0, trust: 0, notes: [] } };
+  post.reach = Math.round((30 + Math.pow(c.fame, 1.6) * 4) * (kind === 'drafted' || kind === 'commit' ? 2 : 1) * (0.7 + rnd() * 0.6));
+  post.likes = Math.round(post.reach * (0.4 + rnd() * 0.5)); post.rts = Math.round(post.likes * 0.12);
+  const n = clamp(Math.round(3 + c.fame / 10 + rnd() * 3), 3, 16);
+  post.rep.push(...socReplies(post, ctx, Math.ceil(n * 0.6), 0)); post.rep.push(...socReplies(post, ctx, Math.floor(n * 0.4), 1));
+  so.posts.unshift(post); socTrim();
+  return post;
+}
+// a big or bad game gets people posting about you
+function socAfterGame(grade) {
+  const c = S.car; if (!c || !c.socV) return;
+  if (grade === 'A+' || (grade === 'A' && c.fame >= 35 && rnd() < 0.6)) socAbout('big');
+  else if (/^[DF]/.test(grade) && rnd() < 0.35) socAbout('bad');
+}
+// ideas for the composer, from what just happened
+function carSocIdeas() {
+  const c = S.car; if (!c) return []; const ctx = socCtx(), L = [], g = ctx.last, d = socS().n;
+  let k = 0; const pick = a => a[(d * 7 + (k++) * 5 + c.ln.length) % a.length];
+  if (g && g.fresh && g.won) L.push(pick(['Big win tonight. Proud of this group.', `Ballgame. ${g.oppShort} came to play, we came to win.`, 'W. On to the next one.']));
+  if (g && g.fresh && !g.won) L.push(pick(['Tough one. We\'ll be back.', 'That one\'s on me. I\'ll be better.', 'Long season. Heads up.']));
+  if (ctx.next) L.push(pick([`Locked in for ${ctx.next.oppShort} 🔒`, `${ctx.next.oppShort} week. Let's work.`, `Hope ${ctx.next.oppShort} is ready 😤`]));
+  if (c.stage === 'hs' && ctx.schools && ctx.schools.length && !ctx.commit) L.push(`${pick(ctx.schools)} is looking real good right now 👀`);
+  if (c.stage === 'hs' && ctx.commit) L.push(`Signed, sealed, delivered. ${ctx.commit} 🙏`);
+  L.push(pick(['Thank you to everyone who came out and supported us 🙏', 'Grind don\'t stop. Back at it tomorrow.', 'Shoutout to my teammates. Couldn\'t do it without y\'all.']));
+  return [...new Set(L)].slice(0, 4);
+}
+// how much the record weighs: recent and serious incidents count most
+function socCharPen() {
+  const c = S && S.car; if (!c || !c.socV) return 0; const s = carSeason();
+  return Math.min(8, c.soc.inc.filter(x => x.s >= s - 3).reduce((a, x) => a + (x.sev >= 4 ? 4 : x.sev >= 3 ? 1.5 : 0.5), 0));
+}
+
+// ---------- answering replies: clap back, block, mute ----------
+function carSocMute(postId, replyId) {
+  const so = socS(), post = so.posts.find(x => x.id === +postId), r = post && post.rep.find(x => x.id === +replyId); if (!r) return 'That reply is gone.';
+  if (r.me) return 'You can\'t mute yourself.';
+  so.muted = so.muted || []; if (!so.muted.includes(r.h)) so.muted.push(r.h);
+  return `Muted ${r.h}. You won't see them anymore, and they won't know.`;
+}
 function carSocReply(postId, replyId, text, modelLab) {
   const so = socS(), post = so.posts.find(x => x.id === +postId); if (!post) return 'That post is gone.';
   const r = post.rep.find(x => x.id === +replyId); if (!r) return 'That reply is gone.';
@@ -13450,6 +13539,12 @@ const socWho = r => {
 };
 function carSocPrompt(postId, ids) {
   const so = socS(), post = so.posts.find(x => x.id === +postId); if (!post) return null;
+  // a post about the player: the model writes the post itself first
+  if (post.by && (ids || []).some(id => +id === 0)) {
+    const ctx = socCtx(), what = { big: 'He just had a big game.', bad: 'He just had a bad game.', commit: `He just committed to ${post.x.school || 'a school'}.`, drafted: `He was just drafted (${post.ev}).`, signed: `He just signed a new contract (${post.ev}).`, traded: 'He was just traded.', released: `He was just released by the ${post.ev}.` }[post.about] || '';
+    const user = `Facts:\n${socFacts(ctx)}\n\nNews: ${what}\nWrite the post that ${socWho({ ...post.by, st: '' })} makes about ${ctx.me} right now. One post, under 200 characters.\n\nAnswer with JSON: {"replies": ["the post"]}`;
+    return { system: SOC_SYS, user, ids: [0], schema: { type: 'object', properties: { replies: { type: 'array', items: { type: 'string', maxLength: 220 }, minItems: 1, maxItems: 1 } } }, maxTokens: 90 };
+  }
   const want = (ids || []).map(id => post.rep.find(r => r.id === +id)).filter(r => r && !r.me); if (!want.length) return null;
   const ctx = socCtx(), byId = id => post.rep.find(r => r.id === id);
   const lines = want.map((r, i) => {
@@ -13457,7 +13552,7 @@ function carSocPrompt(postId, ids) {
     const thread = to ? ` They are answering ${to.me ? `${ctx.ln}'s reply "${to.text}"` : `"${to.text}"`}${up ? ` (which answered "${up.text}")` : ''}.` : '';
     return `${i + 1}. ${socWho(r)}. Attitude: ${r.st}.${thread}`;
   });
-  const user = `Facts:\n${socFacts(ctx)}\n\n${ctx.me} (@${socTag(ctx.fn + ctx.ln)}) posted: "${post.text}"\n${post.lab.sev >= 2 ? `This post is ${post.lab.sev >= 4 ? 'way out of line and is causing a scandal' : 'out of line and causing controversy'}.\n` : ''}\nWrite one reply for each of these people:\n${lines.join('\n')}\n\nAnswer with JSON: {"replies": ["reply 1", "reply 2", ...]} with exactly ${want.length} replies in that order.`;
+  const user = `Facts:\n${socFacts(ctx)}\n\n${post.by ? `${post.by.name} (${post.by.h}) posted about ${ctx.me}` : `${ctx.me} (@${socTag(ctx.fn + ctx.ln)}) posted`}: "${post.text}"\n${post.lab.sev >= 2 ? `This post is ${post.lab.sev >= 4 ? 'way out of line and is causing a scandal' : 'out of line and causing controversy'}.\n` : ''}\nWrite one reply for each of these people:\n${lines.join('\n')}\n\nAnswer with JSON: {"replies": ["reply 1", "reply 2", ...]} with exactly ${want.length} replies in that order.`;
   return { system: SOC_SYS, user, ids: want.map(r => r.id), schema: { type: 'object', properties: { replies: { type: 'array', items: { type: 'string', maxLength: 220 }, minItems: want.length, maxItems: want.length } }, required: ['replies'] }, maxTokens: 70 * want.length + 40 };
 }
 function carSocLabelPrompt(text, re) {
@@ -13481,6 +13576,7 @@ function carSocWrite(postId, ids, texts) {
   const so = socS(), post = so.posts.find(x => x.id === +postId); if (!post) return 0;
   const ctx = socCtx(); let n = 0;
   (ids || []).forEach((id, i) => {
+    if (+id === 0 && post.by) { if (post.ai) return; const t = Array.isArray(texts) ? socCheck(texts[i], ctx) : null; if (t) { post.text = t; post.ai = 1; n++; } else post.ai = -1; return; }
     const r = post.rep.find(x => x.id === +id); if (!r || r.me || r.ai) return;
     const t = Array.isArray(texts) ? socCheck(texts[i], ctx) : null;
     if (t) { r.text = t; r.ai = 1; n++; } else r.ai = -1;
@@ -13490,12 +13586,13 @@ function carSocWrite(postId, ids, texts) {
 // the replies the writer should do next: due soonest first
 function carSocQueue(max) {
   const so = socS(), out = [];
+  for (const post of so.posts.slice(0, 8)) if (post.by && !post.ai) out.push({ post: post.id, id: 0, at: post.n < so.n ? 0 : post.at });
   for (const post of so.posts.slice(0, 8)) for (const r of post.rep) if (!r.me && !r.ai && r.d <= so.n + 1) out.push({ post: post.id, id: r.id, at: socShowAt(post, r) === Infinity ? 9e15 : socShowAt(post, r) });
   return out.sort((a, b) => a.at - b.at).slice(0, max || 50);
 }
 function carSocView() {
   const c = S.car; if (!c) return null; const so = socS();
-  return { posts: so.posts, n: so.n, at: so.at, trolls: so.trolls, inc: so.inc, seen: so.seen, blocked: so.blocked, flag: so.flag || 0, handle: '@' + socTag(c.fn + c.ln) };
+  return { posts: so.posts, n: so.n, at: so.at, trolls: so.trolls, inc: so.inc, seen: so.seen, blocked: so.blocked, muted: so.muted || [], flag: so.flag || 0, pen: socCharPen(), ideas: carSocIdeas(), handle: '@' + socTag(c.fn + c.ln) };
 }
 function carSocSeen(t) { socS().seen = t || Date.now(); }
 // ---------- stats helpers ----------
@@ -13596,7 +13693,7 @@ return {
   pruneOffers, acceptOffer, declineOffer, takeJob, teamRank,
   careerRecords, franchiseLeaders, REC_KEYS, REC_LABEL, hofScore, hofOutlook, hofWatch, LEAD_KEYS, mainTeam,
   weekBegin, weekEnd, watchWeek, uniBgStep, weekRestStep, weekFlush, weekPending: () => !!(S && S.weekLazy), poBegin, poEnd, poPairs, coachStart, coachFinish, runGen, scoutingReport, setGamePlan, OFF_PLANS, DEF_PLANS, gamePlanFor,
-  optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, deadlineFrenzy, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carSeasons, carGameLine, carHofStatus, carDraftProjection, carSocPost, carSocReply, carSocBlock, carSocDelete, carSocMore, carSocPrompt, carSocLabelPrompt, carSocWrite, carSocQueue, carSocView, carSocSeen, socShowAt, socRead, socCtx, socCheck, SOC_MAX, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
+  optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, deadlineFrenzy, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carSeasons, carGameLine, carHofStatus, carDraftProjection, carSocPost, carSocReply, carSocBlock, carSocMute, carSocIdeas, socCharPen, socAbout, carSocDelete, carSocMore, carSocPrompt, carSocLabelPrompt, carSocWrite, carSocQueue, carSocView, carSocSeen, socShowAt, socRead, socCtx, socCheck, SOC_MAX, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
   injStatus, injuryReport, toggleRest, gameKey, pkgFor, setPackage, marketComps, positionMarket, hotSeat, hotSeatHeat,
   PROTECT_N, defaultProtect, ACHIEVEMENTS, RULES_DEFAULT, PROPOSALS, castVote, expandLeague: (n, pr) => { const r = expandLeague(n, pr); topUpProspects(); return r; }, MILESTONES, MS_NAME, stadiumTag, tradeDeadline,
   TRAITS, traitsKnown, POS_MOVES, positionPreview, changePosition, AGENT_STYLES, agentOf, capHit, voidCapHit, toggleBlock, shopPlayer, tradeAsk, mockDraft, visitProspect, VISITS_PER_YEAR,
@@ -20183,9 +20280,11 @@ async function socLabel(text, re) {
 }
 
 // ---------- what's on screen right now ----------
+// a post about you waits for the AI to write it, like a reply does
+const socPostShown = (post, now) => !post.by || post.ai !== 0 || !socAiOn() || post.n < S().car.soc.n || now - post.at > 45000;
 // with the AI on, a reply shows once it's written (or once it's clearly late, in the game's own words)
 function socShown(post, r, now) {
-  if (r.me) return true; const at = HM.socShowAt(post, r); if (at > now) return false;
+  if (r.me) return true; if ((S().car.soc.muted || []).includes(r.h)) return false; const at = HM.socShowAt(post, r); if (at > now) return false;
   return !socAiOn() || r.ai !== 0 || now - at > 45000;
 }
 function socUnread() {
@@ -20207,7 +20306,7 @@ function socReplyHtml(post, r, now, depth) {
   return `<div class="sreply${depth ? ' sub' : ''}${me ? ' mine' : ''}">${me && typeof faceOf === 'function' && HM.carPlayer() ? faceOf(HM.carPlayer(), 28) : socAvatar(name, h, 28)}<div class="sbody">
     <div class="shead"><b>${E(name)}</b>${r.v || me ? '<span class="sver" title="Verified">✓</span>' : ''}<span class="muted">${E(h)} · ${socAgo(post, r, now)}</span></div>
     <div class="stext">${E(r.text)}</div>
-    <div class="sacts muted"><span>${ico('heart')} ${socNum(r.likes || 0)}</span>${!me && !post.del ? `<button class="slink" data-act="socRe" data-p="${post.id}" data-r="${r.id}">Reply</button>${r.k !== 'mate' ? `<button class="slink" data-act="socBlock" data-p="${post.id}" data-r="${r.id}">Block</button>` : ''}` : ''}</div>
+    <div class="sacts muted"><span>${ico('heart')} ${socNum(r.likes || 0)}</span>${!me && !post.del ? `<button class="slink" data-act="socRe" data-p="${post.id}" data-r="${r.id}">Reply</button><button class="slink" data-act="socMute" data-p="${post.id}" data-r="${r.id}">Mute</button>${r.k !== 'mate' ? `<button class="slink" data-act="socBlock" data-p="${post.id}" data-r="${r.id}">Block</button>` : ''}` : ''}</div>
     ${open ? `<div class="scompose sm"><textarea id="socReIn" rows="2" maxlength="${HM.SOC_MAX}" placeholder="Reply to ${E(r.h)}">${E(ui.socReDraft || '')}</textarea><div class="row" style="gap:6px"><button class="btn sm primary" data-act="socReSend"${ui.socBusy ? ' disabled' : ''}>${ui.socBusy ? 'Posting…' : 'Reply'}</button><button class="btn sm" data-act="socReClose">Cancel</button></div></div>` : ''}
   </div></div>`;
 }
@@ -20228,9 +20327,9 @@ function socPostHtml(post, now) {
   const c = S().car, so = c.soc, p = HM.carPlayer(), shown = post.rep.filter(r => !r.me && socShown(post, r, now)).length, frac = post.rep.length ? shown / post.rep.length : 1;
   const likes = Math.round(post.likes * (0.25 + 0.75 * frac)), rts = Math.round(post.rts * (0.25 + 0.75 * frac)), fx = post.fx || {};
   const pills = [fx.fame ? `<span class="pill ${fx.fame > 0 ? 'w' : 'l'}">Fame ${fx.fame > 0 ? '+' : ''}${fx.fame}</span>` : '', fx.trust && c.stage !== 'hs' ? `<span class="pill ${fx.trust > 0 ? 'w' : 'l'}">Coach trust ${fx.trust > 0 ? '+' : ''}${fx.trust}</span>` : '', fx.susp ? `<span class="pill l">Suspended ${fx.susp} game${fx.susp > 1 ? 's' : ''}</span>` : '', fx.fine ? `<span class="pill l">Fined $${Math.round(fx.fine * 1000)}K</span>` : '', post.resp ? `<span class="pill">${{ sorry: 'Apologized', quiet: 'Deleted it', stand: 'Stood by it' }[post.resp]}</span>` : ''].filter(Boolean).join(' ');
-  const conf = ui.confirm && ui.confirm.act === 'socDel' && +ui.confirm.p === post.id;
-  return `<article class="spost${post.del ? ' del' : ''}" id="socPost-${post.id}"><div class="sme">${p && typeof faceOf === 'function' ? faceOf(p, 40) : socAvatar(c.fn, c.ln, 40)}<div class="sbody">
-    <div class="shead"><b>${E(c.fn + ' ' + c.ln)}</b><span class="sver" title="Verified">✓</span><span class="muted">${E(HM.carSocView().handle)} · ${E(post.wk || '')} ${post.s}</span>${!post.del ? `<button class="slink" style="margin-left:auto" data-act="socDel" data-p="${post.id}">${conf ? 'Confirm: delete' : 'Delete'}</button>` : ''}</div>
+  const conf = ui.confirm && ui.confirm.act === 'socDel' && +ui.confirm.p === post.id, by = post.by;
+  return `<article class="spost${post.del ? ' del' : ''}${by ? ' about' : ''}" id="socPost-${post.id}"><div class="sme">${by ? socAvatar(by.name, by.h, 40) : p && typeof faceOf === 'function' ? faceOf(p, 40) : socAvatar(c.fn, c.ln, 40)}<div class="sbody">
+    ${by ? '<div class="lbl" style="margin-bottom:2px">About you</div>' : ''}<div class="shead"><b>${E(by ? by.name : c.fn + ' ' + c.ln)}</b>${!by || by.v ? '<span class="sver" title="Verified">✓</span>' : ''}<span class="muted">${E(by ? by.h : HM.carSocView().handle)} · ${E(post.wk || '')} ${post.s}</span>${!post.del && !by ? `<button class="slink" style="margin-left:auto" data-act="socDel" data-p="${post.id}">${conf ? 'Confirm: delete' : 'Delete'}</button>` : ''}</div>
     ${post.removed ? '<div class="note err" style="margin:4px 0">The platform removed this post for violating its rules. Screenshots of it are everywhere.</div>' : ''}${post.del ? '<div class="muted" style="font-size:12.5px;margin:4px 0">You deleted this post. Replies to it are still out there.</div>' : ''}
     <div class="stext big">${E(post.text)}</div>
     <div class="sacts muted"><span>${ico('heart')} ${socNum(likes)}</span><span>↻ ${socNum(rts)}</span><span>${shown} ${shown === 1 ? 'reply' : 'replies'}</span>${pills ? `<span class="row" style="gap:4px;flex-wrap:wrap">${pills}</span>` : ''}</div>
@@ -20251,19 +20350,22 @@ function carFeed(v) {
     ${SOC_AI.has && SOC_AI.state !== 'missing' ? `<button class="btn sm" data-act="socAiToggle">${socAiPref() ? 'Turn off AI replies' : 'Turn on AI replies'}</button>` : ''}</div>
   <div class="grid2 sgrid"><div class="stack" style="gap:14px">
     <section class="panel scompose"><div class="row" style="gap:10px;align-items:flex-start">${v.p && typeof faceOf === 'function' ? faceOf(v.p, 40) : socAvatar(c.fn, c.ln, 40)}<textarea id="socIn" rows="3" maxlength="${HM.SOC_MAX}" placeholder="What's on your mind?">${E(ui.socDraft || '')}</textarea></div>
-      <div class="row" style="justify-content:space-between;gap:8px;margin-top:8px"><span class="muted" style="font-size:12px">${E(aiLine)}</span><div class="row" style="gap:8px"><span class="muted num" id="socLeft" style="font-size:12px">${left}</span><button class="btn primary" data-act="socPost"${ui.socBusy ? ' disabled' : ''}>${ui.socBusy ? 'Posting…' : 'Post'}</button></div></div></section>
-    ${so.posts.length ? so.posts.map(p => socPostHtml(p, now)).join('') : '<section class="panel"><p class="muted" style="margin:0">Nothing posted yet. Hype up a big game, thank the fans, call out an opponent, or say what you really think. Everyone will read it.</p></section>'}
+      <div class="row" style="justify-content:space-between;gap:8px;margin-top:8px"><span class="muted" style="font-size:12px">${E(aiLine)}</span><div class="row" style="gap:8px"><span class="muted num" id="socLeft" style="font-size:12px">${left}</span><button class="btn primary" data-act="socPost"${ui.socBusy ? ' disabled' : ''}>${ui.socBusy ? 'Posting…' : 'Post'}</button></div></div>
+      ${so.ideas.length ? `<div class="row sideas">${so.ideas.map((t, i) => `<button class="btn sm" data-act="socIdea" data-i="${i}">${E(t)}</button>`).join('')}</div>` : ''}</section>
+    ${so.posts.some(p => socPostShown(p, now)) ? so.posts.filter(p => socPostShown(p, now)).map(p => socPostHtml(p, now)).join('') : '<section class="panel"><p class="muted" style="margin:0">Nothing posted yet. Hype up a big game, thank the fans, call out an opponent, or say what you really think. Everyone will read it.</p></section>'}
   </div><div class="stack" style="gap:14px">
-    <section class="panel"><h3>Your reputation</h3><div class="stack" style="gap:6px;font-size:13px"><div class="row" style="justify-content:space-between"><span>Fame</span><b class="num">${Math.round(c.fame)}</b></div>${c.stage !== 'hs' ? `<div class="row" style="justify-content:space-between"><span>Coach trust</span><b class="num">${Math.round(c.trust)}</b></div>` : ''}<div class="row" style="justify-content:space-between"><span>Posts that blew up</span><b class="num">${so.inc.length}</b></div>${so.flag ? `<div class="row" style="justify-content:space-between"><span>Serious incidents</span><b class="num L">${so.flag}</b></div>` : ''}</div>
+    <section class="panel"><h3>Your reputation</h3><div class="stack" style="gap:6px;font-size:13px"><div class="row" style="justify-content:space-between"><span>Fame</span><b class="num">${Math.round(c.fame)}</b></div>${c.stage !== 'hs' ? `<div class="row" style="justify-content:space-between"><span>Coach trust</span><b class="num">${Math.round(c.trust)}</b></div>` : ''}<div class="row" style="justify-content:space-between"><span>Posts that blew up</span><b class="num">${so.inc.length}</b></div>${so.flag ? `<div class="row" style="justify-content:space-between"><span>Serious incidents</span><b class="num L">${so.flag}</b></div>` : ''}<div class="row" style="justify-content:space-between"><span>How teams read your character</span><b class="${so.pen >= 4 ? 'L' : ''}">${so.pen >= 4 ? 'Red flag' : so.pen >= 1.5 ? 'Some concerns' : so.pen > 0 ? 'Mostly clean' : 'Clean'}</b></div></div>
       <p class="muted" style="margin:8px 0 0;font-size:12.5px">Trash talk aimed at opponents is part of football. Going after your own coaches, teammates or fans in public costs you, and the internet never forgets. Slurs and threats get you suspended.</p></section>
     <section class="panel"><h3>Regulars in your mentions</h3>${tr.length ? `<div class="stack" style="gap:6px;font-size:13px">${tr.map(t => `<div class="row" style="gap:8px">${socAvatar(t.name, t.h, 24)}<div><b>${E(t.name)}</b> <span class="muted">${E(t.h)}</span><div class="muted" style="font-size:12px">${t.turned ? 'Finally coming around on you' : `Since ${t.since}`}</div></div></div>`).join('')}</div>` : '<p class="muted" style="margin:0;font-size:12.5px">Nobody yet. They show up once people know your name.</p>'}
-      <p class="muted" style="margin:8px 0 0;font-size:12.5px">Answering them feeds them. Blocking works, but someone usually grabs a screenshot.</p></section>
+      <p class="muted" style="margin:8px 0 0;font-size:12.5px">Answering them feeds them. Blocking works, but someone usually grabs a screenshot. Muting is quiet: they never know.</p></section>
   </div></div>`;
 }
 // keep the open feed ticking: new replies slide in without redrawing the page (and without touching what you're typing)
 function socRefresh() {
   if (ui.mode !== 'career' || ui.carView !== 'feed' || !(S() && S().car && S().car.soc)) return;
   const now = Date.now();
+  const typing = document.activeElement && /^(TEXTAREA|INPUT)$/.test(document.activeElement.tagName);
+  if (!typing && S().car.soc.posts.slice(0, 10).some(p => socPostShown(p, now) && !document.getElementById('socPost-' + p.id))) { render(); return; }
   for (const p of S().car.soc.posts.slice(0, 10)) {
     const el = document.getElementById('socThread-' + p.id); if (!el) continue;
     const n = p.rep.filter(r => socShown(p, r, now)).length + (ui.socRe && ui.socRe.post === p.id ? 0.5 : 0);
@@ -20296,6 +20398,8 @@ Object.assign(actions, {
     socLabel(text, r ? `${r.name} (${r.h}), who wrote "${r.text}"` : null).then(lab => { ui.socBusy = false; const e = HM.carSocReply(re.post, re.id, text, lab); if (e) toast(e); else { ui.socRe = null; ui.socReDraft = ''; socWriter(); } persist(); render(); });
   },
   socBlock: d => { const m = HM.carSocBlock(+d.p, +d.r); toast(m); persist(); },
+  socMute: d => { toast(HM.carSocMute(+d.p, +d.r)); persist(); },
+  socIdea: d => { const t = HM.carSocView().ideas[+d.i]; if (t) ui.socDraft = t; setTimeout(() => { const el = document.getElementById('socIn'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 0); },
   socDel: d => { if (!(ui.confirm && ui.confirm.act === 'socDel' && +ui.confirm.p === +d.p)) { ui.confirm = { act: 'socDel', p: +d.p }; return; } ui.confirm = null; toast(HM.carSocDelete(+d.p)); persist(); },
   socMore: d => { const e = HM.carSocMore(+d.p); if (e) toast(e); else socWriter(); persist(); },
   socAll: d => { (ui.socAll || (ui.socAll = {}))[d.p] = true; },
