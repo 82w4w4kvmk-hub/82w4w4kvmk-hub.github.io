@@ -13167,6 +13167,33 @@ function socS() { socMigrate(); return S.car.soc; }
 const socInCol = () => { const c = S.car; return c.stage === 'hs' || c.stage === 'col'; };
 
 // ---------- the facts the replies can use (and the AI model is told to stick to) ----------
+// his team's latest game this season, whether or not he played in it
+function socTeamLast(tid, inCol) {
+  const G = inCol ? (carC() || {}).games : S.games, s = inCol ? carC().season : S.season; let best = null;
+  for (const g of Object.values(G || {})) {
+    const h = inCol ? g.h : g.home, a = inCol ? g.a : g.away, gs = inCol ? g.s : g.season, wk = inCol ? g.wk : g.week;
+    if ((h !== tid && a !== tid) || !g.score || gs !== s) continue;
+    if (!best || (wk || 0) > best.wk) best = { s: gs, wk, opp: h === tid ? a : h, sc: h === tid ? g.score : [g.score[1], g.score[0]] };
+  }
+  return best;
+}
+// where he stands, in plain words: the model needs to know a redshirt or an injured player isn't playing
+function socStatus(c, p, inCol, o) {
+  const L = [];
+  if (c.stage === 'col' && p) {
+    const yr = clamp(4 - (p.elig || 4) + 1, 1, 5), cls = ['freshman', 'sophomore', 'junior', 'senior', 'senior'][yr - 1];
+    L.push(`a ${p.rsUsed ? 'redshirt ' : p.rs ? 'true ' : ''}${cls}`);
+  }
+  if (c.stage === 'pro' && p && p.draft && p.draft.year === S.season) L.push('a rookie');
+  if (o.role === 'redshirting') L.push('redshirting this season: he practices with the team but sits out the games to save a year of eligibility');
+  else if (o.role === 'starter') L.push(`the starting ${c.pos}`);
+  else if (o.role === 'backup') L.push(`a backup ${c.pos} who plays a little`);
+  if (p && p.inj > 0) L.push(`injured and out about ${p.inj} more ${p.inj === 1 ? 'week' : 'weeks'}`);
+  if ((p && (p.susp > 0 || p.hold > 0)) || (c.stage === 'hs' && c.hs && c.hs.susp > 0)) L.push('suspended for the next game');
+  const st = p && (inCol ? p.st && p.st[carC().season] : c.stage === 'pro' ? p.stats && p.stats[S.season] : null), gp = st ? st.gp || 0 : null;
+  if (gp != null && c.stage !== 'hs') L.push(gp ? `has played in ${gp} ${gp === 1 ? 'game' : 'games'} this season` : 'has not played in a game this season');
+  return L.length ? `He is ${L.join('; ')}.` : '';
+}
 function socCtx() {
   const c = S.car, p = carPlayer(), inCol = socInCol(), CS = carC();
   const t = p && p.tid >= 0 ? (inCol ? COLLEGE.team(p.tid) : team(p.tid)) : null;
@@ -13185,12 +13212,16 @@ function socCtx() {
     const start = inCol ? COLLEGE.COL_START[c.pos] : POS[c.pos].start; o.role = p && depth.indexOf(p) >= 0 && depth.indexOf(p) < start ? 'starter' : 'backup';
     if (p && p.rs) o.role = 'redshirting';
   } else o.mates = [];
-  // the last game and how it went
-  const g = c.stage === 'hs' ? c.hs.g[c.hs.g.length - 1] : c.glog[0];
-  if (g) {
+  // the last game and how it went: the team's latest result, and his line only if he was in it
+  const g = c.stage === 'hs' ? c.hs.g[c.hs.g.length - 1] : c.glog[0], tg = t ? socTeamLast(t.tid, inCol) : null;
+  if (tg) {
+    const mine = g && g.s === tg.s && g.wk === tg.wk && g.opp === tg.opp ? g : null, ot = inCol ? COLLEGE.team(tg.opp) : team(tg.opp);
+    o.last = { opp: inCol ? ot.name : `${ot.city} ${ot.name}`, oppShort: ot.name, won: tg.sc[0] > tg.sc[1], score: `${tg.sc[0]}-${tg.sc[1]}`, played: !!mine, line: mine ? carGameLine(c.pos, mine.st) : 'did not play', grade: mine ? mine.grade : null, fresh: true };
+  } else if (g) {
     const oppName = c.stage === 'hs' ? `${g.opp} High` : g.lvl === 'col' ? COLLEGE.team(g.opp).name : `${team(g.opp).city} ${team(g.opp).name}`;
-    o.last = { opp: oppName, oppShort: c.stage === 'hs' ? g.opp : g.lvl === 'col' ? COLLEGE.team(g.opp).name : team(g.opp).name, won: !!g.w, score: `${g.sc[0]}-${g.sc[1]}`, line: carGameLine(c.pos, g.st), grade: g.grade, fresh: c.stage === 'hs' || (g.s === carSeason()) };
+    o.last = { opp: oppName, oppShort: c.stage === 'hs' ? g.opp : g.lvl === 'col' ? COLLEGE.team(g.opp).name : team(g.opp).name, won: !!g.w, score: `${g.sc[0]}-${g.sc[1]}`, played: g.grade !== 'DNP', line: g.grade === 'DNP' ? 'did not play' : carGameLine(c.pos, g.st), grade: g.grade === 'DNP' ? null : g.grade, fresh: c.stage === 'hs' || (g.s === carSeason()) };
   }
+  o.status = socStatus(c, p, inCol, o);
   // the next opponent, when there is one
   if (t && inCol && CS && CS.phase === 'season') { const m = (CS.sched[CS.week - 1] || []).find(x => x.h === t.tid || x.a === t.tid); if (m) { const ot = COLLEGE.team(m.h === t.tid ? m.a : m.h); o.next = { opp: ot.name, oppShort: ot.name }; } }
   if (t && !inCol && S.phase === 'regular') { const m = (S.schedule[S.week - 1] || []).find(x => x.home === t.tid || x.away === t.tid); if (m) { const ot = team(m.home === t.tid ? m.away : m.home); o.next = { opp: `${ot.city} ${ot.name}`, oppShort: ot.name }; } }
@@ -13253,7 +13284,8 @@ function socRead(text, ctx, opt) {
 function socMerge(rule, m) {
   if (!m || typeof m !== 'object') return rule;
   const out = { ...rule, ai: true };
-  if (SOC_TGT.includes(m.tgt) && rule.tgt !== 'troll') out.tgt = m.tgt;
+  // a target the game can see in the words stands; the model fills in the posts the game can't place
+  if (SOC_TGT.includes(m.tgt) && rule.tgt === 'none') out.tgt = m.tgt;
   if (SOC_TONE.includes(m.tone)) out.tone = m.tone;
   if (Number.isFinite(+m.sev)) out.sev = rule.sev >= 4 ? 4 : clamp(Math.round(+m.sev), Math.max(0, rule.sev - 1), Math.min(rule.neg || rule.cuss ? 3 : 2, rule.sev + 2));
   if (typeof m.mate === 'string' && m.mate && !out.mate) out.mate = m.mate;
@@ -13753,62 +13785,99 @@ function socShowAt(post, r) { const so = socS(); if (r.d > so.n) return Infinity
 
 // ---------- the AI model's jobs: the game builds the request, checks the answer ----------
 // facts in plain words, the only things a reply may state as fact
-function socFacts(ctx) {
-  const L = [`Player: ${ctx.me}, ${ctx.pos}, ${ctx.level}${ctx.team ? ` for ${ctx.team}` : ''}${ctx.role ? ` (${ctx.role})` : ''}.`];
+// the model repeats whatever it's given, so game numbers like fame and grades go in as plain words
+const SOC_GAME = { A: 'a great game', B: 'a good game', C: 'an ordinary game', D: 'a poor game', F: 'a bad game' };
+function socFame(f) { return f >= 75 ? 'a household name' : f >= 50 ? 'well known around the sport' : f >= 25 ? 'known around his league' : 'not well known yet'; }
+// his stat line only goes in when a reply is meant to talk about it; given the numbers, the model quotes them in every reply
+function socFacts(ctx, school, line) {
+  const L = [`Player: ${ctx.me}, ${ctx.pos}, ${ctx.level}${ctx.team ? ` for ${ctx.team}` : ''}; ${socFame(ctx.fame)}.`];
+  if (ctx.status) L.push(ctx.status);
   if (ctx.rec) L.push(`Team record: ${ctx.rec}.`);
   if (ctx.coach) L.push(`Head coach: ${ctx.coach}.`);
-  if (ctx.last) L.push(`Last game: ${ctx.last.won ? 'won' : 'lost'} ${ctx.last.score} vs ${ctx.last.opp}; his line: ${ctx.last.line} (grade ${ctx.last.grade}).`);
+  if (ctx.last) L.push(`${ctx.last.fresh ? 'His team\'s last game' : 'His team\'s last game, back last season'}: ${ctx.last.won ? 'won' : 'lost'} ${ctx.last.score} vs ${ctx.last.opp}; ${ctx.last.played === false ? `he did not play in it${ctx.role === 'redshirting' ? ' (redshirting)' : ''}` : `${line ? `his line: ${ctx.last.line}, ` : 'he had '}${SOC_GAME[String(ctx.last.grade || 'C')[0]] || 'an ordinary game'}`}.`);
   if (ctx.next) L.push(`Next game: vs ${ctx.next.opp}.`);
   if (ctx.mates && ctx.mates.length) L.push(`Teammates: ${ctx.mates.map(m => `${m.name} (${m.pos})`).join(', ')}.`);
-  if (ctx.schools) L.push(`Schools recruiting him: ${ctx.schools.join(', ')}${ctx.commit ? `; committed to ${ctx.commit}` : ''}.`);
+  if (ctx.commit) L.push(`Committed to ${ctx.commit}.`);
+  else if (school) L.push(`${school} is recruiting him.`);
+  else if (ctx.schools) L.push('Several colleges are recruiting him.');
   if (ctx.hon && ctx.hon.length) L.push(`Recent honors: ${ctx.hon.join(', ')}.`);
   if (ctx.inc && ctx.inc.length) L.push(`Past controversial posts: ${ctx.inc.map(x => `${x.s}: "${x.text}"`).join('; ')}.`);
-  L.push(`Fame: ${ctx.fame}/100.`);
   return L.join('\n');
 }
-const SOC_SYS = 'You write social media replies for a football video game. Sound like real people online: short, casual, slang, lowercase is fine, an emoji now and then. Profanity is fine when it fits the person. Never use slurs, never threaten anyone, never mention anyone\'s family, race, religion, sexuality, body or appearance: keep it about football and what was posted. Only state facts that are listed; never invent stats, scores, injuries, quotes or news. Each reply is one post under 200 characters, with no hashtags and no quotation marks around it.';
-const socWho = r => {
-  if (r.k === 'troll') return `${r.name} (${r.h}), an internet troll who ${SOC_TROLLS[r.ty] || 'mocks him'}${r.st === 'grudging respect' ? ', now finally giving him grudging respect' : ''}`;
-  if (r.k === 'beat') return `${r.name}, a beat reporter covering his team; newsy and neutral`;
-  if (r.k === 'mate') return `${r.name}, his teammate (verified account)`;
-  if (r.k === 'opp') return `${r.name}, a player for ${r.team || 'the opponent'}`;
-  if (r.k === 'rival') return 'a fan of a rival team';
-  if (r.k === 'recfan') return `a fan of ${r.school || 'a school recruiting him'}, trying to recruit him`;
-  if (r.k === 'nfl') return 'a general football fan who follows the whole sport';
-  return 'a fan of his team';
+const SOC_SYS = 'You write replies on a sports social media app for a football video game. Write like real people on sports twitter: short (most replies under 90 characters), mostly lowercase, slang, loose punctuation, an emoji only sometimes. Every person sounds different and keeps their own attitude: trolls are mean, rival fans mock, teammates back him up, reporters are dry. Everything has to fit his situation in the facts: a player who is redshirting, injured, suspended or did not play gets no takes on how he played. The facts are background to keep replies accurate, not topics for every reply: most replies just react to his post, and only some bring up his situation. Each reply must make sense as a real reply to his post. Never invent what other people said or saw. Each reply has its own angle and length: stick to them, so no two replies sound alike or start the same way. Only a reply whose angle is his numbers may mention his stats or last game line; numbers only from the facts. Profanity is fine when it fits the person. Never use slurs, never threaten anyone, never mention anyone\'s family, race, religion, sexuality, body or looks. Never invent stats, scores, injuries, quotes or news. Never mention fame, grades, ratings or anything about the video game itself. No em dashes, no hashtags, no quotation marks around a reply.';
+// who each account is and how it talks (example lines got copied word for word, so the voices are described instead)
+const SOC_VOICE = {
+  fan: 'a fan of his team, reacting the way fans do in the replies',
+  rival: 'a fan of a rival team. Mocks him and his team, smug',
+  nfl: 'a fan who follows the whole sport. Casual outside opinion',
+  beat: 'a beat reporter who covers his team. Dry and newsy, full sentences, no slang or emoji',
+  mate: 'his teammate. Backs him up like a friend would, never criticizes him',
+  opp: 'a player on the other team. Fires back or shows respect depending on the attitude',
+  recfan: 'a fan of a college recruiting him. Recruits him hard and only talks up their own school',
+  troll: 'an internet troll. Mean and mocking, never helpful or encouraging'
 };
+const socWho = r => {
+  if (r.k === 'troll') return `${r.name} (${r.h}), ${SOC_VOICE.troll}. This troll ${SOC_TROLLS[r.ty] || 'mocks him'}${r.st === 'grudging respect' ? ', but now finally gives him grudging respect, still a little salty' : ''}`;
+  if (r.k === 'beat' || r.k === 'mate') return `${r.name}, ${SOC_VOICE[r.k]}`;
+  if (r.k === 'opp') return `${r.name}, ${SOC_VOICE.opp.replace('the other team', r.team || 'the other team')}`;
+  if (r.k === 'recfan') return SOC_VOICE.recfan.replace('a college recruiting him', r.school || 'a college recruiting him');
+  return SOC_VOICE[r.k] || SOC_VOICE.fan;
+};
+// a different angle and length for every reply in a request, so a thread reads like many people and not one; picked from the reply's id, not the game's dice
+const SOC_ANGLE = [['words', 'react to the exact words he posted'], ['joke', 'a joke or meme-style reaction'], ['ask', 'a question to him'], ['next', 'the next game'], ['team', 'the team and how the season is going'], ['coach', 'the coach'], ['mate', 'one of his teammates, by name'], ['feel', 'pure emotion, barely any words'], ['take', 'a hot take'], ['stats', 'his numbers from the last game']];
+const SOC_BEAT_ANGLE = [['means', 'what it means for the team'], ['watch', 'what to watch for next'], ['land', 'how the post is landing around the team']];
+const SOC_LEN = ['2 to 5 words', '2 to 5 words', '2 to 5 words', 'one short line', 'one short line', 'one short line', 'one short line', 'a sentence or two'];
+function socAngles(want, ctx) {
+  const used = new Set();
+  return want.map(r => {
+    const h = Math.imul((r.id || 0) + 1, 2654435761) >>> 0;
+    const len = r.k === 'beat' ? 'a sentence or two' : SOC_LEN[(h >>> 4) % (r.k === 'troll' ? 7 : 8)];
+    if (r.to != null) return { k: 'answer', a: 'answer what they said', len };
+    if (r.k === 'troll' && r.ty === 'stat' && ctx.last && ctx.last.played !== false && !used.has('stats')) { used.add('stats'); return { k: 'stats', a: SOC_ANGLE[9][1], len }; }
+    // the box score comes up now and then, not in every thread
+    const pool = r.k === 'beat' ? SOC_BEAT_ANGLE : SOC_ANGLE.filter(([k]) => (k !== 'next' || ctx.next) && (k !== 'coach' || ctx.coach) && (k !== 'mate' || (ctx.mates && ctx.mates.length)) && (k !== 'stats' || (ctx.last && ctx.last.played !== false && r.k !== 'mate' && r.k !== 'recfan' && (h >>> 12) % 4 === 0)));
+    let i = h % pool.length; for (let n = 0; n < pool.length && used.has(pool[i][0]); n++) i = (i + 1) % pool.length;
+    used.add(pool[i][0]); return { k: pool[i][0], a: pool[i][1], len };
+  });
+}
 function carSocPrompt(postId, ids) {
   const so = socS(), post = so.posts.find(x => x.id === +postId); if (!post) return null;
   // a post about the player: the model writes the post itself first
   if (post.by && (ids || []).some(id => +id === 0)) {
     const ctx = socCtx(), what = { big: 'He just had a big game.', bad: 'He just had a bad game.', commit: `He just committed to ${post.x.school || 'a school'}.`, drafted: `He was just drafted (${post.ev}).`, signed: `He just signed a new contract (${post.ev}).`, traded: 'He was just traded.', released: `He was just released by the ${post.ev}.` }[post.about] || '';
-    const user = `Facts:\n${socFacts(ctx)}\n\nNews: ${what}\nWrite the post that ${socWho({ ...post.by, st: '' })} makes about ${ctx.me} right now. One post, under 200 characters.\n\nAnswer with JSON: {"replies": ["the post"]}`;
+    const user = `Facts:\n${socFacts(ctx, post.x && post.x.school, post.about === 'big' || post.about === 'bad')}\n\nNews: ${what}\nWrite the post that ${socWho({ ...post.by, st: '' })} makes about ${ctx.me} right now. One post, under 160 characters, in that person's voice.\n\nAnswer with JSON: {"replies": ["the post"]}`;
     return { system: SOC_SYS, user, ids: [0], schema: { type: 'object', properties: { replies: { type: 'array', items: { type: 'string', maxLength: 220 }, minItems: 1, maxItems: 1 } } }, maxTokens: 90 };
   }
   const want = (ids || []).map(id => post.rep.find(r => r.id === +id)).filter(r => r && !r.me); if (!want.length) return null;
-  const ctx = socCtx(), byId = id => post.rep.find(r => r.id === id);
+  const ctx = socCtx(), byId = id => post.rep.find(r => r.id === id), sch = [...new Set(want.filter(r => r.k === 'recfan' && r.school).map(r => r.school))];
+  const ang = socAngles(want, ctx);
   const lines = want.map((r, i) => {
     const to = r.to != null ? byId(r.to) : null, up = to && to.to != null ? byId(to.to) : null;
     const thread = to ? ` They are answering ${to.me ? `${ctx.ln}'s reply "${to.text}"` : `"${to.text}"`}${up ? ` (which answered "${up.text}")` : ''}.` : '';
-    return `${i + 1}. ${socWho(r)}. Attitude: ${r.st}.${thread}`;
+    return `${i + 1}. ${socWho(r)}. Attitude: ${r.st}. Angle: ${ang[i].a}. Length: ${ang[i].len}.${thread}`;
   });
-  const user = `Facts:\n${socFacts(ctx)}\n\n${post.by ? `${post.by.name} (${post.by.h}) posted about ${ctx.me}` : `${ctx.me} (@${socTag(ctx.fn + ctx.ln)}) posted`}: "${post.text}"\n${post.lab.sev >= 2 ? `This post is ${post.lab.sev >= 4 ? 'way out of line and is causing a scandal' : 'out of line and causing controversy'}.\n` : ''}\nWrite one reply for each of these people:\n${lines.join('\n')}\n\nAnswer with JSON: {"replies": ["reply 1", "reply 2", ...]} with exactly ${want.length} replies in that order.`;
-  return { system: SOC_SYS, user, ids: want.map(r => r.id), schema: { type: 'object', properties: { replies: { type: 'array', items: { type: 'string', maxLength: 220 }, minItems: want.length, maxItems: want.length } }, required: ['replies'] }, maxTokens: 70 * want.length + 40 };
+  const user = `Facts:\n${socFacts(ctx, sch.length === 1 ? sch[0] : null, ang.some(a => a.k === 'stats'))}\n\n${post.by ? `${post.by.name} (${post.by.h}) posted about ${ctx.me}` : `${ctx.me} (@${socTag(ctx.fn + ctx.ln)}) posted`}: "${post.text}"\n${post.lab.sev >= 2 ? `This post is ${post.lab.sev >= 4 ? 'way out of line and is causing a scandal' : 'out of line and causing controversy'}.\n` : ''}\nWrite one reply for each of these people:\n${lines.join('\n')}\n\nAnswer with JSON: {"replies": ["reply 1", "reply 2", ...]} with exactly ${want.length} replies in that order.`;
+  return { system: SOC_SYS, user, ids: want.map(r => r.id), schema: { type: 'object', properties: { replies: { type: 'array', items: { type: 'string', maxLength: 220 }, minItems: want.length, maxItems: want.length } }, required: ['replies'] }, maxTokens: 70 * want.length + 40, temperature: 0.8 };
 }
 function carSocLabelPrompt(text, re) {
   const ctx = socCtx();
-  const user = `Facts:\n${socFacts(ctx)}\n\n${re ? `${ctx.me} replied to ${re}: ` : `${ctx.me} posted: `}"${String(text).slice(0, SOC_MAX)}"\n\nClassify the post.\ntgt: who it is aimed at: none, coach (his own coaches), team (his own teammates), org (his own team's front office or school), fans (his own team's fans), refs, media, opp (an opponent), troll (an online troll).\ntone: neutral, hype, grateful, humble, trash (trash talk at an opponent), angry, sad, joke, trade (wants to leave his team).\nsev: how far out of line, as real fans and teams would see it: 0 fine, 1 a little spicy, 2 controversial (publicly criticizing his own coach, teammates, team or fans), 3 out of line (cursing out or insulting his own coach, teammates, team or fans), 4 unacceptable (slurs or threats of violence).\nmate: the teammate named, or an empty string.\nAnswer with JSON only.`;
+  const user = `Facts:\n${socFacts(ctx)}\n\n${re ? `${ctx.me} replied to ${re}: ` : `${ctx.me} posted: `}"${String(text).slice(0, SOC_MAX)}"\n\nClassify the post.\ntgt: who the post criticizes, blames, insults, calls out or wants to get away from. If it goes after no one (hype, thanks, praise, owning a bad game, plain news), tgt is none. Choices: none, coach (his own coaches), team (his own teammates), org (his own team, front office or school, including wanting to leave), fans (his own team's fans), refs, media, opp (an opponent), troll (an online troll).\ntone: neutral, hype, grateful, humble, trash (trash talk at an opponent), angry, sad, joke, trade (wants to leave his team).\nsev: how far out of line, as real fans and teams would see it: 0 fine, 1 a little spicy, 2 controversial (publicly criticizing his own coach, teammates, team or fans), 3 out of line (cursing out or insulting his own coach, teammates, team or fans), 4 unacceptable (slurs or threats of violence).\nmate: the teammate named, or an empty string.\nAnswer with JSON only.`;
   return { system: 'You read social media posts by a football player in a video game and label them the way real fans, teammates and coaches would react. Trash talk at opponents is normal in football. Going after your own team in public is not.', user, schema: { type: 'object', properties: { tgt: { enum: SOC_TGT }, tone: { enum: SOC_TONE }, sev: { enum: [0, 1, 2, 3, 4] }, mate: { type: 'string' } }, required: ['tgt', 'tone', 'sev', 'mate'] }, maxTokens: 60 };
 }
 // every reply the model writes is checked before it's shown; anything that fails keeps the template words
 function socCheck(text, ctx) {
-  let t = String(text == null ? '' : text).replace(/\s+/g, ' ').trim().replace(/^(reply\s*\d*|\d+[.)])\s*[:.-]?\s*/i, '').replace(/^@?[A-Za-z0-9_]+\s*:\s+/, '');
+  let t = String(text == null ? '' : text).replace(/\s+/g, ' ').trim().replace(/^(reply\s*\d*|\d+[.)])\s*[:.-]?\s*/i, '').replace(/^@?[A-Za-z0-9_.'-]+(\s[A-Za-z0-9_.'-]+)?\s*:\s+/, '');
   if (/^["“'].*["”']$/.test(t)) t = t.slice(1, -1).trim();
+  t = t.replace(/\s*[—–]\s*/g, ', ').replace(/#(\w)/g, '$1').replace(/^,\s*|,\s*$/g, '').trim();
   if (t.length < 1 || t.length > 260) return null;
+  // the game's own numbers stay out of the fiction
+  if (/\b(fame|grades?|graded|rating|ratings|overall|video game)\b|\d+\s*\/\s*100\b/i.test(t)) return null;
   if (SOC_SLUR.some(re => re.test(t)) || SOC_THREAT.some(re => re.test(t)) || SOC_FAMILY.test(t)) return null;
   if (/\b(as an ai|language model|i can'?t (help|write|assist)|i cannot|i'?m sorry,? but|assistant|openai|chatgpt)\b|<\||\{|\}|\[|\]/i.test(t)) return null;
   // numbers that look like facts have to be real
-  for (const m of t.matchAll(/(\d+)\s*(yards?|yds|tds?|touchdowns?|ints?|interceptions?|picks?|sacks?|tackles?|catches|receptions|carries|pancakes|points?)\b/gi)) if (!ctx.nums.has(m[1])) return null;
+  for (const m of t.matchAll(/(\d+)\s*(yards?|yds|tds?|touchdowns?|ints?|interceptions?|picks?|sacks?|tackles?|catches|receptions|recs?|targets?|carries|pancakes|points?)\b/gi)) if (!ctx.nums.has(m[1])) return null;
+  if (/\d\s*%/.test(t)) return null;
+  for (const m of t.matchAll(/\b((?:19|20)\d\d)\b/g)) if (!ctx.nums.has(m[1])) return null;
   for (const m of t.matchAll(/\b(\d{1,2})-(\d{1,2})\b/g)) if (!ctx.nums.has(m[1]) || !ctx.nums.has(m[2])) return null;
   return t;
 }
@@ -13824,10 +13893,11 @@ function carSocWrite(postId, ids, texts) {
   return n;
 }
 // the replies the writer should do next: due soonest first
+// anything already on screen in the game's own words for a while (the page holds AI replies back 45 seconds) stays as it is
 function carSocQueue(max) {
-  const so = socS(), out = [];
-  for (const post of so.posts.slice(0, 8)) if (post.by && !post.ai) out.push({ post: post.id, id: 0, at: post.n < so.n ? 0 : post.at });
-  for (const post of so.posts.slice(0, 8)) for (const r of post.rep) if (!r.me && !r.ai && r.d <= so.n + 1) out.push({ post: post.id, id: r.id, at: socShowAt(post, r) === Infinity ? 9e15 : socShowAt(post, r) });
+  const so = socS(), out = [], old = Date.now() - 40000;
+  for (const post of so.posts.slice(0, 8)) if (post.by && !post.ai && post.n === so.n && post.at >= old) out.push({ post: post.id, id: 0, at: post.at });
+  for (const post of so.posts.slice(0, 8)) for (const r of post.rep) if (!r.me && !r.ai && r.d <= so.n + 1) { const at = socShowAt(post, r); if (at >= old) out.push({ post: post.id, id: r.id, at: at === Infinity ? 9e15 : at }); }
   return out.sort((a, b) => a.at - b.at).slice(0, max || 50);
 }
 function carSocView() {
@@ -20551,10 +20621,11 @@ Object.assign(actions, {
 // decides every consequence and checks every reply (98-w-career-social.js). Elsewhere the game's templates write them.
 // =====================================================================
 NAV_ICO.feed = '<path d="M4.5 6.5A2.5 2.5 0 0 1 7 4h10a2.5 2.5 0 0 1 2.5 2.5v7A2.5 2.5 0 0 1 17 16h-6l-4.5 4v-4H7a2.5 2.5 0 0 1-2.5-2.5z"/><path d="M8.5 9h7M8.5 12h4.5"/>';
-const SOC_AI = { has: !!(DESKTOP && DESKTOP.ai), state: DESKTOP && DESKTOP.ai ? 'checking' : 'none', gpu: null, busy: false, fails: 0 };
+const SOC_AI = { has: !!(DESKTOP && DESKTOP.ai), state: DESKTOP && DESKTOP.ai ? 'checking' : 'none', gpu: null, busy: false, fails: 0, pause: 0 };
 const socAiPref = () => { try { return STORE.getItem('hm-soc-ai') !== '0'; } catch (e) { return true; } };
-// the model writes when it's in the app, loaded, and the player hasn't turned it off
-const socAiOn = () => SOC_AI.has && SOC_AI.state === 'ready' && socAiPref() && SOC_AI.fails < 4;
+// the model writes when it's in the app, loaded, and the player hasn't turned it off; after repeated failures (a computer waking from sleep) it rests a minute and tries again
+const socAiOn = () => SOC_AI.has && SOC_AI.state === 'ready' && socAiPref() && Date.now() >= SOC_AI.pause;
+const socAiFail = () => { if (++SOC_AI.fails >= 4) { SOC_AI.fails = 0; SOC_AI.pause = Date.now() + 60000; } };
 function socAiInit() {
   if (!SOC_AI.has || SOC_AI.init) return; SOC_AI.init = true;
   DESKTOP.ai.status().then(st => {
@@ -20568,14 +20639,14 @@ function socAiInit() {
 async function socWriter() {
   if (SOC_AI.busy || !socAiOn() || !(S() && S().car)) return;
   const q = HM.carSocQueue(12); if (!q.length) return;
-  const post = q[0].post, ids = q.filter(x => x.post === post).slice(0, 4).map(x => x.id), req = HM.carSocPrompt(post, ids); if (!req) return;
+  const post = q[0].post, ids = q.filter(x => x.post === post).slice(0, 3).map(x => x.id), req = HM.carSocPrompt(post, ids); if (!req) return;
   SOC_AI.busy = true;
   try {
     const r = await DESKTOP.ai.generate({ ...req, timeout: 60000 });
     const texts = r && r.ok && r.json && Array.isArray(r.json.replies) ? r.json.replies : null;
-    if (!texts) SOC_AI.fails++; else SOC_AI.fails = 0;
+    if (!texts) socAiFail(); else SOC_AI.fails = 0;
     if (S() && S().car) { HM.carSocWrite(post, req.ids, texts || []); socSaveSoon(); }
-  } catch (e) { SOC_AI.fails++; }
+  } catch (e) { socAiFail(); }
   finally { SOC_AI.busy = false; }
   setTimeout(socWriter, 50);
 }
@@ -20685,7 +20756,7 @@ function socRefresh() {
   }
   HM.carSocSeen(now);
 }
-setInterval(() => { try { socRefresh(); if (socAiOn() && !SOC_AI.busy) socWriter(); } catch (e) { /* the feed is never allowed to break the page */ } }, 1500);
+setInterval(() => { try { if (ui.mode === 'career' && S() && S().car && socAiPref()) socAiInit(); socRefresh(); if (socAiOn() && !SOC_AI.busy) socWriter(); } catch (e) { /* the feed is never allowed to break the page */ } }, 1500);
 
 app.addEventListener('input', e => {
   if (e.target.id === 'socIn') { ui.socDraft = e.target.value; const el = document.getElementById('socLeft'); if (el) el.textContent = String(HM.SOC_MAX - e.target.value.length); }
@@ -20711,7 +20782,7 @@ Object.assign(actions, {
   socDel: d => { if (!(ui.confirm && ui.confirm.act === 'socDel' && +ui.confirm.p === +d.p)) { ui.confirm = { act: 'socDel', p: +d.p }; return; } ui.confirm = null; toast(HM.carSocDelete(+d.p)); persist(); },
   socMore: d => { const e = HM.carSocMore(+d.p); if (e) toast(e); else socWriter(); persist(); },
   socAll: d => { (ui.socAll || (ui.socAll = {}))[d.p] = true; },
-  socAiToggle: () => { try { STORE.setItem('hm-soc-ai', socAiPref() ? '0' : '1'); } catch (e) { /* the choice lasts this session */ } SOC_AI.fails = 0; if (socAiPref()) { SOC_AI.init = false; socAiInit(); } },
+  socAiToggle: () => { try { STORE.setItem('hm-soc-ai', socAiPref() ? '0' : '1'); } catch (e) { /* the choice lasts this session */ } SOC_AI.fails = 0; SOC_AI.pause = 0; if (socAiPref()) { SOC_AI.init = false; socAiInit(); } },
 });
 // =====================================================================
 // PROGRESSION REPORT: opens by itself when a new season starts (pro) or after the offseason (college), showing how
