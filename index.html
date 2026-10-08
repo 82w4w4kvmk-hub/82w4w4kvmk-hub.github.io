@@ -207,18 +207,20 @@ table.t{width:100%;border-collapse:collapse;font-size:13px}
 .plink{all:unset;cursor:pointer;font-weight:600}
 .plink:hover{color:var(--mark);text-decoration:none}
 
-/* rating tiers: gold elite, green good, neutral typical, amber below, red poor */
-:root{--r5:#F5C542;--r4:#3DD68C;--r3:var(--ink);--r2:#F2A33A;--r1:#FF6B6B}
-:root[data-theme="light"]{--r5:#B07A00;--r4:#128A52;--r2:#C26A06;--r1:#D23B3B}
+/* rating tiers: gold elite, green good, neutral typical, orange below, red poor (the gold is metallic, the orange plainly
+   orange, so the two don't read alike) */
+:root{--r5:#FFD54A;--r4:#3DD68C;--r3:var(--ink);--r2:#FF8A3D;--r1:#FF6B6B;--gold:linear-gradient(135deg,#FFF3B0 0%,#FFD54A 28%,#E0A90F 58%,#FFE27A 82%,#C8900A 100%)}
+:root[data-theme="light"]{--r5:#A87800;--r4:#128A52;--r2:#C2410C;--r1:#D23B3B;--gold:linear-gradient(135deg,#F6DA78 0%,#E2B530 35%,#B98A0C 65%,#EBC754 100%)}
 .ovr{display:inline-block;min-width:32px;text-align:center;font:800 15px/22px var(--fd);letter-spacing:.02em;border-radius:6px;background:var(--panel3);color:var(--ink)}
-.ovr.r5{background:linear-gradient(180deg,#F8CF55,#E0A515);color:#1A1203;box-shadow:0 0 0 1px rgba(245,197,66,.35),0 4px 14px -6px rgba(245,197,66,.8)}
+.ovr.r5{background:var(--gold);color:#1A1203;text-shadow:0 1px 0 rgba(255,246,200,.6);box-shadow:inset 0 1px 0 rgba(255,250,220,.75),inset 0 -1px 0 rgba(120,80,0,.45),0 0 0 1px rgba(214,160,20,.55),0 4px 14px -6px rgba(255,200,40,.85)}
 .ovr.r4{background:color-mix(in srgb,var(--r4) 22%,var(--panel2));color:var(--r4);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--r4) 35%,transparent)}
 .ovr.r3{background:var(--panel3);color:var(--ink)}
 .ovr.r2{background:color-mix(in srgb,var(--r2) 14%,var(--panel2));color:var(--r2)}
 .ovr.r1{background:color-mix(in srgb,var(--r1) 15%,var(--panel2));color:var(--r1)}
 .rtg{font-weight:700;font-variant-numeric:tabular-nums}
-.rtg.r5{color:var(--r5)}.rtg.r4{color:var(--r4)}.rtg.r2{color:var(--r2)}.rtg.r1{color:var(--r1)}
-.bar.r5 i{background:linear-gradient(90deg,#E0A515,#F8CF55)}.bar.r4 i{background:var(--r4)}.bar.r3 i{background:color-mix(in srgb,var(--ink2) 80%,transparent)}.bar.r2 i{background:var(--r2)}.bar.r1 i{background:var(--r1)}
+.rtg.r5{color:var(--r5);background:var(--gold);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;font-weight:800}
+:root[data-theme="light"] .rtg.r5{background:linear-gradient(135deg,#C89A12 0%,#8F6700 55%,#B8860B 100%);-webkit-background-clip:text;background-clip:text}.rtg.r4{color:var(--r4)}.rtg.r2{color:var(--r2)}.rtg.r1{color:var(--r1)}
+.bar.r5 i{background:var(--gold)}.bar.r4 i{background:var(--r4)}.bar.r3 i{background:color-mix(in srgb,var(--ink2) 80%,transparent)}.bar.r2 i{background:var(--r2)}.bar.r1 i{background:var(--r1)}
 
 .pill{display:inline-block;font:700 10px/19px var(--fb);letter-spacing:.07em;text-transform:uppercase;padding:0 8px;border-radius:6px;background:var(--panel3);color:var(--ink2)}
 .pill.inj{background:color-mix(in srgb,var(--loss) 16%,transparent);color:var(--loss)}
@@ -9596,8 +9598,16 @@ function autoRecruit() {
   for (const r of commitsOf(u).filter(r => !r.signed && (r.cf ?? 60) < 80).sort((a, b) => (a.cf ?? 60) - (b.cf ?? 60))) { if (!(CS.board || []).includes(r.id)) (CS.board || (CS.board = [])).push(r.id); act(r, (r.cf ?? 60) < 45 && CS.recPts >= 12 && r.hv !== CS.season ? 'home' : 'call'); }
   // 2) drop lost causes: cut from his list, far behind late, or locked in elsewhere
   for (const id of boardOpen()) { const r = CS.players[id], st = standing(r, u); if (!onList(r, u) || (r.commit != null && r.commit !== u && (r.cf ?? 60) >= 60) || (r.list && r.list.length <= 5 && st && st.pos >= 3 && (r.int[r.list[0]] || 0) - (r.int[u] || 0) > 20)) CS.board = CS.board.filter(x => x !== id); }
+  // 2b) behind pace (a board of long shots, often one the coach built himself in week 1): trade the longest shots, where
+  // you're third or worse on his list and well behind, for realistic targets; late in the year, settle a star lower
+  const wkN = CS.sched.length || 12, late = CS.week >= wkN - 3, pace = Math.round(classNeeds(u) * Math.min(1, (CS.week + 1) / wkN) * 0.8), short = pace - commitsOf(u).length;
+  if (short > 0 && CS.week >= 3) {
+    const gap = r => Math.max(0, ...Object.values(r.int || {})) - (r.int[u] || 0);
+    const shots = boardOpen().map(id => CS.players[id]).filter(r => r && r.commit == null && !r.signed).map(r => ({ r, st: standing(r, u) })).filter(x => !x.st || (x.st.pos >= 3 && gap(x.r) > 10)).sort((a, b) => gap(b.r) - gap(a.r));
+    for (const x of shots.slice(0, short * 2)) CS.board = CS.board.filter(id => id !== x.r.id);
+  }
   // 3) fill the board with realistic targets
-  const need = classNeeds(u) - commitsOf(u).length, full = need <= 0, want = t => { const p = cteam(u).pres; return p >= 80 ? t.stars >= 4 : p >= 60 ? t.stars >= 3 : p >= 40 ? t.stars >= 2 && t.stars <= 4 : t.stars <= 3; };
+  const need = classNeeds(u) - commitsOf(u).length, full = need <= 0, want = t => { const p = cteam(u).pres - (late && short > 0 ? 20 : 0); return p >= 80 ? t.stars >= 4 : p >= 60 ? t.stars >= 3 : p >= 40 ? t.stars >= 2 && t.stars <= 4 : t.stars <= 3; };
   const size = Math.min(BOARD_MAX, Math.ceil(need * 1.3) + 2);
   if (need > 0 && boardOpen().length < size) {
     const cands = recruits().filter(r => !r.signed && r.commit == null && !(CS.board || []).includes(r.id) && onList(r, u) && (want(r) || r.pos === 'K' || r.pos === 'P') && (!r.list || r.list.includes(u))).map(r => ({ r, v: fitOf(r, u) * 60 + ((r.int[u] || 0) - Math.max(0, ...Object.entries(r.int).filter(([t]) => +t !== u).map(([, x]) => x))) * 0.8 - (r.list ? 10 : 0) })).sort((a, b) => b.v - a.v);
@@ -9715,6 +9725,16 @@ function earlySigning() {
 }
 function signingDay() {
   const room = {}; for (const t of CS.teams) room[t.tid] = classRoom(t.tid) - recruits().filter(r => r.signed && r.commit === t.tid).length;
+  const u = CS.userTid, mineOn = u != null && !CS.bg, onBoard = new Set(mineOn ? CS.board || [] : []), SD = { s: CS.season, in: [], out: [], lost: [] };
+  let lateLeft = mineOn ? Math.max(0, classNeeds(u) - commitsOf(u).length) : 0; // (late signees fill the class's needs, not every scholarship)
+  // the last word from a wavering commit: the school that's been pushing him can still flip him today
+  for (const r of recruits().filter(r => !r.signed && r.commit != null && (r.cf ?? 60) < 40 && r.chase != null && r.chase !== r.commit && !r.car)) {
+    if (rnd() >= clamp((45 - (r.cf ?? 60)) / 45, 0.15, 0.7)) continue;
+    const from = r.commit; r.commit = r.chase; r.chase = null; r.cf = 60;
+    if (mineOn && r.commit === u) SD.in.push({ id: r.id, how: 'flip', from });
+    else if (mineOn && from === u) SD.out.push({ id: r.id, to: r.commit, fn: r.fn, ln: r.ln, pos: r.pos, stars: r.stars });
+  }
+  const undecided = new Set(recruits().filter(r => !r.signed && r.commit == null).map(r => r.id));
   const rs = recruits().filter(r => !r.signed).sort((a, b) => b.stars - a.stars || b.pot - a.pot);
   // each school's open spots by position, kept up to date as players sign, so leftover recruits go where they're needed
   const need = {}; for (const t of CS.teams) need[t.tid] = posRoom(t.tid);
@@ -9722,15 +9742,17 @@ function signingDay() {
   for (const r of rs) {
     let tid = r.commit;
     if (tid == null || (room[tid] <= 0 && !r.car)) { const o = (r.list || r.off).filter(x => room[x] > 0).sort((a, b) => needs(b, r.pos) - needs(a, r.pos) || (r.int[b] || 0) + fitOf(r, b) * 25 - (r.int[a] || 0) - fitOf(r, a) * 25)[0]; tid = o != null ? o : null; }
-    if (tid == null) { const spec = r.pos === 'K' || r.pos === 'P'; const cand = CS.teams.filter(t => room[t.tid] > 0 && !isMe(t.tid) && (!spec || needs(t.tid, r.pos))).sort((a, b) => needs(b.tid, r.pos) - needs(a.tid, r.pos) || Math.abs(a.pres - r.stars * 17) - Math.abs(b.pres - r.stars * 17))[0]; tid = cand ? cand.tid : null; }
+    let late = false;
+    if (tid == null) { const spec = r.pos === 'K' || r.pos === 'P'; const cand = CS.teams.filter(t => room[t.tid] > 0 && (!isMe(t.tid) || (lateLeft > 0 && r.stars * 17 <= t.pres + 10)) && (!spec || needs(t.tid, r.pos))).sort((a, b) => needs(b.tid, r.pos) - needs(a.tid, r.pos) || Math.abs(a.pres - r.stars * 17) - Math.abs(b.pres - r.stars * 17))[0]; tid = cand ? cand.tid : null; late = tid != null; }
     if (tid != null && tid !== r.commit && need[tid]) need[tid][r.pos] = (need[tid][r.pos] || 0) - 1;
     if (tid == null) { delete CS.players[r.id]; touchC(); continue; }
     if (tid !== r.commit && isMe(tid)) cnews(`Signing day: ${r.stars}-star ${r.pos} ${r.fn} ${r.ln} signed with you!`, true);
+    if (mineOn) { if (tid === u && late) { SD.in.push({ id: r.id, how: 'late' }); lateLeft--; } else if (tid === u && undecided.has(r.id)) SD.in.push({ id: r.id, how: 'chose' }); else if (tid !== u && onBoard.has(r.id)) SD.lost.push({ id: r.id, to: tid }); }
     r.signed = true; r.commit = tid; room[tid]--; if (r.nilOff && r.nilOff[tid]) r.nil = r.nilOff[tid];
   }
   const ranks = CS.teams.map(t => ({ tid: t.tid, pts: commitsOf(t.tid).reduce((a, r) => a + STAR_PTS[r.stars], 0), n: commitsOf(t.tid).length })).sort((a, b) => b.pts - a.pts);
   CS.classRank = { s: CS.season, list: ranks };
-  if (CS.userTid != null && !CS.bg) CS.classRep = { s: CS.season, stage: 'final', seen: false };
+  if (CS.userTid != null && !CS.bg) { CS.classRep = { s: CS.season, stage: 'final', seen: false }; CS.signDay = SD; }
   ranks.forEach((x, i) => { if (i < 5) presBoost(cteam(x.tid), 2, `a top-5 recruiting class (#${i + 1})`); else if (i < 15) presBoost(cteam(x.tid), 1, `a top-15 recruiting class (#${i + 1})`); });
   const me = ranks.findIndex(x => x.tid === CS.userTid) + 1;
   cnews(`Signing day: your class ranks #${me} nationally (${ranks[me - 1].n} signees). ${cteam(ranks[0].tid).name} signed the top class.`, true);
@@ -10037,7 +10059,7 @@ function nextSeason() {
     if (!(p.rsYr === CS.season)) p.elig--; p.age++; p.rs = false; p.rsG = 0; delete p.talked;
     if (p.inj) { p.inj = Math.max(0, p.inj - 32); if (!p.inj) delete p.injT; }
     if (p.devS !== CS.season) colDevelop(p, isMe(p.tid));
-    if (p.elig <= 0) { rbLeave(p); delete CS.players[p.id]; }
+    if (p.elig <= 0) { rbLeave(p, true); delete CS.players[p.id]; }
   }
   touchC();
   // signees join
@@ -11715,7 +11737,23 @@ function rbSeasonEnd() {
 }
 function honCount(hon, re) { return (hon || []).filter(h => re.test(h.t)).length; }
 // a player leaves college: career marks at his school, a retired number for the greats, and a Hall of Fame file
-function rbLeave(p) {
+// a player's season lines stay on the stats pages after he leaves (graduates, goes pro, is cut): the ones a stats page would
+// show (your own players' always), for the last four seasons, so last year's leaders don't vanish with the seniors
+const ST_ARCH_K = ['tid', 'gp', 'pa', 'pc', 'py', 'ptd', 'pint', 'ra', 'ry', 'rtd', 'rec', 'rcy', 'rctd', 'tkl', 'sck', 'dint', 'fgm', 'fga', 'xpm', 'xpa'];
+function stArchive(p, ticked) { // (ticked: his eligibility already counted down for the new year)
+  if (!p || !p.st) return; const A = CS.stArch || (CS.stArch = {}), u = CS.userTid;
+  for (const y in p.st) {
+    const s = p.st[y]; if (!s || !s.gp || s.tid == null || s.tid < 0) continue;
+    const big = (s.py || 0) >= 800 || (s.ry || 0) >= 300 || (s.rcy || 0) >= 300 || (s.rec || 0) >= 25 || (s.tkl || 0) >= 40 || (s.sck || 0) >= 3 || (s.dint || 0) >= 2 || (s.fgm || 0) >= 8 || (s.pn || 0) >= 25;
+    if (!big && s.tid !== u) continue;
+    const L = A[y] || (A[y] = []); if (L.some(x => x.pid === p.id)) continue;
+    const st = {}; for (const k of ST_ARCH_K) if (s[k] || (k === 'tid' && s[k] != null)) st[k] = s[k]; // (only what the season tables show)
+    L.push({ pid: p.id, fn: p.fn, ln: p.ln, pos: p.pos, elig: (p.elig || 0) + (CS.season - +y) + (ticked && p.rsYr !== CS.season ? 1 : 0), rsUsed: p.rsUsed || undefined, st });
+  }
+  for (const y in A) if (+y < CS.season - 4) delete A[y];
+}
+function rbLeave(p, ticked) {
+  stArchive(p, ticked);
   const R = rbInit(); if (!p || R.alum.some(a => a.pid === p.id)) return;
   const byTid = {}; for (const y in p.st || {}) { const st = p.st[y], t = st.tid ?? p.tid; const a = byTid[t] || (byTid[t] = { gp: 0 }); for (const k in st) if (k !== 'tid') a[k] = (a[k] || 0) + (st[k] || 0); }
   const tids = Object.keys(byTid).map(Number); if (!tids.length) return;
@@ -18387,7 +18425,7 @@ const cname = (t, full) => `${crk(t.tid)}${E(t.name)}${full ? ' ' + E(t.mascot) 
 const stars = n => `<span class="stars" aria-label="${n} stars">${'★'.repeat(n)}<span class="muted">${'★'.repeat(Math.max(0, 5 - n))}</span></span>`;
 const crec = r => `${r.w}-${r.l}`;
 const cfn = c => { const n = HC().COL_CONFS[c] || ''; if (CSx() && CSx().confRen && CSx().confRen[c]) return n; return n === 'Independent' ? 'Independents' : /Conference|Alliance|Twelve|Big |SEC|ACC|MAC|Pac-12|American|Sun Belt|Mountain West/.test(n) ? n : n + ' Conference'; };
-const cplink = p => p ? `<button class="plink" data-act="cPlayer" data-id="${p.id}">${E(p.fn + ' ' + p.ln)}</button>${genB(p)}` : '—';
+const cplink = p => (p && p.gone ? `<span title="No longer in college">${E(p.fn + ' ' + p.ln)}</span> <span class="muted" style="font-size:11px">(former)</span>` : p ? `<button class="plink" data-act="cPlayer" data-id="${p.id}">${E(p.fn + ' ' + p.ln)}</button>${genB(p)}` : '—');
 const C_NAV = [['home', 'Home'], ['front', 'Front page'], ['coach', 'Your job'], ['roster', 'Roster'], ['plan', 'Game plan'], ['dev', 'Development'], ['recruit', 'Recruiting'], ['sched', 'Schedule'], ['polls', 'Polls'], ['stats', 'Stats'], ['awards', 'Awards'], ['rivals', 'Rivalries'], ['stand', 'Conferences'], ['playoff', 'Playoff'], ['portal', 'Transfer portal'], ['draft', 'Draft class'], ['history', 'History']];
 const cNavList = () => (uniOnUI() ? [...C_NAV.slice(0, -1), ['pros', 'The pros'], C_NAV[C_NAV.length - 1]] : C_NAV);
 
@@ -18436,7 +18474,7 @@ Object.assign(actions, {
   cCCG: () => { const g = HC().playCCG(); cAfterGame(g); ui.cView = 'playoff'; },
   cPO: () => { const g = HC().playPlayoffRound(); cAfterGame(g); if (!g) toast('Round complete.'); if (CSx().phase !== 'playoff') ui.cView = 'history'; },
   cSign: () => { const e = HC().holdSigningDay(); if (e) toast(e); persist(); ui.cView = 'portal'; },
-  cPortal: () => { HC().portalDay(); persist(); if (CSx().phase === 'offseason') ui.cView = 'draft'; },
+  cPortal: () => { HC().portalDay(); persist(); if (CSx().phase === 'offseason') { ui.cView = 'portal'; window.scrollTo(0, 0); } }, // (the last day: the recap of how it went, then on to the draft)
   cNext: () => { const e = HC().nextSeason(); if (e) toast(e); persist(); ui.cView = 'home'; },
   cAuto: d => { HC().setAutoRec(d.v != null ? d.v === '1' : !HC().autoRec); persist(); toast(HC().autoRec ? 'Auto-recruit is on: your staff spends the hours you leave unused each week.' : 'Auto-recruit is off: hours you don\'t use are lost.'); },
   cRec: d => { const e = HC().recAction(+d.id, d.v, d.amt); if (e) toast(e); persist(); },
@@ -18584,6 +18622,22 @@ function cClassRanksNow() {
   if (fin) return { fin, list: c.classRank.list.map(x => ({ tid: x.tid, n: x.n, pts: x.pts })) };
   return { fin, list: c.teams.map(t => { const cm = HC().commitsOf(t.tid); return { tid: t.tid, n: cm.length, pts: cm.reduce((a, r) => a + HC().STAR_PTS[r.stars], 0) }; }).sort((a, b) => b.pts - a.pts) };
 }
+// what happened on signing day itself: who picked you, who flipped either way, late signees for open scholarships, and the
+// targets on your board who went elsewhere
+function cSignDayBox() {
+  const c = CSx(), D = c.signDay; if (!D || D.s !== c.season) return '';
+  const nm = r => r ? `${stars(r.stars)} ${E(r.pos)} ${cplink(r)}` : '';
+  const chose = D.in.filter(x => x.how === 'chose'), flipIn = D.in.filter(x => x.how === 'flip'), late = D.in.filter(x => x.how === 'late');
+  const line = (lbl, cls, items) => items.length ? `<div style="margin:2px 0"><span class="pill ${cls}">${lbl}</span> ${items.join(' · ')}</div>` : '';
+  const html = [
+    line('Chose you', 'w', chose.map(x => nm(CP(x.id)))),
+    line('Flipped to you', 'w', flipIn.map(x => `${nm(CP(x.id))} <span class="muted">from ${E(CT(x.from).name)}</span>`)),
+    line('Flipped away', 'l', D.out.map(x => `${stars(x.stars)} ${E(x.pos)} ${E(x.fn + ' ' + x.ln)} <span class="muted">to ${E(CT(x.to).name)}</span>`)),
+    line('Late signees', '', late.map(x => nm(CP(x.id)))),
+    line('Went elsewhere', 'l', D.lost.filter(x => x.to != null && CP(x.id)).slice(0, 10).map(x => `${nm(CP(x.id))} <span class="muted">to ${E(CT(x.to).name)}</span>`)),
+  ].join('');
+  return `<section class="note" style="margin:0"><b>Signing day.</b> Uncommitted recruits made their picks, wavering commits made their final call, and your open scholarships went to late signees.${html ? `<div style="margin-top:6px;font-size:13px">${html}</div>` : ' <span class="muted">A quiet day for you: your class was already set.</span>'}</section>`;
+}
 function cClassReport() {
   const c = CSx(), u = c.userTid, R = cClassRanksNow(), me = R.list.findIndex(x => x.tid === u) + 1, mine = R.list[me - 1] || { n: 0, pts: 0 };
   const cm = HC().commitsOf(u).sort((a, b) => b.stars - a.stars || (a.rk || 9999) - (b.rk || 9999)), st = n => cm.filter(r => r.stars === n).length;
@@ -18591,7 +18645,7 @@ function cClassReport() {
   const conf = R.list.filter(x => CT(x.tid).conf === CT(u).conf), cr = conf.findIndex(x => x.tid === u) + 1;
   return `<div class="mh" style="justify-content:space-between"><div><div class="lbl">${early ? 'Early signing period' : 'Signing day'} · ${c.season}</div><h2 style="margin:2px 0 0">Your class ranks #${me} in the nation</h2></div><button class="btn sm x" data-act="close">Close</button></div>
   <div class="mb"><div class="kv" style="margin:0"><div><span class="lbl">National rank</span><b class="num">#${me}</b></div><div><span class="lbl">In your conference</span><b class="num">${cr ? '#' + cr + ' of ' + conf.length : '—'}</b></div><div><span class="lbl">${R.fin ? 'Signees' : 'Commits'}</span><b class="num">${mine.n}</b></div><div><span class="lbl">Five / four / three stars</span><b class="num">${st(5)} / ${st(4)} / ${st(3)}</b></div><div><span class="lbl">Class points</span><b class="num">${mine.pts}</b></div></div>
-  ${early ? '<p class="muted" style="margin:0;font-size:13px">Early signees are locked in. Anyone still only committed can waver until signing day, and uncommitted recruits decide then too.</p>' : ''}
+  ${early ? '<p class="muted" style="margin:0;font-size:13px">Early signees are locked in. Anyone still only committed can waver until signing day, and uncommitted recruits decide then too.</p>' : cSignDayBox()}
   <div class="grid2" style="align-items:start"><section><h3>Your class</h3><div class="tw"><table class="t" data-nosort><thead><tr><th>Recruit</th><th>Pos</th><th>Rating</th><th class="n hidesm">Rank</th><th>Status</th></tr></thead><tbody>${cm.map(r => `<tr><td>${cplink(r)}</td><td>${r.pos}</td><td>${stars(r.stars)}</td><td class="n hidesm">${r.rk ? '#' + r.rk : '—'}</td><td>${r.signed ? `<span class="pill w">Signed${r.early ? ' early' : ''}</span>` : '<span class="pill">Committed</span>'}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No commitments.</td></tr>'}</tbody></table></div></section>
   <section><h3>Top 25 classes</h3><ol class="prl">${R.list.slice(0, 25).map(x => `<li class="${x.tid === u ? 'me' : ''}">${cchip(CT(x.tid))} ${E(CT(x.tid).name)} <span class="muted">${x.n} · ${x.pts} pts</span></li>`).join('')}${me > 25 ? `<li class="me" value="${me}">${cchip(CT(u))} ${E(CT(u).name)} <span class="muted">${mine.n} · ${mine.pts} pts</span></li>` : ''}</ol></section></div>
   <div class="row" style="gap:8px"><button class="btn primary" data-act="close">Done</button><button class="btn" data-act="cClassGo">Recruiting board</button></div></div>`;
@@ -18665,6 +18719,12 @@ function cPortalView() {
   const c = CSx(), u = c.userTid;
   if (c.phase !== 'portal') { const steps = [['season', 'Regular season'], ['ccg', 'Conference championships'], ['playoff', 'Playoff and bowls'], ['signing', 'Signing day'], ['portal', 'Transfer portal'], ['offseason', 'Offseason']], cur = steps.findIndex(x => x[0] === c.phase), unhappy = HC().roster(c.userTid).filter(p => (p.mor ?? 60) < 45).length;
     const last = [c.season, c.season - 1].find(y => (HC().portalLog(y) || []).length);
+    // the window just shut: how it went for you, and the biggest moves around the country
+    if (c.phase === 'offseason' && c.portalHist && c.portalHist[c.season]) {
+      const moves = Object.values(c.players).filter(p => p.xfer && p.xfer.s === c.season && p.tid >= 0).sort((a, b) => b.ovr - a.ovr).slice(0, 15);
+      return `<div class="pagehead"><div><h2>Transfer portal: closed</h2><p>The window is shut. Here is everyone you signed, lost and missed on, and the biggest transfers in the country. Next up: the offseason and your draft class.</p></div><div class="row"><button class="btn primary" data-act="cNav" data-v="draft">On to the offseason</button></div></div>
+      ${cPortalClass(c.season)}<section class="panel"><h3>Biggest moves in the country</h3><div class="tw"><table class="t stackw" data-nosort><thead><tr><th>Player</th><th>Pos</th><th class="n">OVR</th><th>From</th><th>To</th></tr></thead><tbody>${moves.map(p => `<tr${p.tid === u ? ' class="me"' : ''}><td>${cplink(p)}</td><td>${p.pos}</td><td class="n">${ovrB(rcv(p.ovr))}</td><td>${p.xfer.from != null && CT(p.xfer.from) ? `${cchip(CT(p.xfer.from))} ${E(CT(p.xfer.from).name)}` : ''}</td><td>${cchip(CT(p.tid))} ${E(CT(p.tid).name)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No transfers this year.</td></tr>'}</tbody></table></div></section>${cScholBox()}`;
+    }
     return `<div class="pagehead"><div><h2>Transfer portal</h2><p>The portal opens after signing day. Players buried on the depth chart, unhappy players and stars at small schools are the likeliest to leave; NIL money and a conversation can keep them.</p></div></div>
     <div class="grid2"><section class="panel"><h3>Where the season is</h3><ol class="rv-plays" style="gap:6px">${steps.map((x, i) => `<li style="${i === cur ? 'font-weight:700' : i < cur ? 'color:var(--ink2)' : ''}">${E(x[1])}${i === cur ? ' <span class="pill">Now</span>' : ''}</li>`).join('')}</ol></section>
     <section class="panel"><h3>Until then</h3><p style="margin:0 0 8px;font-size:13.5px">Keep your players happy: playing time, winning and NIL money all help. ${unhappy ? `<b>${unhappy} of your players ${unhappy === 1 ? 'is' : 'are'} unhappy right now.</b>` : 'Nobody on your roster is unhappy right now.'}</p><div class="row" style="gap:6px"><button class="btn sm" data-act="cNav" data-v="roster">Check moods on the roster</button></div></section></div>${last != null ? cPortalClass(last) : ''}${cScholBox()}`; }
@@ -19123,11 +19183,13 @@ const cFmt = (v, dec) => (dec ? (Math.round(v * 10) / 10).toFixed(1) : Math.roun
 function cStatRows(season) {
   const c = CSx(), out = [];
   for (const p of Object.values(c.players)) { const s = p.st && p.st[season]; if (!s || !s.gp || s.tid == null || s.tid < 0) continue; out.push({ p, s, t: CT(s.tid) }); }
+  // players who have since left (graduated, gone pro): their lines from the archive, marked as former players
+  for (const a of (c.stArch && c.stArch[season]) || []) { if (c.players[a.pid] || !CT(a.st.tid)) continue; out.push({ p: { id: a.pid, fn: a.fn, ln: a.ln, pos: a.pos, elig: a.elig, rsUsed: a.rsUsed, gone: true }, s: a.st, t: CT(a.st.tid) }); }
   return out;
 }
 function cStats() {
   const c = CSx(), tab = ui.csTab || 'leaders';
-  const seasons = [...new Set(Object.values(c.players).flatMap(p => Object.keys(p.st || {}).map(Number)))].sort((a, b) => b - a);
+  const seasons = [...new Set([...Object.values(c.players).flatMap(p => Object.keys(p.st || {}).map(Number)), ...Object.keys(c.stArch || {}).map(Number)])].sort((a, b) => b - a);
   const season = seasons.includes(ui.csSeason) ? ui.csSeason : (seasons[0] ?? c.season);
   const conf = ui.csConf ?? 'all', mine = !!ui.csMine, u = c.userTid;
   let rows = cStatRows(season).filter(x => (conf === 'all' || x.t.conf === +conf) && (!mine || x.s.tid === u));
@@ -19136,7 +19198,7 @@ function cStats() {
     <label class="row"><span class="lbl">Season</span><select id="csSeason">${(seasons.length ? seasons : [c.season]).map(y => `<option value="${y}" ${y === season ? 'selected' : ''}>${y}</option>`).join('')}</select></label>
     <label class="row"><span class="lbl">Conference</span><select id="csConf"><option value="all">All</option>${HC().COL_CONFS.map((n, i) => `<option value="${i}" ${String(conf) === String(i) ? 'selected' : ''}>${E(n)}</option>`).join('')}</select></label>
     ${u != null && !c.bg ? `<label class="row"><input type="checkbox" id="csMine" ${mine ? 'checked' : ''}> <span>Only ${E(CT(u).name)}</span></label>` : ''}</div>`;
-  const head = `<div class="pagehead"><div><h2>Stats</h2><p>Season stats for every player in the country${season !== c.season ? '' : `, through ${E(HC().phaseLabel().toLowerCase())}`}. Players who have left for the pros or graduated drop out of older seasons.</p></div>${tabs}</div>`;
+  const head = `<div class="pagehead"><div><h2>Stats</h2><p>Season stats for every player in the country${season !== c.season ? '' : `, through ${E(HC().phaseLabel().toLowerCase())}`}. Players who have since graduated or gone pro stay in their old seasons (the last four, the ones who made a mark), marked as former players.</p></div>${tabs}</div>`;
   if (tab === 'adv') return `${head}${filters}${cAdvTab(season)}`;
   if (tab === 'leaders') {
     const cards = CLEADERS.map(([l, k, pos]) => {
