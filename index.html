@@ -4380,8 +4380,9 @@ function devShape(p, age) {
 const DEV_KIND = { SPD: [0.12, 1.35], AGI: [0.45, 1.2], EXP: [0.45, 1.2], MOB: [0.45, 1.2], STR: [1.3, 0.85], POW: [1.3, 0.85], ARM: [1, 1], KPW: [1, 1] };
 const DEV_KIND_COL = { SPD: 0.35, AGI: 0.7, EXP: 0.7, MOB: 0.7, STR: 1.4, POW: 1.4 }; // (college: strength-and-conditioning still adds some speed)
 const DEV_SD = { SPD: 0.8, AGI: 1.4, EXP: 1.4, MOB: 1.4 }, FOCUS_K = { SPD: 0.3, AGI: 0.65, EXP: 0.65, MOB: 0.65 }; // (a training focus on speed buys little)
-function devFactors(pos, up) {
-  const c = POS[pos], f = c.attrs.map(k => (DEV_KIND[k] || [1.15, 0.6])[up ? 0 : 1]), g = c.attrs.reduce((a, k, i) => a + c.w[i] * f[i], 0) || 1;
+const DEV_SPD_YOUNG = 0.36; // (young pros through 25 can still add a point or two of speed a year)
+function devFactors(pos, up, age) {
+  const c = POS[pos], f = c.attrs.map(k => k === 'SPD' && up && age <= 25 ? DEV_SPD_YOUNG : (DEV_KIND[k] || [1.15, 0.6])[up ? 0 : 1]), g = c.attrs.reduce((a, k, i) => a + c.w[i] * f[i], 0) || 1;
   const out = {}; c.attrs.forEach((k, i) => { out[k] = f[i] / g; }); return out;
 }
 function develop(p) {
@@ -4393,7 +4394,7 @@ function develop(p) {
   const age = p.age, nominal = devBase(p, age), sh = S.car && p.id === S.car.pid ? { add: 0 } : devShape(p, age);
   const b0 = devBase(p, age, true), cut = sh.stall && b0 > 0 ? -b0 * 0.85 : 0, ty = teamDevYr(p), base = b0 + cut + sh.add + ty;
   const before = { ...p.a }, oldPot = p.pot, fk = focusOf(p);
-  const F = devFactors(p.pos, base >= 0);
+  const F = devFactors(p.pos, base >= 0, age);
   for (const k of POS[p.pos].attrs) p.a[k] = clamp(Math.round(p.a[k] + gauss(base * F[k] + (fk ? (k === fk ? FOCUS_BONUS * (FOCUS_K[k] ?? 1) : -FOCUS_COST) : 0), DEV_SD[k] || 2.2)), 20, 99);
   const old = p.ovr; p.ovr = calcOvr(p);
   const pr = potOffseason(p, p.ovr - old, nominal); p.pot = pr.pot;
