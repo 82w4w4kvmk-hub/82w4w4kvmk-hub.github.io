@@ -1954,7 +1954,7 @@ function fxQB(W, Q) {
   // (whether a blocker is about to pick each one up is worked out once a tick: the reads below ask it again and again)
   const rush = W.D.filter(d => d.role === 'rush'), PK = FX_PK.fill(-1), picked = d => { let k = PK[d.i]; if (k < 0) k = PK[d.i] = W.O.some(b => (b.role === 'ol_pass' || b.role === 'pblock') && !b.eng && b.as === d && fxD(b, d) < 2.8 && fxD(b, Q) < fxD(d, Q)) ? 1 : 0; return k === 1; };
   const hot = t < 0.5 ? 9 : rush.reduce((m, d) => Math.min(m, d.eng ? (fxD(d, Q) < 2.2 ? 0.5 + (fxD(d, Q) - 1) / 3 : 9) : picked(d) ? 9 : (fxD(d, Q) - 1) / d.top), 9);
-  W.st.hot = Math.min(W.st.hot ?? 9, hot);
+  W.st.hot = Math.min(W.st.hot ?? 9, hot); if (W.st.hot < 0.65 && W.st.prsT == null) W.st.prsT = W.t; // (when it became a pressure, for the tracking stats)
   // (what he feels isn't quite what's there: he senses a free rusher a beat late, later from the side he isn't looking at)
   const look = Q.reads && Q.set ? Q.reads[Q.ri % Q.reads.length] : null, feelLag = clamp(0.4 - (Q.c.POC - 68) * 0.01, 0.12, 0.65);
   // (a blitzer he read before the snap he sees coming the whole way: no lag, no blind side)
@@ -2690,7 +2690,7 @@ function fxResult(W, rec) {
     if (W.scram && (W.downC === c ? W.downU : c.u) < L && !R.td) { R.k = 'sack'; R.y = Math.min(-1, spot(W.downC === c ? W.downU : c.u)); R.by = st.tk ? st.tk.i : null; }
     R.bc = st.contact ? spot(st.contact.u) : R.y;
   } else { R.k = 'sack'; R.y = Math.min(-1, spot(qbU)); R.by = st.tk ? st.tk.i : null; }
-  R.win = st.win; R.dR = st.dR; R.dd = st.dd; R.tt = th ? th.t : null; R.miss = st.miss || []; R.prs = st.prs ? st.prs.i : null; R.hot = st.hot ?? 9; R.sep = th && th.sep != null ? +th.sep.toFixed(1) : null; R.cv = th && th.cv != null ? th.cv : null; R.rt = W.O.map(a => a.rt || null);
+  R.win = st.win; R.dR = st.dR; R.dd = st.dd; R.tt = th ? th.t : null; R.miss = st.miss || []; R.prs = st.prs ? st.prs.i : null; R.hot = st.hot ?? 9; R.sep = th && th.sep != null ? +th.sep.toFixed(1) : null; R.cv = th && th.cv != null ? th.cv : null; R.prsT = st.prs && st.prsT != null ? +st.prsT.toFixed(1) : null; R.rt = W.O.map(a => a.rt || null);
   if (W.X.dbgW) R.W = W;
   if (rec) R.rec = { fr: rec, fl: (W.flights || []).map(({ o, ...f }) => f), end: W.over ? W.over.t : null, ev: W.ev, dt: FX_DT, scheme: W.scheme || null, fam: W.fam || null, front: W.front, form: W.form, cov: W.cov };
   return R;
@@ -3371,7 +3371,7 @@ function* gameGen(ht, at, opt = {}) {
     cp = clamp(cp, 0.2, 0.9);
     inc(ql, 'pa'); inc(rl, 'tg'); g.ts[o].pa++; injure(qb, o, 0.0003); EPX.rec = rec;
     const cvl = sl(defBy, d); inc(cvl, 'ctg'); EPX.cov = defBy; // coverage: targets, catches, yards and scores against the man covering him
-    inc(ql, 'xa'); inc(ql, 'xcp', Math.round(xcp * 1000)); if (pressured) inc(ql, 'upa');
+    inc(ql, 'xa'); inc(ql, 'xcp', Math.round(xcp * 1000)); if (pressured) inc(ql, 'upa'); trkThrow(ql, rl, cvl, air, sepT, xcp, null);
     if (ti >= 5) inc(rl, 'rt');
     if (rnd() < cp) {
       let yac = air >= 20 ? expR(2.45) : expR(3.85 + ((rec.a.SPD ?? 55) - 70) * 0.035 + ((rec.a.AGI ?? 60) - 70) * 0.025);
@@ -3506,11 +3506,11 @@ function* gameGen(ht, at, opt = {}) {
     for (let i = 6; i <= 10; i++) if (R.rt[i]) inc(sl(off[i], o), 'rt');
     const OL5 = Lo.OL.slice(0, 5), olBlame = () => wpick(OL5, OL5.map(x => Math.pow(Math.max(8, 100 - (x.a.PBK ?? 60)) / 30, 2)));
     const pressured = R.prs != null && R.hot < 0.65; // (a rusher closing on him as he throws, not just one in the area)
-    if (pressured && R.k !== 'sack') { inc(sl(def[R.prs], d), 'prs'); inc(sl(olBlame(), o), 'pra'); g.ts[d].prs++; if (lastLook) lastLook.fl += 'p'; }
+    if (pressured && R.k !== 'sack') { inc(sl(def[R.prs], d), 'prs'); trkPrs(sl(def[R.prs], d), R.prsT); inc(sl(olBlame(), o), 'pra'); g.ts[d].prs++; if (lastLook) lastLook.fl += 'p'; }
     const miss = cl => { for (const i of R.miss || []) { const m = def[i]; if (m) { inc(sl(m, d), 'mtk'); inc(cl, 'btk'); } } };
     if (R.k === 'sack') {
       const rusher = def[R.by] || def[0], two = R.by2 != null && def[R.by2] && def[R.by2] !== rusher ? def[R.by2] : null, loss = Math.min(Math.max(1, -R.y), st.yl);
-      inc(ql, 'sk'); inc(ql, 'sky', loss); const rl = sl(rusher, d); inc(rl, 'sck', two ? 0.5 : 1); inc(rl, 'tkl'); inc(rl, 'prs');
+      inc(ql, 'sk'); inc(ql, 'sky', loss); const rl = sl(rusher, d); inc(rl, 'sck', two ? 0.5 : 1); inc(rl, 'tkl'); inc(rl, 'prs'); if (R.prs === R.by) trkPrs(rl, R.prsT);
       if (two) { const r2 = sl(two, d); inc(r2, 'sck', 0.5); inc(r2, 'prs'); } { const bl = sl(olBlame(), o); inc(bl, 'sa'); inc(bl, 'pra'); } g.ts[d].sk++; g.ts[d].prs++; g.ts[o].py -= loss;
       injure(qb, o, 0.003);
       if (rnd() < 0.09) { const spot = st.yl - loss; note('fum', `${nm(qb)} strip-sacked by ${nm(rusher)}, fumble recovered by the defense`, -loss); const ev = tick(6, 0); turnover('Fumble', 100 - spot, `${nm(qb)} strip-sacked by ${nm(rusher)}`, rnd() < 0.06); return ev; }
@@ -3530,7 +3530,7 @@ function* gameGen(ht, at, opt = {}) {
     const rec = R.tgt != null ? off[R.tgt] : null, rl = rec ? sl(rec, o) : null, air = R.air ?? 0;
     inc(ql, 'pa'); g.ts[o].pa++; injure(qb, o, 0.0003); if (pressured) inc(ql, 'upa');
     const cvD = rec && R.cv != null ? def[R.cv] : null, cvl = cvD ? sl(cvD, d) : {}; if (cvD) { inc(cvl, 'ctg'); EPX.cov = cvD; }
-    if (rec) { inc(rl, 'tg'); EPX.rec = rec; const xcp = xcpFit(air, R.sep, pressured); inc(ql, 'xa'); inc(ql, 'xcp', Math.round(xcp * 1000)); }
+    if (rec) { inc(rl, 'tg'); EPX.rec = rec; const xcp = xcpFit(air, R.sep, pressured); inc(ql, 'xa'); inc(ql, 'xcp', Math.round(xcp * 1000)); trkThrow(ql, rl, cvD ? cvl : null, air, R.sep, xcp, R.tt); } else trkThrow(ql, null, null, air, null, 0, R.tt);
     if (R.k === 'comp') {
       let yds = R.td ? dist : Math.min(R.y, dist); if (st.yl + yds <= 0) yds = 1 - st.yl;
       inc(rl, 'yac', Math.max(0, yds - Math.max(0, air))); if (pressured) { inc(ql, 'upc'); inc(ql, 'upy', yds); if (yds >= dist) inc(ql, 'uptd'); }
@@ -3564,7 +3564,7 @@ function* gameGen(ht, at, opt = {}) {
     const { off, def, R } = fxSnap(o, d, X, qbRun ? {} : { 6: car });
     const c = R.car === 5 ? off[5] : R.car === 6 ? off[6] : car, cl = sl(c, o); lastRole = R.car ?? 6; EPX.car = c;
     let yds = R.td ? dist : clamp(R.y ?? 0, -8, dist); if (st.yl + yds < 0) yds = -st.yl;
-    inc(cl, 'yco', Math.max(0, yds - Math.max(R.bc ?? yds, 0))); lastBc = R.bc ?? null;
+    inc(cl, 'yco', Math.max(0, yds - Math.max(R.bc ?? yds, 0))); inc(cl, 'ybc', Math.min(yds, R.bc ?? yds)); lastBc = R.bc ?? null;
     for (const i of R.miss || []) { const m = def[i]; if (m) { inc(sl(m, d), 'mtk'); inc(cl, 'btk'); } }
     inc(cl, 'ra'); inc(cl, 'ry', yds); cl.rl = Math.max(cl.rl || 0, yds); g.ts[o].ra++; g.ts[o].ry += yds;
     injure(c, o, 0.002);
@@ -8521,10 +8521,20 @@ function xcpFit(air, sep, pressured) {
   const a = clamp(air, -5, 45) / 10, s = clamp(sep ?? 2, -3, 9) / 3;
   return 1 / (1 + Math.exp(-(0.587 - 0.575 * a - 0.011 * a * a + 0.544 * s - 0.193 * Math.min(s, 2 / 3) - (pressured ? 0.374 : 0) + (air <= 0 ? 0.557 : 0))));
 }
+// tracking stats, booked by the pro and college games off what the play already decided: time to throw (field engine),
+// depth of target, the window at the throw for the receiver and against the man covering him, catch rate over
+// expected, and when the pressure got there (tenths of a second and of a yard, so the sums stay whole)
+function trkThrow(ql, rl, cvl, air, sep, xcp, tt) {
+  if (tt != null) { inc(ql, 'ttS', Math.round(tt * 10)); inc(ql, 'ttN'); }
+  if (!rl) return;
+  inc(ql, 'ay', air); inc(rl, 'tay', air); inc(rl, 'rxcp', Math.round(xcp * 1000));
+  if (sep != null) { const s10 = Math.round(clamp(sep, -3, 9) * 10); inc(rl, 'sepS', s10); inc(rl, 'sepN'); if (cvl) { inc(cvl, 'csepS', s10); inc(cvl, 'csepN'); } }
+}
+function trkPrs(l, t) { if (l && t != null) { inc(l, 'ptS', Math.round(t * 10)); inc(l, 'ptN'); } }
 const pctDb = s => s.db || ((s.pa || 0) + (s.sk || 0));
 const pctRate = (n, d) => d ? n / d : null;
-const PCT_FMT = { pct: v => (v * 100).toFixed(1) + '%', f1: v => v.toFixed(1), f2: v => v.toFixed(2), epa: v => (v > 0 ? '+' : '') + v.toFixed(2), sgn: v => (v > 0 ? '+' : '') + v.toFixed(1) + '%', int: v => String(Math.round(v)) };
-// [key, label, value(s), volume(s), floor per team game, lower is better, format, what it means]
+const PCT_FMT = { sec: v => v.toFixed(2) + ' s', yd: v => v.toFixed(1) + ' yd', pct: v => (v * 100).toFixed(1) + '%', f1: v => v.toFixed(1), f2: v => v.toFixed(2), epa: v => (v > 0 ? '+' : '') + v.toFixed(2), sgn: v => (v > 0 ? '+' : '') + v.toFixed(1) + '%', int: v => String(Math.round(v)) };
+// [key, label, value(s), volume(s), floor per team game, lower is better (2: neither, a style), format, what it means]
 const PCT_QB = [
   ['epa', 'EPA per dropback', s => s.db ? s.pEP / 10 / s.db : null, pctDb, 14, 0, 'epa', 'Expected points added per dropback, sacks and scrambles included.'],
   ['sr', 'Success rate', s => pctRate(s.psu || 0, s.db), pctDb, 14, 0, 'pct', 'Share of dropbacks that added expected points.'],
@@ -8583,15 +8593,28 @@ const PCT_K = [
 const PCT_P = [['pavg', 'Yards per punt', s => pctRate(s.pny || 0, s.pn), s => s.pn || 0, 2, 0, 'f1']];
 // (the same metric with a lower volume floor, for a role that gets less of it: a quarterback's carries, a back's routes)
 const pctFloor = (ms, f) => ms.map(m => { const c = m.slice(); c[4] *= f; return c; });
+// tracking: what the field engine measures as the play happens (the classic engine has the window and depth, not the clock)
+const PCT_TRK_QB = [
+  ['tt', 'Time to throw', s => s.ttN ? s.ttS / 10 / s.ttN : null, s => s.ttN || 0, 12, 2, 'sec', 'From the snap to the release.'],
+  ['adot', 'Average depth of target', s => s.xa ? (s.ay || 0) / s.xa : null, s => s.xa || 0, 12, 2, 'f1', 'Air yards per targeted throw.'],
+];
+const PCT_TRK_REC = [
+  ['sep', 'Separation at the throw', s => s.sepN ? s.sepS / 10 / s.sepN : null, s => s.sepN || 0, 2.5, 0, 'yd', 'How much room he had when the ball was thrown his way.'],
+  ['croe', 'Catch rate over expected', s => s.tg && s.rxcp != null ? 100 * ((s.rec || 0) - s.rxcp / 1000) / s.tg : null, s => s.rxcp != null ? s.tg || 0 : 0, 2.5, 0, 'sgn', 'Catches above what the depth, the window and the pressure predicted.'],
+  ['tadot', 'Average depth of target', s => s.tg && s.tay != null ? s.tay / s.tg : null, s => s.tay != null ? s.tg || 0 : 0, 2.5, 2, 'f1', 'Air yards per target: how far downfield he works.'],
+];
+const PCT_TRK_RUN = [['ybc', 'Yards before contact', s => s.ra && s.ybc != null ? s.ybc / s.ra : null, s => s.ybc != null ? s.ra || 0 : 0, 6.25, 0, 'f2', 'Per carry: what the blocking gave him before the first hit.']];
+const PCT_TRK_COV = [['csep', 'Separation allowed', s => s.csepN ? s.csepS / 10 / s.csepN : null, s => s.csepN || 0, 1.5, 1, 'yd', 'Room the receiver he covered had at the throw.']];
+const PCT_TRK_RUSH = [['ttp', 'Time to pressure', s => s.ptN ? s.ptS / 10 / s.ptN : null, s => s.ptN || 0, 0.3, 1, 'sec', 'From the snap to the moment he got to the quarterback.']];
 // what each position is measured on, in groups (the first group leads the card)
 const PCT_SETS = {
-  QB: [['Passing', PCT_QB], ['Running', pctFloor(PCT_RUSH.slice(0, 3), 0.3)]],
-  RB: [['Running', PCT_RUSH], ['Receiving', pctFloor(PCT_REC.slice(0, 5), 0.45)]],
-  WR: [['Receiving', PCT_REC]], TE: [['Receiving', PCT_REC]],
+  QB: [['Passing', PCT_QB], ['Tracking', PCT_TRK_QB], ['Running', pctFloor(PCT_RUSH.slice(0, 3), 0.3)]],
+  RB: [['Running', PCT_RUSH], ['Tracking', [...PCT_TRK_RUN, ...pctFloor(PCT_TRK_REC.slice(0, 2), 0.45)]], ['Receiving', pctFloor(PCT_REC.slice(0, 5), 0.45)]],
+  WR: [['Receiving', PCT_REC], ['Tracking', PCT_TRK_REC]], TE: [['Receiving', PCT_REC], ['Tracking', PCT_TRK_REC]],
   OL: [['Pass protection', PCT_OL]],
-  DL: [['Pass rush', PCT_RUSHD], ['Tackling', PCT_TKL]],
-  LB: [['Tackling', PCT_TKL], ['Pass rush', PCT_RUSHD.slice(1)], ['Coverage', PCT_COV]],
-  CB: [['Coverage', PCT_COV], ['Tackling', PCT_TKL]], S: [['Coverage', PCT_COV], ['Tackling', PCT_TKL]],
+  DL: [['Pass rush', [...PCT_RUSHD, ...PCT_TRK_RUSH]], ['Tackling', PCT_TKL]],
+  LB: [['Tackling', PCT_TKL], ['Pass rush', [...PCT_RUSHD.slice(1), ...PCT_TRK_RUSH]], ['Coverage', [...PCT_COV, ...PCT_TRK_COV]]],
+  CB: [['Coverage', [...PCT_COV, ...PCT_TRK_COV]], ['Tackling', PCT_TKL]], S: [['Coverage', [...PCT_COV, ...PCT_TRK_COV]], ['Tackling', PCT_TKL]],
   K: [['Kicking', PCT_K]], P: [['Punting', PCT_P]],
 };
 // whose stats a card ranks against: the pro league here, the college game (98-college-5d-pct) its own players.
@@ -8643,7 +8666,7 @@ function percentiles(p, season, src = PCT_PRO) {
       const v = m[2](s), vol = m[3](s); if (v == null || !isFinite(v) || !vol) continue;
       const vals = pctValues(pool, m); if (vals.length < 8 || vals[0] === vals[vals.length - 1]) continue; // too few qualified players to rank against, or nothing tells them apart
       const q = vol >= m[4] * pool.G;
-      rows.push({ k: m[0], l: m[1], v: PCT_FMT[m[6]](v), pct: pctRank(vals, v, m[5], q), q, lo: !!m[5], n: vals.length, d: m[7] || '' });
+      rows.push({ k: m[0], l: m[1], v: PCT_FMT[m[6]](v), pct: pctRank(vals, v, m[5] === 1, q), q, lo: m[5] === 1, nt: m[5] === 2, n: vals.length, d: m[7] || '' });
     }
     if (rows.length) groups.push({ l: label, rows });
   }
@@ -10461,7 +10484,7 @@ function cFxRes(X, o, oc, dc, U, opt) {
   // what the advanced stats need: routes run, who got the pressure and which blocker it beat (picked off the snap's seed,
   // so no extra draw changes the game), missed tackles, the window at the throw and the man in coverage
   const olw = O.OL.filter(Boolean), olBy = olw.length ? olw[cSeedPick(F.seed, olw.map(x => Math.pow(Math.max(8, 100 - cA(x, 'PBK', 50)) / 30, 2)))] : null;
-  const adv = { rts: off.filter((x, i) => i >= 6 && x && R.rt[i]), prsBy: R.prs != null ? def[R.prs] || null : null, olBy, miss: (R.miss || []).map(i => def[i]).filter(Boolean), sep: R.sep, cvD: R.cv != null ? def[R.cv] || null : null };
+  const adv = { rts: off.filter((x, i) => i >= 6 && x && R.rt[i]), prsBy: R.prs != null ? def[R.prs] || null : null, olBy, miss: (R.miss || []).map(i => def[i]).filter(Boolean), sep: R.sep, cvD: R.cv != null ? def[R.cv] || null : null, tt: R.tt, prsT: R.prsT };
   const base = { fx, fxP: [off, def], cov, man, adv }, tk = R.tk != null ? def[R.tk] || null : null;
   if (R.k === 'sack') return { ...base, k: 'sack', y: Math.max(-s.yl, Math.min(-1, R.y)), sacker: def[R.by] || def[0], sacker2: R.by2 != null && def[R.by2] && def[R.by2] !== def[R.by] ? def[R.by2] : null, fum: rnd() < 0.09 };
   if (R.k === 'scramble') return { ...base, k: 'run', car: qb, scr: true, y: R.td ? dist : clamp(R.y, -s.yl, dist), oob: !!R.oob, fum: rnd() < 0.006, tk };
@@ -10810,18 +10833,18 @@ function cAdvLine(X, r, U, o, d, td, prsd) {
   const line = cAdvL(X), A = r.adv || {}, qb = U.O.QB, ql = qb ? line(qb, o) : {}, drop = r.k !== 'run' || !!r.scr, thrown = r.k === 'pass' || r.k === 'inc' || r.k === 'int';
   // pass-block and pass-rush snaps, pressures (a sack is one) and the blocker beaten
   if (drop) { for (const x of U.O.OL) if (x) inc(line(x, o), 'pbs'); for (const x of U.D.DL) if (x) inc(line(x, d), 'prn'); }
-  if (r.k === 'sack') { if (r.sacker) inc(line(r.sacker, d), 'prs'); if (r.sacker2) inc(line(r.sacker2, d), 'prs'); if (A.olBy) { const b = line(A.olBy, o); inc(b, 'sa'); inc(b, 'pra'); } }
-  else if (prsd) { if (A.prsBy) inc(line(A.prsBy, d), 'prs'); if (A.olBy) inc(line(A.olBy, o), 'pra'); }
+  if (r.k === 'sack') { if (r.sacker) { inc(line(r.sacker, d), 'prs'); if (A.prsBy === r.sacker) trkPrs(line(r.sacker, d), A.prsT); } if (r.sacker2) inc(line(r.sacker2, d), 'prs'); if (A.olBy) { const b = line(A.olBy, o); inc(b, 'sa'); inc(b, 'pra'); } }
+  else if (prsd) { if (A.prsBy) { inc(line(A.prsBy, d), 'prs'); trkPrs(line(A.prsBy, d), A.prsT); } if (A.olBy) inc(line(A.olBy, o), 'pra'); }
   // runs: yards after contact; anyone with the ball: tackles he broke
-  if (r.k === 'run' && !r.scr && r.car && r.bc != null) inc(line(r.car, o), 'yco', Math.max(0, r.y - Math.max(r.bc, 0)));
+  if (r.k === 'run' && !r.scr && r.car && r.bc != null) { const cl = line(r.car, o); inc(cl, 'yco', Math.max(0, r.y - Math.max(r.bc, 0))); inc(cl, 'ybc', Math.min(r.y, r.bc)); }
   const ball = r.k === 'run' ? r.car : r.k === 'pass' ? r.rec : null;
   for (const m of A.miss || []) { inc(line(m, d), 'mtk'); if (ball) inc(line(ball, o), 'btk'); }
   if (!thrown) return;
   // throws: routes, expected completions, pressure splits, the man in coverage, drops and breakups
   for (const x of A.rts || []) inc(line(x, o), 'rt');
   if (prsd) inc(ql, 'upa');
-  if (r.rec) { inc(ql, 'xa'); inc(ql, 'xcp', Math.round(xcpFit(r.air ?? 0, A.sep, prsd) * 1000)); }
   const cv = r.rec && A.cvD ? line(A.cvD, d) : null; if (cv) inc(cv, 'ctg');
+  if (r.rec) { const xcp = xcpFit(r.air ?? 0, A.sep, prsd); inc(ql, 'xa'); inc(ql, 'xcp', Math.round(xcp * 1000)); trkThrow(ql, line(r.rec, o), cv, r.air ?? 0, A.sep, xcp, A.tt); } else trkThrow(ql, null, null, 0, null, 0, A.tt);
   if (r.k === 'pass') {
     inc(line(r.rec, o), 'yac', Math.max(0, r.y - Math.max(0, r.air || 0)));
     if (prsd) { inc(ql, 'upc'); inc(ql, 'upy', r.y); if (td) inc(ql, 'uptd'); }
@@ -17738,10 +17761,11 @@ function pctPanel(p, col) {
   const key = (col ? 'c' : '') + p.id, want = (ui.pctS || {})[key], P = col ? HM.college.percentiles(p, want) : HM.percentiles(p, want); if (!P) return '';
   const cur = col ? CSx().season : S().season, lg = col ? ' in FBS' : '';
   const pos = { QB: 'quarterbacks', RB: 'running backs', WR: 'wide receivers', TE: 'tight ends', OL: 'offensive linemen', DL: 'defensive linemen', LB: 'linebackers', CB: 'cornerbacks', S: 'safeties', K: 'kickers', P: 'punters' }[P.pos] || 'players';
-  const yrs = P.seasons.slice().reverse(), anyNq = P.groups.some(g => g.rows.some(r => !r.q));
-  const row = r => `<div class="pctr${r.q ? '' : ' nq'}" title="${E((r.d ? r.d + ' ' : '') + (r.lo ? 'Lower is better, so the ranking is flipped. ' : '') + `Ranked against ${r.n} qualified ${pos}.` + (r.q ? '' : ' Not enough volume to qualify yet.'))}"><span>${E(r.l)}</span><b class="num">${E(r.v)}</b><div class="pctb"><i style="width:${r.pct}%;background:${pctColor(r.pct)}"></i><b style="left:${r.pct}%;background:${pctColor(r.pct)}">${r.pct}</b></div></div>`;
+  const yrs = P.seasons.slice().reverse(), anyNq = P.groups.some(g => g.rows.some(r => !r.q)), anyNt = P.groups.some(g => g.rows.some(r => r.nt));
+  const col0 = r => r.nt ? 'hsl(220,8%,60%)' : pctColor(r.pct);
+  const row = r => `<div class="pctr${r.q ? '' : ' nq'}" title="${E((r.d ? r.d + ' ' : '') + (r.lo ? 'Lower is better, so the ranking is flipped. ' : r.nt ? 'Neither better nor worse, a style: ranked from lowest to highest. ' : '') + `Ranked against ${r.n} qualified ${pos}.` + (r.q ? '' : ' Not enough volume to qualify yet.'))}"><span>${E(r.l)}</span><b class="num">${E(r.v)}</b><div class="pctb"><i style="width:${r.pct}%;background:${col0(r)}"></i><b style="left:${r.pct}%;background:${col0(r)}">${r.pct}</b></div></div>`;
   return `<section class="panel pctl"><div class="ph"><h3>Percentile rankings</h3>${yrs.length > 1 ? `<label class="row" style="gap:6px"><span class="lbl">Season</span><select data-pct-pid="${key}" aria-label="Season for percentile rankings">${yrs.map(y => `<option ${y === P.season ? 'selected' : ''}>${y}</option>`).join('')}</select></label>` : `<span class="lbl">${P.season}</span>`}</div>
-    <p class="muted" style="font-size:12.5px;margin:0 0 8px">Where he ranks among qualified ${pos}${lg}${P.season === cur ? ' this season' : ` in ${P.season}`}: 100 is the best${col ? '' : ' in the league'}, 1 the worst. Stats where lower is better are flipped.${anyNq ? ' Faded rows: not enough volume to qualify yet.' : ''}</p>
+    <p class="muted" style="font-size:12.5px;margin:0 0 8px">Where he ranks among qualified ${pos}${lg}${P.season === cur ? ' this season' : ` in ${P.season}`}: 100 is the best${col ? '' : ' in the league'}, 1 the worst. Stats where lower is better are flipped.${anyNt ? ' Grey bars are styles, neither good nor bad: ranked lowest to highest.' : ''}${anyNq ? ' Faded rows: not enough volume to qualify yet.' : ''}</p>
     ${P.groups.map(g => `<div class="pctg"><div class="lbl">${E(g.l)}</div>${g.rows.map(row).join('')}</div>`).join('')}</section>`;
 }
 app.addEventListener('change', e => { const pid = e.target.dataset && e.target.dataset.pctPid; if (pid == null) return; (ui.pctS || (ui.pctS = {}))[pid] = e.target.value; render(); });
@@ -17852,7 +17876,7 @@ const HELP = [
     <p>The owner has a personality and sets directives. Meet them and your job security rises; miss them repeatedly and you're fired, after which you can take another job. On the finance side, ticket prices, facilities and a new stadium affect revenue.</p>`],
   ['league', 'League life', () => `<p>Rivalries build from close games and playoff meetings. Each offseason the league votes on rule changes (overtime, kickoffs, two-point tries, the trade deadline, even expansion). If expansion passes, every team protects ${HM.PROTECT_N} players, and you choose yours.</p>
     <p>Awards, All-Pro teams, milestones, records and a Hall of Fame vote each year. Team history pages show franchise leaders, the best player each season and head-to-head records against every opponent.</p>`],
-  ['stats', 'Advanced stats glossary', () => `<dl class="gloss"><dt>CPOE</dt><dd>Completion percentage over expected: completions above what an average QB would hit on the same throws (depth, coverage, receiver, pressure, weather).</dd><dt>Rate under pressure / clean</dt><dd>Passer rating split by whether the rush got home.</dd><dt>Yards per route run</dt><dd>Receiving yards divided by every route run on pass plays, not just targets.</dd><dt>Drop rate</dt><dd>Drops per target.</dd><dt>YAC</dt><dd>Yards after the catch.</dd><dt>YCO</dt><dd>Rushing yards after first contact.</dd><dt>Broken / missed tackles</dt><dd>Tackles the ball carrier escaped; charged to the defender as a miss.</dd><dt>Pressures allowed</dt><dd>Charged to the offensive lineman who got beat, including sacks.</dd><dt>Coverage stats</dt><dd>Each target is charged to the defender in coverage closest to the receiver when the ball is thrown: targets, completions, yards and touchdowns allowed, passer rating allowed, and forced incompletions (breakups plus interceptions).</dd><dt>Pressure rate</dt><dd>For a lineman, pressures per pass-rush snap; for a blocker, pressures allowed per pass-block snap.</dd><dt>Percentile rankings</dt><dd>On every player card: where each stat ranks among qualified players at his position that season. 100 is the best in the league and 1 the worst, flipped for stats where lower is better. A player needs enough volume to qualify (for a passer, 14 dropbacks a team game); below that his row is faded.</dd></dl>`],
+  ['stats', 'Advanced stats glossary', () => `<dl class="gloss"><dt>CPOE</dt><dd>Completion percentage over expected: completions above what an average QB would hit on the same throws (depth, coverage, receiver, pressure, weather).</dd><dt>Rate under pressure / clean</dt><dd>Passer rating split by whether the rush got home.</dd><dt>Yards per route run</dt><dd>Receiving yards divided by every route run on pass plays, not just targets.</dd><dt>Drop rate</dt><dd>Drops per target.</dd><dt>YAC</dt><dd>Yards after the catch.</dd><dt>YCO</dt><dd>Rushing yards after first contact.</dd><dt>Broken / missed tackles</dt><dd>Tackles the ball carrier escaped; charged to the defender as a miss.</dd><dt>Pressures allowed</dt><dd>Charged to the offensive lineman who got beat, including sacks.</dd><dt>Coverage stats</dt><dd>Each target is charged to the defender in coverage closest to the receiver when the ball is thrown: targets, completions, yards and touchdowns allowed, passer rating allowed, and forced incompletions (breakups plus interceptions).</dd><dt>Pressure rate</dt><dd>For a lineman, pressures per pass-rush snap; for a blocker, pressures allowed per pass-block snap.</dd><dt>Percentile rankings</dt><dd>On every player card: where each stat ranks among qualified players at his position that season. 100 is the best in the league and 1 the worst, flipped for stats where lower is better. A player needs enough volume to qualify (for a passer, 14 dropbacks a team game); below that his row is faded.</dd><dt>Tracking stats</dt><dd>Measured on the field as the play happens. Time to throw: snap to release. Average depth of target: air yards per targeted throw. Separation at the throw: how much room the receiver had when the ball went his way (and, for a defender, how much the man he covered had). Catch rate over expected: catches above what the depth, window and pressure predicted. Time to pressure: snap to the moment a rusher got to the quarterback. Yards before contact: what the blocking gave a runner before the first hit. The clocks come from the field engine; on the classic engine only depth and separation are measured.</dd></dl>`],
   ['sim', 'Simulation settings', () => `<p>On the League & saves page you can change how aggressive AI teams are in trades, and how quickly players develop. Changes apply from then on.</p>`],
   ['editor', 'Custom leagues, logos and rosters', () => `<p>The <b>League editor</b> (under More) redesigns any team: name, abbreviation, colors and a logo built from emblems, badge shapes and stripes, or <b>your own image</b> (PNG, JPG, WebP or SVG). To do many teams at once, choose several images named after the teams, like <code>BUF.png</code>.</p>
     <p><b>Rosters</b> load from a spreadsheet. Download the current rosters as a CSV to see the columns, edit them in any spreadsheet app, and import the file, or paste rows straight from the spreadsheet. Only Team, Pos and a name are required; ratings use the scale the game shows and anything missing is built from the overall. You see what will change before anything happens, and you choose whether players left out of the file are released or kept.</p>
