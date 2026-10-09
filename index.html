@@ -5263,7 +5263,9 @@ function weekBegin(coach, lazy) { if (fdOn()) return null;
 function weekPre() { if (S.weekPre === S.season * 100 + S.week) return; processWaivers(); if (!S.coachPending) rollGameStatus(); for (const t of S.teams) ensureDepth(t); if (!S.coachPending) rivalryWeekNews(); S.weekPre = S.season * 100 + S.week; }
 // the week's other games not yet played (the user's game is left to the caller)
 function weekNextGame() { return S.phase === 'regular' && S.schedule[S.week - 1] ? S.schedule[S.week - 1].find(m => !m.gid && m.h !== S.userTid && m.a !== S.userTid) : null; }
-function weekPlayOne(m) { const g = simGame(team(m.h), team(m.a), { week: S.week }); applyGame(g); recordGame(g); m.gid = g.gid; }
+// a career player's team keeps its play-by-play, so his games can be watched
+const carTidPro = () => { const c = S.car, p = c && c.stage === 'pro' && typeof carPlayer === 'function' ? carPlayer() : null; return p && p.tid >= 0 ? p.tid : null; };
+function weekPlayOne(m) { const ct = carTidPro(), g = simGame(team(m.h), team(m.a), { week: S.week, pbp: ct != null && (m.h === ct || m.a === ct) }); applyGame(g); recordGame(g); m.gid = g.gid; }
 function weekFlushGames() { for (let m = weekNextGame(); m; m = weekNextGame()) weekPlayOne(m); }
 // one more of the week's games in the background; once they're all in, a watched week wraps up. Returns true while work is left
 function weekRestStep() {
@@ -5350,7 +5352,7 @@ function poBegin(coach) {
   for (const pr of po.cur.pairs) {
     if (pr.h === S.userTid || pr.a === S.userTid) { up = pr; continue; }
     if (pr.gid) continue;
-    const g = simGame(team(pr.h), team(pr.a), { po: rd, neutral: pr.neutral }); applyGame(g); pr.gid = g.gid;
+    const ct = carTidPro(), g = simGame(team(pr.h), team(pr.a), { po: rd, neutral: pr.neutral, pbp: ct != null && (pr.h === ct || pr.a === ct) }); applyGame(g); pr.gid = g.gid;
   }
   if (!up) return { done: poEnd(null) };
   S.coachPending = { kind: 'po', rd };
@@ -10444,7 +10446,7 @@ function colPlayMatch(m, wk) { const g = colGame(m.h, m.a, { wk, neutral: !!m.ne
 // a quick sim (all) every game, the user's first; playWeek skips the ones already in and only wraps the week up
 function weekBgStep(all) {
   if (CS.phase !== 'season' || !(LIVE || all)) return false;
-  const wk = CS.week, ms = CS.sched[wk - 1] || [], isU = m => m.h === CS.userTid || m.a === CS.userTid;
+  const wk = CS.week, ms = CS.sched[wk - 1] || [], lg = LIVE && LIVE.X.g, isU = m => m.h === CS.userTid || m.a === CS.userTid || (lg && (m.h === lg.h || m.a === lg.h)); // (and the game being watched)
   const m = (all && !LIVE ? ms.find(m => !m.gid && isU(m)) : null) || ms.find(m => !m.gid && !isU(m)); if (!m) return false;
   colPlayMatch(m, wk); return true;
 }
@@ -12049,9 +12051,9 @@ function edges(X, o) {
   return { run, pass, all: (X.P[o].off - X.P[d].def) / 4 };
 }
 function oppLean(X, o) { return clamp(Math.round(cShare(X, o) * 100 + 6), 25, 80); }
-// the user's next game (regular season, conference title game, bowl or playoff)
-function userNext() {
-  const u = CS.userTid;
+// the user's next game (regular season, conference title game, bowl or playoff); or another team's (a career player's school)
+function userNext(tid) {
+  const u = tid ?? CS.userTid;
   if (CS.phase === 'season') { const m = (CS.sched[CS.week - 1] || []).find(x => (x.h === u || x.a === u) && !x.gid); return m ? { h: m.h, a: m.a, opt: { wk: CS.week, neutral: !!m.neutral, riv: m.riv }, name: m.riv != null ? rivName(m.riv) : `Week ${CS.week}` } : null; }
   if (CS.phase === 'ccg') { const t = cteam(u); if (isInd(t.conf)) return null; const [a, b] = confStandings(t.conf); if (a.tid !== u && b.tid !== u) return null; return { h: a.tid, a: b.tid, opt: { wk: CS.sched.length + 1, neutral: true, name: `${confNames()[t.conf]} Championship` }, name: `${confNames()[t.conf]} Championship` }; }
   if (CS.phase === 'playoff') {
@@ -12061,11 +12063,11 @@ function userNext() {
   }
   return null;
 }
-function liveStart() {
+function liveStart(tid) {
   if (LIVE && !LIVE.done) return liveState();
-  const n = userNext(); if (!n) return null;
+  const u = tid ?? CS.userTid, n = userNext(u); if (!n) return null;
   const X = colGameInit(n.h, n.a, { ...n.opt, log: true });
-  LIVE = { X, name: n.name, us: n.h === CS.userTid ? 0 : 1, pend: null, done: false, tempo: 'normal', auto: null, ai4: null, go4: false };
+  LIVE = { X, name: n.name, us: n.h === u ? 0 : 1, pend: null, done: false, tempo: 'normal', auto: null, ai4: null, go4: false, car: tid != null || undefined };
   livePrompt(); return liveState();
 }
 // run the game until the next decision that belongs to the user
@@ -12144,7 +12146,7 @@ function liveAuto() {
   livePrompt(); return liveState();
 }
 function liveSim() { const L = LIVE; if (!L) return null; L.auto = 'game'; L.go4 = false; if (L.pend === 'def' && L.ai4) { const f = L.ai4; L.ai4 = null; cStep(L.X, { fourth: f }); } if (!L.done) livePrompt(); return liveState(); }
-function liveEnd() { const L = LIVE, X = L.X; if (L.done) return; L.pend = null; L.done = true; colGameFinish(X); X.g.coached = true; }
+function liveEnd() { const L = LIVE, X = L.X; if (L.done) return; L.pend = null; L.done = true; colGameFinish(X); if (!L.car) X.g.coached = true; } // (a career player's game is watched, not coached)
 // hand the finished game to the week (or title game, bowl, playoff round) and play everything else
 function liveFinish() {
   const L = LIVE; if (!L || !L.done) return { err: 'The game is not over yet.' };
@@ -13097,6 +13099,7 @@ function carNext() {
   const c = S.car; if (!c) return 'No career in progress.';
   const b = carBlocker(); if (b) return b.text;
   if (c.stage === 'ret') return 'Your playing days are over.';
+  if (c.stage === 'col' && COLLEGE.liveState()) { const r = carWatchFinish(); return r.err || null; } // a game you started watching: it counts as played, then the rest of the week
   const p = carPlayer(), boost = carBoost(p);
   let moved = false;
   try {
@@ -13105,6 +13108,27 @@ function carNext() {
   } finally { carUnboost(p, boost); }
   carAfterStep();
   return moved ? null : 'Nothing left to play right now.';
+}
+// watching your own game: the next step is a game your team plays (a college week, title game, bowl or playoff round;
+// a pro week or playoff round). College games are staged first and watched before the rest of the week is played;
+// pro weeks are played and the game is replayed from its log.
+function carWatchable() {
+  const c = S.car; if (!c || carBlocker()) return null; const p = carPlayer(); if (!p || p.tid == null || p.tid < 0) return null;
+  if (c.stage === 'col') { const CS = carC(); if (COLLEGE.liveState()) return null; /* (being watched: playing on finishes it) */ return ['season', 'ccg', 'playoff'].includes(CS.phase) && COLLEGE.userNext(p.tid) ? 'col' : null; }
+  if (c.stage === 'pro') { if (S.phase === 'regular' && inCamp()) return null; if (S.phase === 'regular') return (S.schedule[S.week - 1] || []).some(m => m.h === p.tid || m.a === p.tid) ? 'pro' : null; if (S.phase === 'playoffs') return S.po && S.po.alive && S.po.alive.some(a => a.includes(p.tid)) ? 'pro' : null; }
+  return null;
+}
+function carWatchStart() {
+  const c = S.car; if (!c) return { err: 'No career in progress.' }; const b = carBlocker(); if (b) return { err: b.text };
+  { const cur = COLLEGE.liveState(); if (cur) return { gid: cur.gid }; } // (already staged: watch it again from the start)
+  if (carWatchable() !== 'col') return { err: 'No game to watch right now.' };
+  const p = carPlayer(), boost = carBoost(p); let st = null;
+  try { st = COLLEGE.liveStart(p.tid); if (st) st = COLLEGE.liveSim(); } finally { carUnboost(p, boost); }
+  return st ? { gid: st.gid } : { err: 'No game to watch right now.' };
+}
+function carWatchFinish() {
+  const r = COLLEGE.liveFinish(); if (r.err) return r;
+  carAfterStep(); return r;
 }
 function carColStep() {
   const C = COLLEGE, CS = C.S, c = S.car;
@@ -14949,7 +14973,7 @@ return {
   pruneOffers, acceptOffer, declineOffer, takeJob, teamRank, draftForecast, warNextPick, teamNeeds, ratingWith, playoffOdds, tradeOdds, faSignRead, contractComps, negPatience, ODDS_SIMS,
   careerRecords, franchiseLeaders, REC_KEYS, REC_LABEL, hofScore, hofOutlook, hofWatch, LEAD_KEYS, mainTeam,
   weekBegin, weekEnd, watchWeek, uniBgStep, weekRestStep, weekFlush, weekPending: () => !!(S && S.weekLazy), poBegin, poEnd, poPairs, coachStart, coachFinish, runGen, scoutingReport, setGamePlan, OFF_PLANS, DEF_PLANS, gamePlanFor,
-  optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carSeasons, carGameLine, carHofStatus, carDraftProjection, carSocPost, carSocReply, carSocBlock, carSocMute, carSocIdeas, socCharPen, socAbout, carSocDelete, carSocMore, carSocPrompt, carSocLabelPrompt, carSocWrite, carSocQueue, carSocView, gmAsk, gmAskPrompt, gmPitchPrompt, gmPitchCheck, asstParse, carSocSeen, socShowAt, socRead, socCtx, socCheck, SOC_MAX, carPcView, carPcAnswer, carDmView, carDmSend, carDmAct, carDmBlock, carDmSeen, carDmQueue, carDmPrompt, carDmWrite, carMxBadges, mxPressMake, mxDmStart, mxStep, mxAgMul, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
+  optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carWatchable, carWatchStart, carWatchFinish, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carSeasons, carGameLine, carHofStatus, carDraftProjection, carSocPost, carSocReply, carSocBlock, carSocMute, carSocIdeas, socCharPen, socAbout, carSocDelete, carSocMore, carSocPrompt, carSocLabelPrompt, carSocWrite, carSocQueue, carSocView, gmAsk, gmAskPrompt, gmPitchPrompt, gmPitchCheck, asstParse, carSocSeen, socShowAt, socRead, socCtx, socCheck, SOC_MAX, carPcView, carPcAnswer, carDmView, carDmSend, carDmAct, carDmBlock, carDmSeen, carDmQueue, carDmPrompt, carDmWrite, carMxBadges, mxPressMake, mxDmStart, mxStep, mxAgMul, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
   injStatus, injuryReport, toggleRest, gameKey, pkgFor, setPackage, marketComps, positionMarket, hotSeat, hotSeatHeat,
   PROTECT_N, defaultProtect, ACHIEVEMENTS, RULES_DEFAULT, PROPOSALS, castVote, expandLeague: (n, pr) => { const r = expandLeague(n, pr); topUpProspects(); return r; }, MILESTONES, MS_NAME, stadiumTag, tradeDeadline,
   TRAITS, traitsKnown, POS_MOVES, positionPreview, changePosition, AGENT_STYLES, agentOf, capHit, voidCapHit, toggleBlock, shopPlayer, tradeAsk, mockDraft, visitProspect, VISITS_PER_YEAR,
@@ -15753,7 +15777,7 @@ function carNextUp(v) {
   const tm = v.team, inCol = carInCol();
   let sub = tm ? `${inCol ? cchip(tm) : chip(tm)} ${E(tm.name)} · ${inCol ? crec(tm.rec) : recStr(tm.rec)}` : '';
   return nextUpCard({ kicker: b ? 'Decision needed' : 'Next up', title: b ? E(b.text) : E(nextLabel(v)), sub: b ? 'Make the call below to keep going.' : sub,
-    acts: b ? '' : `<button class="btn" data-act="carSim">Sim ahead</button><button class="btn primary" data-act="carNext">${E(nextLabel(v))}</button>` });
+    acts: b ? '' : `<button class="btn" data-act="carSim">Sim ahead</button>${HM.carWatchable() ? `<button class="btn" data-act="carNext">Sim the game</button><button class="btn primary" data-act="carWatch">Watch the game</button>` : `<button class="btn primary" data-act="carNext">${E(nextLabel(v))}</button>`}` });
 }
 // =====================================================================
 // TEAM LOGOS: every team gets a badge drawn from its colors and nickname.
@@ -16844,7 +16868,8 @@ function liveTick() {
     if (L.one === L.i) { L.one = null; L.playing = false; liveUpdate(); return; }
     // a coached game that just produced its next play goes straight to it (the last play has already had its time on screen)
     if (L.i >= g.pbp.length - 1) { const r = liveMaybeAsk(); if (r === 'more') { liveSchedule(0); return; } if (!r) { L.done = true; L.playing = false; } liveUpdate(); return; }
-    L.i++; const e = LEV(g.pbp[L.i]); L.ph = isPlay(e.t) ? 0 : 1;
+    L.i++; if (L.mine) while (L.i < g.pbp.length - 1 && (liveCanDraw(LEV(g.pbp[L.i])) || isPlay(LEV(g.pbp[L.i]).t)) && !L.mine(LEV(g.pbp[L.i]))) L.i++; // (only your plays: the rest go straight into the log)
+    const e = LEV(g.pbp[L.i]); L.ph = isPlay(e.t) ? 0 : 1;
     if (e.t === 'qtr' && e.d === 'Halftime' && g.half && !L.hl && !L.rep) { L.playing = false; L.htStop = L.i; liveUpdate(); return; } // the halftime break waits for you
     if (e.t === 'final') { L.done = true; L.playing = false; }
   }
@@ -16935,8 +16960,8 @@ function liveUpdate(instant) {
   // controls
   const stepB = L.rep ? `<button class="btn sm" data-act="liveStep" data-v="-1" title="Previous play (left arrow)">◀ Play</button><button class="btn sm" data-act="liveStep" data-v="1" title="Next play (right arrow)">Play ▶</button>` : '';
   $('lvCtl').innerHTML = L.pre ? '' : L.done
-    ? `${stepB}<button class="btn primary" data-act="liveBox">Box score</button><button class="btn" data-act="liveClose">Back to the front office</button>`
-    : `${L.coach && !L.coach.fin ? `<button class="btn sm" data-act="autoTO" aria-pressed="${!!L.autoTO}" title="Let your coordinators make the timeout calls">Auto timeouts</button>` : ''}<button class="btn sm" data-act="liveToggle" ${L.ask ? 'disabled' : ''}>${L.playing ? 'Pause' : 'Resume'}</button>${seg('liveSpeed', String(L.speed), [['1', '1x'], ['2', '2x'], ['4', '4x']]).replace(/data-act="seg"/g, 'data-act="liveSpeed"')}${stepB}<button class="btn sm" data-act="liveNext">Next drive</button><button class="btn sm" data-act="liveEnd" ${L.coach && !L.coach.fin ? 'title="Your coordinators make the remaining calls"' : ''}>Skip to final</button><button class="btn sm" data-act="liveClose">Leave</button>`;
+    ? `${stepB}<button class="btn primary" data-act="liveBox">Box score</button><button class="btn" data-act="liveClose">${L.car ? 'Back to your career' : 'Back to the front office'}</button>`
+    : `${L.coach && !L.coach.fin ? `<button class="btn sm" data-act="autoTO" aria-pressed="${!!L.autoTO}" title="Let your coordinators make the timeout calls">Auto timeouts</button>` : ''}${L.car ? carPlaysSeg() : ''}<button class="btn sm" data-act="liveToggle" ${L.ask ? 'disabled' : ''}>${L.playing ? 'Pause' : 'Resume'}</button>${seg('liveSpeed', String(L.speed), [['1', '1x'], ['2', '2x'], ['4', '4x']]).replace(/data-act="seg"/g, 'data-act="liveSpeed"')}${stepB}<button class="btn sm" data-act="liveNext">Next drive</button><button class="btn sm" data-act="liveEnd" ${L.coach && !L.coach.fin ? 'title="Your coordinators make the remaining calls"' : ''}>Skip to final</button><button class="btn sm" data-act="liveClose">Leave</button>`;
 }
 
 // ---------- player search & team stat tables ----------
@@ -20804,7 +20829,7 @@ function cDev() {
 // You make the calls snap by snap; the engine plays each snap as soon as you call it, and the field view replays it.
 const cfvYl = (e, off, def) => e === 50 ? 'the 50' : e < 50 ? `${off.abbr} ${e}` : `${def.abbr} ${100 - e}`;
 const CFV_ANIM = new Set(['pass', 'inc', 'int', 'sack', 'run', 'kneel', 'spike', 'punt', 'fg', 'ko', 'xp', 'two']);
-function cfvTL(st) { const out = [], fxc = st.fxc; st.drives.forEach((d, di) => (d.pl || []).forEach((e, k) => out.push({ e, d, di, k, fxc }))); return out; }
+function cfvTL(st) { const out = [], fxc = st.fxc; st.drives.forEach((d, di) => (d.pl || []).forEach((e, k) => out.push({ e, d, di, k, fxc, ix: out.length }))); const M = ui.cWatch === st.gid && typeof carColMine === 'function' ? carColMine(st) : null; return M ? out.filter(M) : out; }
 // the look the field view draws (as the pro sim logs it, 'concept.package'): the offense's call, and the defense's personnel,
 // which follows the college sim's own rule (nickel against man, zone or 3rd and 6+; dime in prevent; goal line inside the 5)
 // (games since the college playbook also log the formation, the play and the package: 'concept.package.flags.formation.play')
@@ -20871,7 +20896,8 @@ function cfvPaint(st, tl, cur) {
   if (ref) { const shown = tl.slice(0, cur ? n + 0 : n), same = shown.filter(x => x.d === ref.d), { off, def } = side(ref.d.o);
     feed = `<li class="sep">${cchip(off)} <span>${E(off.name)} ball, from ${E(cfvYl(ref.d.start ?? 25, off, def))}</span></li>` + same.slice().reverse().map((x, i) => { const tx = HC().playTxt(x.e), j = tx.indexOf(': '), hd = x.e.dn && j > 0 ? tx.slice(0, j) : '', bd = x.e.dn && j > 0 ? tx.slice(j + 2) : tx; return `<li class="${i === 0 ? 'new' : ''} ${x.e.td || x.e.rettd || (x.e.k === 'fg' && x.e.good) || (x.e.k === 'two' && x.e.good) ? 'score' : x.e.k === 'int' || x.e.lost || x.e.fail || x.e.k === 'inj' ? 'to' : ''}">${hd ? `<span class="dd">${E(hd)}</span>` : ''}<span>${E(bd)}</span></li>`; }).join(''); }
   if ($('cfvFeed')) $('cfvFeed').innerHTML = feed || `<li class="muted">${ui.cWatch === st.gid ? 'Kickoff.' : 'Kickoff. Make your first call.'}</li>`;
-  const doneD = st.drives.filter((d, di) => d.out && (all || (tl.findIndex(x => x.di === di && x.k === (d.pl || []).length - 1) < n)));
+  let c0 = 0; const ends = st.drives.map(d => (c0 += (d.pl || []).length) - 1), lim = cur ? cur.ix : last ? last.ix + 1 : 0; // (by place in the whole game, so 'my plays' doesn't give away drives still to come)
+  const doneD = st.drives.filter((d, di) => d.out && (all || ends[di] < lim));
   if ($('cfvChart')) $('cfvChart').innerHTML = cfvChart(st, doneD);
   if ($('cfvLog')) $('cfvLog').innerHTML = cfvDlog(st, doneD) || '<li class="muted">No drives yet.</li>';
   const cp = $('cCalls'); if (cp) cp.classList.toggle('dim', !!V.run);
@@ -20948,17 +20974,17 @@ function cLive() {
   if (!ui.cfv || ui.cfv.gid !== st.gid) ui.cfv = { gid: st.gid, n: 0, speed: ui.cfvSpeed || 1, tok: 0 };
   if (!ui.cBgT) setTimeout(cBg, 0);
   const wm = ui.cWatch === st.gid;
-  if (ui.cPre === st.gid && wm) return `<div class="pagehead"><div><h2>${E(st.name)}</h2><p>The pregame show. Kick off when you're ready; your staff calls the game and you watch it play out.</p></div><div class="row"><button class="btn" data-act="cWatchSkip">Skip to the final</button></div></div>${cPregame(st)}`;
+  if (ui.cPre === st.gid && wm) return `<div class="pagehead"><div><h2>${E(st.name)}</h2><p>The pregame show. Kick off when you're ready; ${S().car ? 'the coaches call' : 'your staff calls'} the game and you watch it play out.</p></div><div class="row"><button class="btn" data-act="cWatchSkip">Skip to the final</button></div></div>${cPregame(st)}`;
   if (ui.cPre === st.gid && !st.done) return `<div class="pagehead"><div><h2>${E(st.name)}</h2><p>The pregame show. Kick off when you're ready; you call every snap after that.</p></div><div class="row"><button class="btn" data-act="cLiveQuit">Leave the game</button></div></div>${cPregame(st)}`;
   const H = CT(st.h), A = CT(st.a), us = st.us, me = us === 0 ? H : A, opp = us === 0 ? A : H, e = st.edge, sg = v => (v > 0 ? '+' : '') + v;
   setTimeout(cfvKick, 0);
   const V = ui.cfv, seen = !wm || V.n >= cfvTL(st).length; if (wm) V.wmEnd = seen;
   const notes = `${st.hurt.length ? `<div class="lbl" style="margin:10px 0 4px">Injuries</div><div class="stack" style="gap:3px;font-size:12.5px">${st.hurt.map(x => `<div>${cchip(x.side === 0 ? H : A)} ${E(x.name)}${x.type ? ` (${E(x.type)})` : ''}${x.w ? `, out about ${x.w} week${x.w > 1 ? 's' : ''}` : ''}</div>`).join('')}</div>` : ''}
     ${st.tired.length ? `<div class="lbl" style="margin:10px 0 4px">Your tired starters</div><div class="stack" style="gap:3px;font-size:12.5px">${st.tired.map(x => `<div class="row" style="gap:8px"><span style="min-width:120px">${E(x.name)}</span><span class="enbar"><i style="width:${x.en}%"></i></span><span class="num muted">${x.en}</span></div>`).join('')}</div><p class="muted" style="margin:4px 0 0;font-size:12px">Tired starters play worse; backups rotate in at running back, receiver and on the defensive line.</p>` : ''}`;
-  return `<div class="pagehead"><div><h2>${E(st.name)}</h2><p>${wm ? 'Your staff calls every snap; you watch it play out. Change the replay speed, or skip to the final.' : 'Call every snap, or hand a drive to your coordinator. Every call meets their call: the right play against the right look, with the players to win the matchup, is worth yards. You control the clock, timeouts, fourth downs and the try after a touchdown.'}</p></div><div class="row" style="gap:6px">${!seen ? '<button class="btn" data-act="cWatchSkip">Skip to the final</button>' : st.done ? '<button class="btn primary" data-act="cLiveDone">Finish and play the rest of the week</button>' : '<button class="btn" data-act="cLiveSim">Sim to the end</button><button class="btn" data-act="cLiveQuit">Leave the game</button>'}</div></div>
+  return `<div class="pagehead"><div><h2>${E(st.name)}</h2><p>${wm && S().car ? 'Your coaches call every snap; you watch it play out. Watch every play or only yours, change the speed, or skip to the final.' : wm ? 'Your staff calls every snap; you watch it play out. Change the replay speed, or skip to the final.' : 'Call every snap, or hand a drive to your coordinator. Every call meets their call: the right play against the right look, with the players to win the matchup, is worth yards. You control the clock, timeouts, fourth downs and the try after a touchdown.'}</p></div><div class="row" style="gap:6px">${!seen ? '<button class="btn" data-act="cWatchSkip">Skip to the final</button>' : st.done ? `<button class="btn primary" data-act="${S().car ? 'carWatchDone' : 'cLiveDone'}">Finish and play the rest of the week</button>` : '<button class="btn" data-act="cLiveSim">Sim to the end</button><button class="btn" data-act="cLiveQuit">Leave the game</button>'}</div></div>
   <section class="panel stack" style="gap:10px"><div class="bug" id="cfvBug"></div>${fvField('cfvCv', A, H, !!st.neutral)}
-    <div class="fvtabs"><div class="fvdrive" id="cfvSit" aria-live="polite"></div><div class="row" style="gap:6px"><span class="lbl">Replay speed</span>${seg('cfvSpeed', String(V.speed), [['1', '1x'], ['2', '2x'], ['4', '4x']]).replace(/data-act="seg"/g, 'data-act="cfvSpeed"')}<button class="btn sm" data-act="cfvSkip">Skip replay</button></div></div></section>
-  <div class="grid2"><section class="panel stack" id="cCalls">${!seen ? '<h3>Watching</h3><p style="margin:0">Your staff is calling the plays. The final and the rest of the week come when the game ends.</p>' : st.done ? `<h3>Final</h3><p style="margin:0">${st.score[us] > st.score[1 - us] ? `You beat ${E(opp.name)}.` : `${E(opp.name)} won this one.`}</p>` : cCallPanel(st, me, opp)}
+    <div class="fvtabs"><div class="fvdrive" id="cfvSit" aria-live="polite"></div><div class="row" style="gap:6px">${wm && S().car ? carPlaysSeg() : ''}<span class="lbl">Replay speed</span>${seg('cfvSpeed', String(V.speed), [['1', '1x'], ['2', '2x'], ['4', '4x']]).replace(/data-act="seg"/g, 'data-act="cfvSpeed"')}<button class="btn sm" data-act="cfvSkip">Skip replay</button></div></div></section>
+  <div class="grid2"><section class="panel stack" id="cCalls">${!seen ? `<h3>Watching</h3><p style="margin:0">${S().car ? (carPlaysMode() === 'mine' ? 'Only the plays you are on the field for (or named in). The score jumps ahead between them.' : 'Every play. Switch to your plays to skip the rest.') : 'Your staff is calling the plays.'} The final and the rest of the week come when the game ends.</p>` : st.done ? `<h3>Final</h3><p style="margin:0">${st.score[us] > st.score[1 - us] ? `You beat ${E(opp.name)}.` : `${E(opp.name)} won this one.`}</p>` : cCallPanel(st, me, opp)}
     ${wm ? '' : '<p class="muted fvnote" style="margin:0;font-size:12px">Making a call during a replay skips to the end of it.</p>'}
     ${st.pend === 'half' || st.done ? '' : `<div class="kv" style="margin-top:4px"><div><span class="lbl">Your run game</span><b class="num ${e.run >= 0 ? 'W' : 'L'}">${sg(e.run)}</b></div><div><span class="lbl">Your pass game</span><b class="num ${e.pass >= 0 ? 'W' : 'L'}">${sg(e.pass)}</b></div><div><span class="lbl">Their run game</span><b class="num ${e.oppRun <= 0 ? 'W' : 'L'}">${sg(e.oppRun)}</b></div><div><span class="lbl">Their pass game</span><b class="num ${e.oppPass <= 0 ? 'W' : 'L'}">${sg(e.oppPass)}</b></div></div>`}${seen ? notes : ''}</section>
   <section class="panel"><h3>Play by play</h3><ol class="fvfeed" id="cfvFeed"></ol></section></div>
@@ -21322,7 +21348,7 @@ const CV = () => HM.carView();
 const carInCol = () => { const c = S() && S().car; return !!c && (c.stage === 'hs' || c.stage === 'col'); };
 const carRv = x => (carInCol() ? rcv(x) : rv(x));
 const CAR_STAGE = { hs: 'High school senior', col: 'College', draft: 'Draft prospect', pro: 'Pro', fa: 'Free agent', ret: 'Retired' };
-const CAR_NAV = () => { const c = S().car; return [['home', 'Home'], ['feed', 'Feed'], ['press', 'Press'], ['msgs', 'Messages'], ...(!['hs', 'ret'].includes(c.stage) ? [['skills', 'Skills']] : []), ...(c.stage === 'hs' ? [['recruit', 'Recruiting']] : []), ...(c.stage === 'draft' ? [['draft', 'Draft day']] : []), ['games', 'Game log'], ['team', 'Team'], ['career', 'Career'], ['news', 'Timeline']]; };
+const CAR_NAV = () => { const c = S().car; return [['home', 'Home'], ['me', 'Profile'], ['feed', 'Feed'], ['press', 'Press'], ['msgs', 'Messages'], ...(!['hs', 'ret'].includes(c.stage) ? [['skills', 'Skills']] : []), ...(c.stage === 'hs' ? [['recruit', 'Recruiting']] : []), ...(c.stage === 'draft' ? [['draft', 'Draft day']] : []), ['games', 'Game log'], ['team', 'Team'], ['career', 'Career'], ['news', 'Timeline']]; };
 // the league around you, read-only: the college world while you're in high school or college, the pros after the draft
 const CAR_LEAGUE = () => carInCol()
   ? [['lfront', 'Front page'], ['lpolls', 'Rankings'], ['lstand', 'Standings'], ['lsched', 'Scores'], ['lpo', 'Playoff'], ['stats', 'Leaders'], ['lawards', 'Awards'], ['lhist', 'History'], ['lrivals', 'Rivalries']]
@@ -21360,15 +21386,16 @@ function careerStart(saved, modeSeg) {
 function careerRender() {
   guideMark();
   const v = CV(), c = v.c, p = v.p, nav = CAR_NAV(); let view = ui.carView || 'home';
-  const views = { home: carHome, feed: carFeed, press: carPress, msgs: carMsgs, skills: carSkills, recruit: carRecruit, draft: carDraft, games: carGames, team: carTeam, career: carCareer, news: carNews };
+  const views = { home: carHome, feed: carFeed, press: carPress, msgs: carMsgs, skills: carSkills, recruit: carRecruit, draft: carDraft, games: carGames, team: carTeam, career: carCareer, news: carNews, watch: carWatchView, me: carProfile };
   // league screens are borrowed from the GM and coach games and shown read-only (see 97r-career-league.js)
   for (const k in CAR_RO) views[k] = () => { try { return `<div class="carro">${CAR_RO[k]()}</div>`; } catch (e) { console.error(e); return '<div class="note">That screen is not available right now.</div>'; } };
-  if (!views[view] || (!nav.some(x => x[0] === view) && !CAR_LEAGUE().some(x => x[0] === view) && view !== 'pl' && view !== 'tm')) ui.carView = view = 'home';
+  if (!views[view] || (!nav.some(x => x[0] === view) && !CAR_LEAGUE().some(x => x[0] === view) && view !== 'pl' && view !== 'tm' && view !== 'watch')) ui.carView = view = 'home';
   const tm = v.team, inCol = carInCol();
   const b = v.blocker, ret = c.stage === 'ret';
   let modal = '';
-  if (ui.modal) { const m = ui.modal; const inner = m.type === 'cplayer' && CP(m.id) ? cPlayerModal(CP(m.id)) : m.type === 'player' && P(m.id) ? playerModal(P(m.id)) : ''; if (inner) modal = `<div class="ov" data-act="close" role="dialog" aria-modal="true"><div class="modal" onclick="event.stopPropagation()">${inner}</div></div>`; }
-  const acts = ret ? [] : [{ act: 'carSim', label: 'Sim ahead', disabled: !!b, title: 'Play until the next decision or the end of the season' }, { act: 'carNext', label: b ? 'Decision needed' : nextLabel(v), primary: true, disabled: !!b }];
+  if (ui.modal) { const m = ui.modal; const inner = m.type === 'cplayer' && CP(m.id) ? cPlayerModal(CP(m.id)) : m.type === 'player' && P(m.id) ? playerModal(P(m.id)) : m.type === 'box' && S().games[m.id] ? boxModal(S().games[m.id]) : m.type === 'cbox' && CSx() && CSx().games[m.id] ? cBoxModal(CSx().games[m.id]) : ''; if (inner) modal = `<div class="ov" data-act="close" role="dialog" aria-modal="true"><div class="modal" onclick="event.stopPropagation()">${inner}</div></div>`; }
+  const wa = !ret && !b && HM.carWatchable();
+  const acts = ret ? [] : [{ act: 'carSim', label: 'Sim ahead', disabled: !!b, title: 'Play until the next decision or the end of the season' }, { act: 'carNext', label: b ? 'Decision needed' : wa ? 'Sim the game' : nextLabel(v), primary: !wa, disabled: !!b }, ...(wa ? [{ act: 'carWatch', label: 'Watch the game', primary: true, title: 'Watch your game snap by snap: every play, or only yours' }] : [])];
   const top = shellTop({ mode: 'career', sub: 'Career', team: `${p && typeof faceOf === 'function' ? faceOf(p, 30) : ''}<b>${E(c.fn + ' ' + c.ln)}</b> <span class="muted tb-pos">${E(c.pos)} · ${E(CAR_STAGE[c.stage])}</span>`, acts,
     meta: [`<span>${v.season} · <strong>${E(v.phase)}</strong></span>`, tm ? `<span>${inCol ? cchip(tm) : chip(tm)} <strong>${E(tm.name)}</strong> <span class="num">${inCol ? crec(tm.rec) : recStr(tm.rec)}</span></span>` : '', p ? `<span>OVR <strong class="num">${carRv(p.ovr)}</strong></span>` : ''] });
   return `${top}
@@ -22121,6 +22148,82 @@ if (typeof MutationObserver !== 'undefined' && typeof app !== 'undefined') {
   let pend = false;
   const obs = new MutationObserver(() => { if (pend) return; pend = true; queueMicrotask(() => { pend = false; try { domSortAll(app); } catch (err) { /* sorting never breaks a page */ } obs.takeRecords(); }); });
   obs.observe(app, { childList: true, subtree: true });
+}
+// ---------- career: watch your own games ----------
+// College: your game is staged and played out on the college field view, then the rest of the week is played.
+// Pro: the week is played and your game is shown on the broadcast from its log. Either way you can watch every snap,
+// or only yours: the snaps you're on the field for (by the jersey numbers logged for each snap) and any play that
+// names you (a kick, a return, a tackle on special teams).
+const carPlaysMode = () => ui.carPlays || (() => { try { return STORE.getItem('hm-carplays') || 'all'; } catch (e) { return 'all'; } })();
+const carPlaysSeg = () => seg('carPlays', carPlaysMode(), [['all', 'All plays'], ['mine', 'My plays']]).replace(/data-act="seg"/g, 'data-act="carPlays"');
+// is this snap one of yours? (off: your team has the ball on it)
+function carMineTest(side, num, nm) {
+  return (e, off, txt) => {
+    const jn = e && e.jn;
+    if (num != null && typeof jn === 'string' && jn.length === 44) for (let s = off ? 0 : 11; s < (off ? 11 : 22); s++) if (parseInt(jn.slice(s * 2, s * 2 + 2), 36) === num) return true;
+    return !!txt && txt.includes(nm);
+  };
+}
+function carColMine(st) {
+  if (!S().car || carPlaysMode() !== 'mine') return null;
+  const p = HM.carPlayer(); if (!p) return null;
+  const side = st.h === p.tid ? 0 : 1, t = carMineTest(side, p.num, `${p.fn[0]}. ${p.ln}`);
+  return x => t(x.e, x.d.o === side, HC().playTxt(x.e));
+}
+function carProMine(L) {
+  if (carPlaysMode() !== 'mine') return null;
+  const g = liveGame(), p = HM.carPlayer(); if (!g || !p) return null;
+  const side = g.home === p.tid ? 0 : 1, t = carMineTest(side, p.num, `${p.fn[0]}. ${p.ln}`);
+  return e => t(e, e.p === side, e.d);
+}
+// watching only your plays in a game you never got into
+function carNoSnaps() {
+  if (carPlaysMode() !== 'mine') return;
+  const L = ui.live, st = !L && HC().liveState();
+  const n = L && L.car ? (L.mine ? liveGame().pbp.map(LEV).filter(e => (liveCanDraw(e) || isPlay(e.t)) && L.mine(e)).length : 1) : st ? cfvTL(st).length : 1;
+  if (!n) toast('You did not get on the field in this one. Switch to All plays to watch the game.');
+}
+function carWatchView() {
+  if (!HC().liveState()) { ui.carView = 'home'; return carHome(CV()); }
+  return cLive();
+}
+Object.assign(actions, {
+  carWatch: () => {
+    ui.carMsg = null; const w = HM.carWatchable(); if (!w) { toast('No game to watch right now.'); return; }
+    if (w === 'col') {
+      const r = HM.carWatchStart(); if (r.err) { toast(r.err); return; }
+      const st = HC().liveState(); ui.cWatch = st.gid; ui.cPre = st.gid; ui.cfv = { gid: st.gid, n: 0, speed: ui.cfvSpeed || 1, tok: 0 }; ui.carView = 'watch'; window.scrollTo(0, 0); carNoSnaps(); return;
+    }
+    // pro: play the week, then put your team's game on the broadcast (even if you sat it out)
+    const p = HM.carPlayer(), tid = p && p.tid, had = new Set(Object.keys(S().games));
+    const e = HM.carNext(); persist(); if (e) { toast(e); return; }
+    const g = Object.values(S().games).find(x => !had.has(String(x.gid)) && (x.home === tid || x.away === tid));
+    if (!g) { toast('No game for your team this week.'); return; }
+    liveStart(g.gid, false, true); if (ui.live) { ui.live.car = true; ui.live.mine = carProMine(ui.live); carNoSnaps(); }
+  },
+  carWatchDone: () => { const r = HM.carWatchFinish(); ui.cWatch = null; ui.cPre = null; ui.carView = 'home'; if (r.err) toast(r.err); persist(); },
+  carPlays: d => {
+    // keep the replay at the same moment when switching
+    const st = HC() && HC().liveState && HC().liveState(), V = ui.cfv; let ix = null;
+    if (st && V && ui.cWatch === st.gid) { const tl = cfvTL(st); ix = V.n < tl.length ? tl[V.n].ix : Infinity; }
+    ui.carPlays = d.v; try { STORE.setItem('hm-carplays', d.v); } catch (e) {}
+    if (ix != null) { V.tok++; fvStop(); fvFlash('cfvCv', null); V.run = false; const tl2 = cfvTL(st), k = tl2.findIndex(x => x.ix >= ix); V.n = k < 0 ? tl2.length : k; }
+    const L = ui.live; if (L && L.car) L.mine = carProMine(L);
+    carNoSnaps();
+  },
+});
+// ---------- career: your profile ----------
+// your own player page, the one the league sees (ratings, this level's stats, advanced numbers and percentiles, the
+// game log), read-only like the other league screens; season by season across every level is on the Career page
+function carProfile(v) {
+  const c = v.c, p = v.p, inCol = carInCol();
+  const head = `<div class="pagehead"><div><h2>Profile</h2><p>${E(c.fn + ' ' + c.ln)}: ratings, stats and advanced numbers, as the ${inCol ? 'college world' : 'league'} sees you. Every season at every level is on the <button class="plink" data-act="carNav" data-v="career">Career</button> page; every game is in the <button class="plink" data-act="carNav" data-v="games">Game log</button>.</p></div></div>`;
+  // every level side by side (the player page below covers the level you're at, with the advanced numbers)
+  let all = ''; try { const h = carCareer(v), i = h.indexOf('<section class="panel"><h3>Season by season</h3>'); if (i >= 0) all = h.slice(i, h.indexOf('</section>', i) + 10).replace('<h3>Season by season</h3>', '<h3>Season by season, every level</h3>'); } catch (e) { /* the Career page has it */ }
+  if (!p || c.stage === 'hs' || (inCol && !(p.tid >= 0))) return `${head}<div class="note">Your profile fills in once you're on a college roster. Until then, your recruiting is on Home and Recruiting.</div>`;
+  let inner = '';
+  try { inner = inCol ? cPlayerModal(p) : playerModal(p); } catch (e) { console.error(e); return `${head}<div class="note">Your profile is not available right now.</div>`; }
+  return `${head}${all}<div class="carro"><div class="page-card">${inner.replace(/<button class="btn sm x" data-act="close"[^>]*>Close<\/button>/, '')}</div></div>`;
 }
 // =====================================================================
 // LIVE SIMS: long sims run one step at a time, so every result shows up as it happens,
@@ -23359,7 +23462,7 @@ function render() {
   hideHover();
   try { navRecord(); } catch (e) { /* history is never allowed to break a page */ }
   const s = S();
-  if (ui.mode === 'career' && s && s.car) { app.innerHTML = careerRender() + toastHtml(); return; }
+  if (ui.mode === 'career' && s && s.car) { if (ui.live) { app.innerHTML = liveShell() + toastHtml(); liveUpdate(true); return; } app.innerHTML = careerRender() + toastHtml(); return; }
   if (ui.mode === 'college' && HM.college.S && HM.college.S.userTid != null) { setTeamColor(CT(HM.college.S.userTid) && CT(HM.college.S.userTid).color); app.innerHTML = collegeRender() + toastHtml(); return; }
   if (!s || s.userTid == null) { setTeamColor(null); app.innerHTML = startScreen() + toastHtml(); return; }
   setTeamColor(T(s.userTid) && T(s.userTid).color);
