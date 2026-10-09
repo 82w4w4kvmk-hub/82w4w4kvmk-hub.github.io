@@ -982,6 +982,95 @@ ul.dlog li.sep{background:none;text-align:center;font-weight:700}
 .nav .nav-search{display:none}
 @media (max-width:820px){html .srch-btn{display:none}html .nav.open .nav-search{display:flex;justify-content:flex-start;gap:8px;border:1px solid var(--line);background:var(--panel);margin-bottom:10px}html .tb-team{min-width:34px}html .search.pop{position:fixed;left:10px;right:10px;top:calc(60px + env(safe-area-inset-top,0px));z-index:61}}
 @media (max-width:480px){html .brand{display:none}html .tb-team b{display:none}html .tb-metabtn{order:0}}
+/* draft war room: glass (default; follows light or dark) and hologram */
+.war{--wa:#5B8CFF;--wa2:#A07BFF;--wr:91,140,255;--wtx:var(--ink);--wdim:var(--ink2);--whot:#FF5C6C;--wok:#3DD68C;--wwarn:#F5B82E;--wpan:rgba(255,255,255,.06);--wline:rgba(255,255,255,.12);--wrad:18px;--wts:none;--wglow:none;
+  --wbg:radial-gradient(circle at 12% 18%,rgba(91,140,255,.22),transparent 42%),radial-gradient(circle at 88% 82%,rgba(160,123,255,.2),transparent 42%),radial-gradient(circle at 60% 6%,rgba(61,214,140,.1),transparent 36%),var(--bg2);
+  position:relative;border-radius:22px;padding:18px 20px 0;background:var(--wbg);color:var(--wtx);overflow:hidden;border:1px solid var(--line)}
+:root[data-theme="light"] .war-glass{--wa:#2F6BFF;--wa2:#9B5CFF;--wr:47,107,255;--whot:#E5484D;--wok:#12A36B;--wwarn:#C07A00;--wpan:rgba(255,255,255,.6);--wline:rgba(255,255,255,.75);
+  --wbg:radial-gradient(circle at 12% 18%,#C9DCFF,transparent 42%),radial-gradient(circle at 88% 82%,#F6D4EC,transparent 42%),radial-gradient(circle at 60% 6%,#D6F5EE,transparent 36%),#E8EDF5}
+.war-holo{--wa:#38E8FF;--wa2:#7D6BFF;--wr:56,232,255;--wtx:#D8F6FF;--wdim:#6D8AA9;--whot:#FF4D8D;--wok:#4DFFB0;--wwarn:#FFC94D;--wpan:rgba(20,60,100,.22);--wline:rgba(56,232,255,.3);--wrad:6px;--wts:0 0 14px var(--wa);--wglow:0 0 12px var(--wa);
+  --wbg:radial-gradient(ellipse at 50% 120%,rgba(56,232,255,.18),transparent 60%),radial-gradient(ellipse at 50% -20%,rgba(125,107,255,.15),transparent 55%),#040A14;color-scheme:dark}
+.war-holo:before{content:"";position:absolute;inset:0;pointer-events:none;z-index:3;background:repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 1px,transparent 1px 3px)}
+.war .w-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;margin-bottom:16px}
+.war .w-title{font:900 26px/1 var(--fd);text-transform:uppercase;letter-spacing:.06em;text-shadow:var(--wts)}
+.war .w-pill{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font:500 11px var(--fm);padding:4px 10px;border-radius:999px;background:var(--wpan);border:1px solid var(--wline);color:var(--wtx)}
+.war .w-looks{display:flex;gap:3px;padding:3px;border-radius:999px;background:var(--wpan);border:1px solid var(--wline)}
+.war .w-looks button{border:0;background:none;color:var(--wdim);font:600 11px var(--fb);padding:5px 12px;border-radius:999px;cursor:pointer}
+.war .w-looks button[aria-pressed="true"]{background:var(--wa);color:#fff;box-shadow:var(--wglow)}
+.war-holo .w-looks button[aria-pressed="true"]{color:#04131C}
+.war .w-clock{margin-left:auto;display:flex;align-items:center;gap:12px}
+.war .w-cl{font:500 11px var(--fm);color:var(--wdim);text-transform:uppercase;letter-spacing:.08em}
+.war .w-time{font:900 38px/1 var(--fd);color:var(--whot);font-variant-numeric:tabular-nums;text-shadow:var(--wts)}
+.war-holo .w-time{text-shadow:0 0 16px var(--whot)}
+.war .w-time.late{animation:wpulse 1s ease-in-out infinite}
+@keyframes wpulse{50%{opacity:.35}}
+.war .w-grid{display:grid;grid-template-columns:minmax(240px,290px) minmax(0,1fr) minmax(260px,320px);gap:18px;align-items:start}
+.war .w-panel{background:var(--wpan);border:1px solid var(--wline);border-radius:var(--wrad);padding:14px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 10px 30px rgba(0,0,0,.08)}
+.war .w-side{display:flex;flex-direction:column;gap:14px}
+.war .w-panel h4{margin:0 0 10px;display:flex;justify-content:space-between;font:600 12px var(--fb);color:var(--wdim);letter-spacing:.04em}
+.war-holo .w-panel{clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px));box-shadow:none}
+.war-holo .w-panel h4{font:500 11px var(--fm);color:var(--wa);text-transform:uppercase;letter-spacing:.18em}
+.war .w-tier{font:600 10px var(--fm);letter-spacing:.16em;text-transform:uppercase;color:var(--wwarn);padding:8px 6px 4px}
+.war .w-row{all:unset;box-sizing:border-box;width:100%;display:grid;grid-template-columns:22px minmax(0,1fr) 40px 44px;align-items:center;gap:8px;padding:6px;border-radius:10px;cursor:pointer;font-size:13px}
+.war .w-row:hover,.war .w-row.on{background:rgba(var(--wr),.13)}
+.war-holo .w-row{border-radius:0}.war-holo .w-row.on{box-shadow:inset 3px 0 0 var(--wa)}
+.war .w-row:focus-visible{outline:2px solid var(--wa)}
+.war .w-n{font:500 11px var(--fm);color:var(--wdim)}
+.war .w-nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.war .w-nm small{display:block;font:400 10px var(--fm);color:var(--wdim)}
+.war .w-pos{font:600 11px var(--fm);color:var(--wa2)}.war .w-pos.need{color:var(--whot)}
+.war .w-g{font:600 12px var(--fm);text-align:right}.war .w-g small{display:block;font-size:10px;color:var(--wdim)}
+.war .w-stage{position:relative;min-height:540px;display:flex;flex-direction:column;align-items:center;perspective:900px}
+.war .w-pad{position:absolute;bottom:18px;left:50%;width:min(440px,92%);height:110px;transform:translateX(-50%) rotateX(72deg);border-radius:50%;background:radial-gradient(ellipse,rgba(var(--wr),.38),rgba(160,123,255,.16) 50%,transparent 70%)}
+.war .w-beam{display:none}
+.war-holo .w-pad{background:none;border:2px solid var(--wa);box-shadow:0 0 40px var(--wa),inset 0 0 60px rgba(var(--wr),.4)}
+.war-holo .w-pad:after{content:"";position:absolute;inset:18px;border-radius:50%;border:1px dashed var(--wa2);animation:wspin 14s linear infinite}
+.war-holo .w-beam{display:block;position:absolute;bottom:74px;left:50%;transform:translateX(-50%);width:min(360px,80%);height:440px;background:linear-gradient(to top,rgba(var(--wr),.22),transparent 85%);clip-path:polygon(8% 100%,92% 100%,100% 0,0 0)}
+@keyframes wspin{to{transform:rotate(360deg)}}
+@keyframes wfloat{50%{transform:translateY(-7px)}}
+@keyframes wflick{0%,47%,49%,100%{opacity:1}48%{opacity:.6}}
+.war .w-holo{position:relative;z-index:2;margin-top:18px;text-align:center;animation:wfloat 6s ease-in-out infinite}
+.war-holo .w-holo{animation:wflick 5s infinite,wfloat 6s ease-in-out infinite}
+.war .w-name{font:900 clamp(34px,4.4vw,54px)/1 var(--fd);text-transform:uppercase;letter-spacing:.02em;text-shadow:var(--wts)}
+.war .w-sub{margin-top:6px;font:500 12px var(--fm);color:var(--wa);letter-spacing:.08em}
+.war .w-sub .plink{font:inherit;color:var(--wdim);text-decoration:underline}
+.war .w-radar{width:min(270px,100%);margin-top:6px;position:relative;z-index:2;overflow:visible}
+.war .w-rg{fill:none;stroke:rgba(var(--wr),.22)}
+.war .w-rs{fill:rgba(var(--wr),.24);stroke:var(--wa);stroke-width:2}
+.war-holo .w-rs{filter:drop-shadow(0 0 6px var(--wa))}
+.war .w-rd{fill:var(--wa2)}
+.war .w-rl{fill:var(--wdim);font:600 10px var(--fm)}.war .w-rv{fill:var(--wtx);font:500 10px var(--fm)}
+.war .w-noc{margin:40px 0;position:relative;z-index:2}
+.war .w-tiles{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:6px;position:relative;z-index:2}
+.war .w-tile{background:var(--wpan);border:1px solid var(--wline);border-radius:12px;padding:7px 12px;text-align:center;min-width:76px;backdrop-filter:blur(10px)}
+.war-holo .w-tile{border-radius:0;background:rgba(4,10,20,.6)}
+.war .w-tile b{display:block;font:800 22px/1.1 var(--fd)}.war .w-tile b small{font:500 11px var(--fm);color:var(--wdim);margin-left:2px}
+.war .w-tile span{font:500 10px var(--fm);color:var(--wdim);text-transform:uppercase;letter-spacing:.08em}
+.war .w-odd{margin-bottom:7px}
+.war .w-ol{display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px}.war .w-ol i{font:normal 600 10px var(--fm);color:var(--wa2)}.war .w-ol b{font:600 11px var(--fm)}
+.war .w-bar{height:6px;border-radius:99px;background:rgba(var(--wr),.13);overflow:hidden}
+.war .w-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--wa2),var(--wa));box-shadow:var(--wglow)}
+.war-holo .w-bar{border-radius:0}
+.war .w-offer{border:1px solid var(--wline);border-radius:12px;padding:10px;margin-bottom:8px;font-size:12.5px}
+.war .w-oh{display:flex;gap:8px;align-items:center}.war .w-om{color:var(--wdim);margin-top:4px;font-size:12px}
+.war .w-mut{color:var(--wdim);font-size:12.5px;margin:0 0 8px}
+.war .w-deck{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:4px 0}
+.war .w-ai{font-size:13px;line-height:1.55;background:rgba(var(--wr),.08);padding:10px 12px;border-radius:12px}
+.war .w-ai b{color:var(--wa)}.war .w-who{display:block;font:600 10px var(--fm);color:var(--wdim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.war-holo .w-ai{border-radius:0;background:none;border-left:2px solid var(--wa2)}
+.war .w-needs{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.war .w-needs span{font:600 10.5px var(--fm);padding:3px 9px;border-radius:999px;border:1px solid var(--wline);color:var(--wdim)}
+.war .w-needs .high{color:var(--whot);border-color:var(--whot)}.war .w-needs .med{color:var(--wwarn);border-color:var(--wwarn)}
+.war .w-btns{display:flex;gap:8px;margin-top:10px}
+.war .w-btn{flex:1;font:600 12px var(--fb);padding:9px 12px;border-radius:999px;cursor:pointer;background:var(--wa);color:#fff;border:1px solid var(--wa);box-shadow:var(--wglow)}
+.war .w-btn.ghost{background:transparent;color:var(--wa);box-shadow:none}
+.war .w-btn:hover{filter:brightness(1.08)}
+.war-holo .w-btn{border-radius:0;font:500 11px var(--fm);text-transform:uppercase;letter-spacing:.12em}.war-holo .w-btn:not(.ghost){color:#04131C}
+.war .w-ticker{margin:18px -20px 0;border-top:1px solid var(--wline);overflow:hidden;white-space:nowrap;font:500 12px var(--fm);padding:9px 0;color:var(--wdim)}
+.war .w-ticker div{display:inline-block;padding-left:100%;animation:wtick 50s linear infinite}
+.war .w-ticker span{margin-right:28px}.war .w-ticker em{color:var(--wa);font-style:normal}
+@keyframes wtick{to{transform:translateX(-100%)}}
+@media (prefers-reduced-motion:reduce){.war *,.war *:after{animation:none!important}.war .w-ticker{white-space:normal}.war .w-ticker div{padding-left:20px}}
+@media (max-width:1150px){.war .w-grid{grid-template-columns:1fr}.war .w-stage{min-height:500px}}
 </style>
 <div id="app"></div>
 <script>
@@ -9369,6 +9458,85 @@ function filmPending() {
   return best && t.filmSeen !== best.gid ? best.gid : null;
 }
 function filmMark(gid) { const t = team(S.userTid); if (t) t.filmSeen = gid; }
+// ---------- draft war room: availability forecast and team needs ----------
+// The forecast replays the picks between now and a target pick many times over, with each AI team drafting off its own
+// board the way bestPickFor does (its read of the class, its GM's leans, its roster needs, a little noise). It runs on its
+// own seeded generator and never creates a GM, so looking at it can't change what happens in the draft.
+const WAR_SIMS = 400;
+let warCache = null;
+function warRng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+// the user's next pick at or after index i
+function warNextPick(from) {
+  const d = S.draft; if (!d) return -1;
+  for (let i = from; i < d.order.length; i++) if (d.order[i] === S.userTid) return i;
+  return -1;
+}
+// chance each prospect is still on the board when pick `target` comes up. `slotTid` drafts in the user's own slots before
+// the target (a trade-back partner); without one, those slots go to the media board.
+function draftForecast(target, slotTid) {
+  const d = S.draft; if (!d || S.phase !== 'draft' || target == null || target < d.idx) return {};
+  const key = `${S.season}:${d.idx}:${target}:${slotTid ?? ''}:${d.log.length}`;
+  if (warCache && warCache.key === key) return warCache.out;
+  const late = d.idx >= 96, all = prospects().filter(p => p.sc && (late || (p.pos !== 'K' && p.pos !== 'P')));
+  const n = target - d.idx, pool = all.sort((a, b) => draftScore(b) - draftScore(a)).slice(0, n + 70), out = {};
+  if (n <= 0) { for (const p of pool) out[p.id] = 1; warCache = { key, out }; return out; }
+  const tids = [];
+  for (let i = d.idx; i < target; i++) tids.push(d.order[i] === S.userTid ? (slotTid ?? -1) : d.order[i]);
+  // each team's fixed board and roster, worked out once
+  const base = {}, need = {};
+  for (const tid of new Set(tids)) {
+    const g = tid >= 0 && S.gms && S.gms[tid], live = g && g.eye != null && g.phil != null;
+    base[tid] = pool.map(p => tid < 0 ? draftScore(p) : live ? aiBoardScore(p, tid) : draftScore(p) + hashG(p.id, tid * 2 + 1) * 3);
+    const counts = {}, best = {};
+    if (tid >= 0) for (const p of roster(tid)) { counts[p.pos] = (counts[p.pos] || 0) + 1; best[p.pos] = Math.max(best[p.pos] || 0, p.ovr); }
+    need[tid] = { counts, best };
+  }
+  const left = new Array(pool.length).fill(0), rng = warRng(S.season * 7919 + d.idx * 131 + target), taken = new Uint8Array(pool.length);
+  const gz = () => { let u = 0; while (!u) u = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng()); };
+  for (let sim = 0; sim < WAR_SIMS; sim++) {
+    taken.fill(0); const add = {};
+    for (const tid of tids) {
+      const b = base[tid], nd = need[tid], ad = add[tid] || (add[tid] = {});
+      let top = -1, topSc = -1e9;
+      for (let j = 0; j < pool.length; j++) {
+        if (taken[j]) continue;
+        const p = pool[j]; let sc = b[j] + gz() * 1.5;
+        if (tid >= 0) {
+          const c = (nd.counts[p.pos] || 0) + (ad[p.pos] || 0), R = POS[p.pos];
+          if (p.pos === 'K' || p.pos === 'P') sc += c === 0 || (nd.best[p.pos] || 0) < 60 ? 12 : -50;
+          else { sc += c < R.roster ? 2.5 : c > R.roster + 1 ? -4 : 0; if (p.sc.ovr > (nd.best[p.pos] || 0) - 3 && c <= R.start + 1) sc += 1.5; }
+        }
+        if (sc > topSc) { topSc = sc; top = j; }
+      }
+      if (top < 0) break;
+      taken[top] = 1; ad[pool[top].pos] = (ad[pool[top].pos] || 0) + 1;
+    }
+    for (let j = 0; j < pool.length; j++) if (!taken[j]) left[j]++;
+  }
+  pool.forEach((p, j) => { out[p.id] = left[j] / WAR_SIMS; });
+  warCache = { key, out };
+  return out;
+}
+// where a team is thinnest: its starters at each position against the league's, plus empty starting spots
+let needCache = null;
+function teamNeeds(tid) {
+  const key = `${S.season}:${S.phase}:${S.draft ? S.draft.log.length : ''}`;
+  if (!needCache || needCache.key !== key) {
+    const by = {}; for (const p of allPlayers()) if (p.tid >= 0) ((by[p.tid] || (by[p.tid] = {}))[p.pos] || (by[p.tid][p.pos] = [])).push(p);
+    for (const t in by) for (const pos in by[t]) by[t][pos] = by[t][pos].sort((a, b) => b.ovr - a.ovr).slice(0, POS[pos].start);
+    const lg = {}; for (const pos of POS_ORDER) { let sum = 0, k = 0; for (const t of S.teams) for (const p of (by[t.tid] || {})[pos] || []) { sum += p.ovr; k++; } lg[pos] = k ? sum / k : 60; }
+    needCache = { key, by, lg };
+  }
+  const { by, lg } = needCache, out = [];
+  for (const pos of POS_ORDER) {
+    if (pos === 'K' || pos === 'P') continue;
+    const mine = (by[tid] || {})[pos] || [], short = POS[pos].start - mine.length;
+    const avg = mine.length ? mine.reduce((a, p) => a + p.ovr, 0) / mine.length : 40;
+    const gap = lg[pos] - avg + short * 8 + (mine.length && mine[0].age >= 32 ? 2 : 0);
+    out.push({ pos, gap: r1(gap), lvl: gap >= 5 ? 'high' : gap >= 1.5 ? 'med' : 'low' });
+  }
+  return out.sort((a, b) => b.gap - a.gap);
+}
 // =====================================================================
 // COLLEGE MODE: a separate game. You coach a school: recruit, redshirt, work the transfer portal,
 // spend NIL money, climb the polls and chase the 12-team playoff. Players who leave become a draft
@@ -14000,7 +14168,7 @@ return {
   ROLES, ROLE_NAME, coachOf, coachRat, staffBudget, staffSpend, hireCoach, fireCoach, userStaffGaps, trainerMult,
   userView, deepScout, scoutSd, scoutPointsFor,
   negotiation, scoreOffer, makeOffer, tagPrice, franchiseTag,
-  pruneOffers, acceptOffer, declineOffer, takeJob, teamRank,
+  pruneOffers, acceptOffer, declineOffer, takeJob, teamRank, draftForecast, warNextPick, teamNeeds,
   careerRecords, franchiseLeaders, REC_KEYS, REC_LABEL, hofScore, hofOutlook, hofWatch, LEAD_KEYS, mainTeam,
   weekBegin, weekEnd, watchWeek, uniBgStep, weekRestStep, weekFlush, weekPending: () => !!(S && S.weekLazy), poBegin, poEnd, poPairs, coachStart, coachFinish, runGen, scoutingReport, setGamePlan, OFF_PLANS, DEF_PLANS, gamePlanFor,
   optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carSeasons, carGameLine, carHofStatus, carDraftProjection, carSocPost, carSocReply, carSocBlock, carSocMute, carSocIdeas, socCharPen, socAbout, carSocDelete, carSocMore, carSocPrompt, carSocLabelPrompt, carSocWrite, carSocQueue, carSocView, carSocSeen, socShowAt, socRead, socCtx, socCheck, SOC_MAX, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
@@ -15496,8 +15664,9 @@ function tradeView() {
 function draftView() {
   const s = S(), d = s.draft, live = s.phase === 'draft' && d;
   const year = live ? s.season + 1 : (['preseason'].includes(s.phase) ? null : s.season + 1);
-  const tab = ui.draftTab || 'board';
-  const tabs = seg('draftTab', tab, [['board', live ? 'Draft room' : 'Big board'], ['scout', 'Scouting'], ['mock', 'Mock drafts'], ['future', 'Future classes'], ['grades', 'Class grades']]);
+  const tab = ui.draftTab === 'war' && !live ? 'board' : ui.draftTab || (live ? 'war' : 'board');
+  const tabs = seg('draftTab', tab, [...(live ? [['war', 'War room']] : []), ['board', live ? 'Full board' : 'Big board'], ['scout', 'Scouting'], ['mock', 'Mock drafts'], ['future', 'Future classes'], ['grades', 'Class grades']]);
+  if (tab === 'war') return `<div class="pagehead"><div><h2>${s.season + 1} draft</h2><p>Your board, the odds and the phones in one room. Ratings are your scouts' read.</p></div>${tabs}</div>${warRoomView()}`;
   if (tab === 'future') return `<div class="pagehead"><div><h2>Future drafts</h2><p>Classes two to four years out. The further away a draft is, the less your scouts can tell you.</p></div>${tabs}</div>${futureDraftsBody(false)}`;
   if (tab === 'grades') return `<div class="pagehead"><div><h2>Draft class grades</h2><p>How the media graded each class on draft day, and how it looks three years later.</p></div>${tabs}</div>${draftGradesPanel() || '<section class="panel"><p class="muted" style="margin:0">Grades appear after your first draft.</p></section>'}${collegeImportPanel()}`;
   if (tab === 'mock') return `<div class="pagehead"><div><h2>Mock drafts</h2><p>Where the media expects the first round to go.</p></div>${tabs}</div>${mockPanel() || '<section class="panel"><p class="muted" style="margin:0">The first mock draft comes out midseason.</p></section>'}`;
@@ -21528,6 +21697,125 @@ function collegeOutlookView() {
   } else body = futureDraftsBody(false);
   return `<div class="pagehead"><div><h2>College football</h2><p>The college world that feeds your draft. Future classes, the national rankings and the award race, as seen from the pros.</p></div>${tabs}</div>${body}`;
 }
+// ---------- draft war room: the live draft as a room (your board, the prospect up on the screen, the odds, the phones) ----------
+// Two looks: glass (the default, which follows the light or dark theme) and hologram. Ratings are your scouts' read
+// (HM.userView), the forecast replays the AI teams' boards (HM.draftForecast), and the clock is for show: nothing
+// happens when it runs out.
+const WAR_LOOKS = [['glass', 'Glass'], ['holo', 'Hologram']];
+const warLook = () => { const v = lsGet('hm-war-look'); return WAR_LOOKS.some(x => x[0] === v) ? v : 'glass'; };
+const WAR_CLOCK = rd => rd === 1 ? 600 : rd === 2 ? 420 : rd <= 6 ? 300 : 240;
+const warAxes = [['forty', '40 time', -1], ['bench', 'Bench', 1], ['vert', 'Vertical', 1], ['cone', '3-cone', -1], ['dg', 'Drills', 1]];
+const DG = ['D', 'C', 'C+', 'B', 'B+', 'A'];
+// where a prospect's combine numbers rank among the prospects at his position (0 to 1)
+function warCombine(p, pros) {
+  if (!p.comb || p.comb.skip) return null;
+  const peers = pros.filter(q => q.pos === p.pos && q.comb && !q.comb.skip), out = [];
+  for (const [k, l, dir] of warAxes) {
+    const val = q => k === 'dg' ? (q.comb.dg ? DG.indexOf(q.comb.dg) : null) : q.comb[k];
+    const v = val(p); if (v == null) continue;
+    const vs = peers.map(val).filter(x => x != null); if (vs.length < 3) continue;
+    const better = vs.filter(x => dir > 0 ? x < v : x > v).length, same = vs.filter(x => x === v).length;
+    out.push({ l, f: (better + same / 2) / vs.length, txt: k === 'dg' ? p.comb.dg : k === 'forty' || k === 'cone' ? v.toFixed(2) : k === 'vert' ? v.toFixed(1) + '"' : v });
+  }
+  return out.length >= 3 ? out : null;
+}
+function warRadar(ax) {
+  const R = 84, n = ax.length, pt = (k, s) => { const a = -Math.PI / 2 + k * 2 * Math.PI / n; return [Math.cos(a) * R * s, Math.sin(a) * R * s].map(x => Math.round(x * 10) / 10); };
+  let s = '';
+  for (const f of [0.25, 0.5, 0.75, 1]) s += `<polygon class="w-rg" points="${ax.map((_, k) => pt(k, f).join(',')).join(' ')}"/>`;
+  ax.forEach((a, k) => { const [x, y] = pt(k, 1), [tx, ty] = pt(k, 1.24); s += `<line class="w-rg" x1="0" y1="0" x2="${x}" y2="${y}"/><text class="w-rl" x="${tx}" y="${ty - 2}" text-anchor="middle">${E(a.l)}</text><text class="w-rv" x="${tx}" y="${ty + 10}" text-anchor="middle">${E(String(a.txt))}</text>`; });
+  s += `<polygon class="w-rs" points="${ax.map((a, k) => pt(k, Math.max(0.06, a.f)).join(',')).join(' ')}"/>`;
+  ax.forEach((a, k) => { const [x, y] = pt(k, Math.max(0.06, a.f)); s += `<circle class="w-rd" cx="${x}" cy="${y}" r="3"/>`; });
+  return `<svg class="w-radar" viewBox="-130 -118 260 236" role="img" aria-label="Combine results against his position">${s}</svg>`;
+}
+// the assistant's read on the prospect up on the screen
+function warTake(p, x) {
+  const v = x.uv.get(p.id), out = [], nd = x.needs.find(n => n.pos === p.pos), top = x.needs[0], c = HM.coachOf(S().userTid, 'SC');
+  const mediaRk = x.proj[p.id], myRk = x.rank.get(p.id) + 1, pr = x.odds[p.id];
+  let a = `${E(p.ln)} is No. ${myRk} on your board`;
+  if (mediaRk != null && Math.abs(mediaRk + 1 - myRk) >= 10) a += `; the media has him ${mediaRk + 1 > myRk ? 'lower' : 'higher'}, at No. ${mediaRk + 1}`;
+  out.push(a + '.');
+  if (nd) out.push(top && top.pos === p.pos ? `${p.pos} is your <b>biggest need</b>.` : nd.lvl === 'high' ? `${p.pos} is a <b>real need</b>.` : nd.lvl === 'low' ? `${p.pos} isn't a need.` : `${p.pos} is a moderate need.`);
+  if (v.deep) out.push('Your scouts have seen him up close.');
+  else if (v.sdP >= 6) out.push(`Your read on him is wide (±${Math.round(v.sdP)} on potential); a close look would tighten it.`);
+  if (HM.traitsKnown(p).full && (p.tr || []).includes('injProne')) out.push('He has an injury history.');
+  if (pr != null && x.target > x.d.idx) out.push(`<b>${Math.round(pr * 100)}%</b> chance he's still there at No. ${x.target + 1}.`);
+  if (x.onClock && pr != null) {
+    if (myRk <= 3 && pr < 0.5) out.push('Recommend: <b>draft him</b>.');
+    else if (pr >= 0.75 && x.offers.length) out.push('Recommend: <b>take the trade back</b>. He should still be there.');
+    else if (pr >= 0.75) out.push('He should last, so there may be better value with this pick.');
+  }
+  return (c ? `<span class="w-who">${E(c.fn + ' ' + c.ln)}, director of scouting</span>` : '') + out.join(' ');
+}
+function warRoomView() {
+  const s = S(), d = s.draft, perRd = s.teams.length, look = warLook();
+  const onClock = d.order[d.idx] === s.userTid, rdOf = i => d.rd ? d.rd[i] : Math.floor(i / perRd) + 1, pkOf = i => d.pk ? d.pk[i] : (i % perRd) + 1;
+  const pros = HM.prospects(), uv = new Map(pros.map(p => [p.id, HM.userView(p)]));
+  const myScore = p => { const v = uv.get(p.id); return v.pot * 0.55 + v.ovr * 0.45 + ({ QB: 3, DL: 1.5, OL: 1, CB: 1, WR: 1, LB: 0, S: -0.5, TE: -1, RB: -1.5, K: -16, P: -17 })[p.pos]; };
+  const ranked = pros.slice().sort((a, b) => myScore(b) - myScore(a)), rank = new Map(ranked.map((p, i) => [p.id, i]));
+  const offers = (s.offers || []).filter(o => o.draftIdx === d.idx);
+  // the pick the forecast looks ahead to: a trade-back partner's pick if one is calling, otherwise your next own pick
+  const offPk = onClock && offers.length ? d.pid.indexOf(offers[0].givePk.find(id => d.pid.indexOf(id) > d.idx)) : -1;
+  const target = offPk > d.idx ? offPk : HM.warNextPick(onClock ? d.idx + 1 : d.idx);
+  const odds = target >= 0 ? HM.draftForecast(target, offPk > d.idx ? offers[0].tid : null) : {};
+  const needs = HM.teamNeeds(s.userTid), needLvl = Object.fromEntries(needs.map(n => [n.pos, n.lvl]));
+  const sel = (ui.warSel != null && P(ui.warSel) && P(ui.warSel).tid === -2) ? P(ui.warSel) : ranked[0];
+  const x = { d, uv, rank, proj: HM.projRanks(), needs, odds, target, onClock, offers };
+  // big board: your top 15, split into tiers where your grades drop off
+  const top = ranked.slice(0, 15); let tier = 1;
+  const board = top.map((p, i) => {
+    const v = uv.get(p.id), brk = i > 0 && myScore(top[i - 1]) - myScore(p) >= 2.2 && tier < 5;
+    if (brk) tier++;
+    return `${i === 0 || brk ? `<div class="w-tier">Tier ${tier}</div>` : ''}<button class="w-row${p === sel ? ' on' : ''}" data-act="warSel" data-id="${p.id}"><span class="w-n">${String(i + 1).padStart(2, '0')}</span><span class="w-nm">${E(p.fn ? p.fn + ' ' + p.ln : p.ln)}<small>${E(p.col || '')}</small></span><span class="w-pos${needLvl[p.pos] === 'high' ? ' need' : ''}">${p.pos}</span><span class="w-g">${rv(v.ovr)}<small>${grade(v.pot)}</small></span></button>`;
+  }).join('');
+  const sv = uv.get(sel.id), ax = warCombine(sel, pros), age = sel.age != null ? ` · age ${sel.age}` : '';
+  const tiles = [[`${rv(sv.ovr)}<small>±${Math.round(sv.sdO)}</small>`, 'Scouted OVR'], [`${grade(sv.pot)}<small>±${Math.round(sv.sdP)}</small>`, 'Potential'],
+    [sel.comb && !sel.comb.skip ? sel.comb.forty.toFixed(2) : '—', '40 time'], ...(target > d.idx && odds[sel.id] != null ? [[Math.round(odds[sel.id] * 100) + '%', `At No. ${target + 1}`]] : [])];
+  const fc = target > d.idx ? ranked.slice(0, 7).map(p => { const pr = odds[p.id] ?? 0; return `<div class="w-odd"><div class="w-ol"><span>${E(p.ln)} <i>${p.pos}</i></span><b>${Math.round(pr * 100)}%</b></div><div class="w-bar"><i style="width:${Math.round(pr * 100)}%"></i></div></div>`; }).join('') : '';
+  const lbl = id => { const pk = (s.picks || []).find(q => q.id === id); return pk ? E(HM.pickLabel(pk, true)) : ''; };
+  const phones = offers.length ? offers.map(o => `<div class="w-offer"><div class="w-oh">${chip(T(o.tid))}<span>${E(o.note)}</span></div><div class="w-om">You get ${o.givePk.map(lbl).join(', ')}${o.vOut ? ` · ${Math.round(o.vIn / o.vOut * 100)}% of your pick on the trade chart` : ''}</div><div class="w-btns"><button class="w-btn" data-act="offerAccept" data-id="${o.id}">Accept</button><button class="w-btn ghost" data-act="offerDecline" data-id="${o.id}">Decline</button></div></div>`).join('')
+    : `<p class="w-mut">${onClock ? 'No calls on this pick yet.' : 'Quiet for now.'}</p><button class="w-btn ghost" data-act="nav" data-v="trade">${onClock ? 'Shop this pick' : 'Call about trading up'}</button>`;
+  const before = []; for (let i = d.idx; i < d.order.length && before.length < 5 && (target < 0 || i < target); i++) if (d.order[i] !== s.userTid) before.push(i);
+  const deck = before.map(i => { const t = T(d.order[i]), nd = HM.teamNeeds(t.tid).slice(0, 2).map(n => n.pos).join(', '); return `<div class="w-deck"><span class="w-n">${rdOf(i)}.${pkOf(i)}</span>${chip(t)}<span class="w-mut">needs ${nd}</span></div>`; }).join('');
+  const ck = ui.warClk && ui.warClk.idx === d.idx && ui.warClk.s === s.season ? ui.warClk : (ui.warClk = { idx: d.idx, s: s.season, t0: Date.now(), len: WAR_CLOCK(rdOf(d.idx)) });
+  const left = Math.max(0, ck.len - Math.floor((Date.now() - ck.t0) / 1000)), picksTo = target >= 0 ? target - d.idx : null;
+  const clock = onClock ? `<span class="w-cl">You're on the clock</span><b id="warClock" class="w-time${left ? '' : ' late'}">${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}</b>`
+    : `<span class="w-cl">${picksTo == null ? 'No picks left' : 'Picks until yours'}</span><b class="w-time">${picksTo ?? '—'}</b>`;
+  const tick = d.log.slice(-10).reverse().map(l => { const p = P(l.pid), t = T(l.tid); return p ? `<span><em>${rdOf(l.idx)}.${pkOf(l.idx)} ${E(t.abbr)}</em> ${p.pos} ${E(p.ln)}, ${E(p.col || '')}</span>` : ''; }).join('');
+  const act = onClock ? `<button class="w-btn go" data-act="draft" data-id="${sel.id}">Draft ${E(sel.ln)}</button><button class="w-btn ghost" data-act="autopick">Staff pick</button>`
+    : `<button class="w-btn go" data-act="toMyPick">Sim to my pick</button>`;
+  return `<div class="war war-${look}">
+  <div class="w-head"><div class="w-title">War room</div><span class="w-pill">${s.season + 1} draft · round ${rdOf(d.idx)}</span><span class="w-pill">Pick ${pkOf(d.idx)} · ${chip(T(d.order[d.idx]))}</span>
+    <div class="w-looks" role="group" aria-label="Look">${WAR_LOOKS.map(([k, l]) => `<button data-act="warLook" data-v="${k}" aria-pressed="${k === look}">${l}</button>`).join('')}</div>
+    <div class="w-clock">${clock}</div></div>
+  <div class="w-grid">
+    <section class="w-panel"><h4><span>Your board</span><span>OVR · POT</span></h4>${board}<button class="w-btn ghost" style="margin-top:10px" data-act="seg" data-k="draftTab" data-v="board">Full board</button></section>
+    <section class="w-stage"><div class="w-beam"></div><div class="w-pad"></div>
+      <div class="w-holo"><div class="w-name">${E(sel.fn ? sel.fn + ' ' + sel.ln : sel.ln)}</div><div class="w-sub">${sel.pos} · ${E(sel.col || '')}${age} · ${plink(sel)}</div></div>
+      ${ax ? warRadar(ax) : `<p class="w-mut w-noc">${sel.comb && sel.comb.skip ? "He didn't work out at the combine." : 'No combine numbers yet.'}</p>`}
+      <div class="w-tiles">${tiles.map(([b, l]) => `<div class="w-tile"><b>${b}</b><span>${l}</span></div>`).join('')}</div>
+    </section>
+    <div class="w-side">
+      ${fc ? `<section class="w-panel"><h4><span>Still there at No. ${target + 1}?</span><span>400 sims</span></h4>${fc}</section>` : ''}
+      <section class="w-panel"><h4><span>Phones</span><span>${offers.length || ''}</span></h4>${phones}</section>
+      ${deck ? `<section class="w-panel"><h4><span>Picking before you</span></h4>${deck}</section>` : ''}
+      <section class="w-panel"><h4><span>Assistant GM</span></h4><div class="w-ai">${warTake(sel, x)}</div>
+        <div class="w-needs">${needs.slice(0, 3).map(n => `<span class="${n.lvl}">${n.pos} · ${n.lvl === 'med' ? 'medium' : n.lvl}</span>`).join('')}</div>
+        <div class="w-btns">${act}</div></section>
+    </div>
+  </div>
+  ${tick ? `<div class="w-ticker"><div>${tick}</div></div>` : ''}
+</div>`;
+}
+Object.assign(actions, {
+  warSel: d => { ui.warSel = +d.id; },
+  warLook: d => { try { lsSet('hm-war-look', d.v); } catch (e) {} },
+});
+setInterval(() => {
+  const el = document.getElementById('warClock'), ck = ui.warClk; if (!el || !ck) return;
+  const left = Math.max(0, ck.len - Math.floor((Date.now() - ck.t0) / 1000));
+  el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; el.classList.toggle('late', !left);
+}, 1000);
 // =====================================================================
 // LEAGUE EDITOR: a team designer with a live logo preview (pro and college), conference names,
 // college player and recruit editing, league packs (share a custom league as a file) and
