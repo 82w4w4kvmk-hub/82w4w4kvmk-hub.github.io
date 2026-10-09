@@ -20984,7 +20984,7 @@ function cLive() {
   return `<div class="pagehead"><div><h2>${E(st.name)}</h2><p>${wm && S().car ? 'Your coaches call every snap; you watch it play out. Watch every play or only yours, change the speed, or skip to the final.' : wm ? 'Your staff calls every snap; you watch it play out. Change the replay speed, or skip to the final.' : 'Call every snap, or hand a drive to your coordinator. Every call meets their call: the right play against the right look, with the players to win the matchup, is worth yards. You control the clock, timeouts, fourth downs and the try after a touchdown.'}</p></div><div class="row" style="gap:6px">${!seen ? '<button class="btn" data-act="cWatchSkip">Skip to the final</button>' : st.done ? `<button class="btn primary" data-act="${S().car ? 'carWatchDone' : 'cLiveDone'}">Finish and play the rest of the week</button>` : '<button class="btn" data-act="cLiveSim">Sim to the end</button><button class="btn" data-act="cLiveQuit">Leave the game</button>'}</div></div>
   <section class="panel stack" style="gap:10px"><div class="bug" id="cfvBug"></div>${fvField('cfvCv', A, H, !!st.neutral)}
     <div class="fvtabs"><div class="fvdrive" id="cfvSit" aria-live="polite"></div><div class="row" style="gap:6px">${wm && S().car ? carPlaysSeg() : ''}<span class="lbl">Replay speed</span>${seg('cfvSpeed', String(V.speed), [['1', '1x'], ['2', '2x'], ['4', '4x']]).replace(/data-act="seg"/g, 'data-act="cfvSpeed"')}<button class="btn sm" data-act="cfvSkip">Skip replay</button></div></div></section>
-  <div class="grid2"><section class="panel stack" id="cCalls">${!seen ? `<h3>Watching</h3><p style="margin:0">${S().car ? (carPlaysMode() === 'mine' ? 'Only the plays you are on the field for (or named in). The score jumps ahead between them.' : 'Every play. Switch to your plays to skip the rest.') : 'Your staff is calling the plays.'} The final and the rest of the week come when the game ends.</p>` : st.done ? `<h3>Final</h3><p style="margin:0">${st.score[us] > st.score[1 - us] ? `You beat ${E(opp.name)}.` : `${E(opp.name)} won this one.`}</p>` : cCallPanel(st, me, opp)}
+  <div class="grid2"><section class="panel stack" id="cCalls">${!seen ? `<h3>Watching</h3><p style="margin:0">${S().car ? (carPlaysMode() === 'mine' ? `${['QB', 'RB', 'WR', 'TE', 'K', 'P'].includes(HM.carPlayer() && HM.carPlayer().pos) ? 'Only the plays that go through you: your throws, carries, targets and kicks.' : 'Only the snaps you are on the field for.'} The score jumps ahead between them.` : 'Every play. Switch to your plays to skip the rest.') : 'Your staff is calling the plays.'} The final and the rest of the week come when the game ends.</p>` : st.done ? `<h3>Final</h3><p style="margin:0">${st.score[us] > st.score[1 - us] ? `You beat ${E(opp.name)}.` : `${E(opp.name)} won this one.`}</p>` : cCallPanel(st, me, opp)}
     ${wm ? '' : '<p class="muted fvnote" style="margin:0;font-size:12px">Making a call during a replay skips to the end of it.</p>'}
     ${st.pend === 'half' || st.done ? '' : `<div class="kv" style="margin-top:4px"><div><span class="lbl">Your run game</span><b class="num ${e.run >= 0 ? 'W' : 'L'}">${sg(e.run)}</b></div><div><span class="lbl">Your pass game</span><b class="num ${e.pass >= 0 ? 'W' : 'L'}">${sg(e.pass)}</b></div><div><span class="lbl">Their run game</span><b class="num ${e.oppRun <= 0 ? 'W' : 'L'}">${sg(e.oppRun)}</b></div><div><span class="lbl">Their pass game</span><b class="num ${e.oppPass <= 0 ? 'W' : 'L'}">${sg(e.oppPass)}</b></div></div>`}${seen ? notes : ''}</section>
   <section class="panel"><h3>Play by play</h3><ol class="fvfeed" id="cfvFeed"></ol></section></div>
@@ -22152,28 +22152,31 @@ if (typeof MutationObserver !== 'undefined' && typeof app !== 'undefined') {
 // ---------- career: watch your own games ----------
 // College: your game is staged and played out on the college field view, then the rest of the week is played.
 // Pro: the week is played and your game is shown on the broadcast from its log. Either way you can watch every snap,
-// or only yours: the snaps you're on the field for (by the jersey numbers logged for each snap) and any play that
-// names you (a kick, a return, a tackle on special teams).
+// or only yours. Linemen and defenders: every snap they're on the field for (by the jersey numbers logged for each
+// snap). Quarterbacks, backs, receivers and kickers: the plays that go through them (they're named in it: a throw,
+// a carry, a target, a sack, a kick or a return), so a quarterback doesn't sit through handoffs.
 const carPlaysMode = () => ui.carPlays || (() => { try { return STORE.getItem('hm-carplays') || 'all'; } catch (e) { return 'all'; } })();
 const carPlaysSeg = () => seg('carPlays', carPlaysMode(), [['all', 'All plays'], ['mine', 'My plays']]).replace(/data-act="seg"/g, 'data-act="carPlays"');
 // is this snap one of yours? (off: your team has the ball on it)
-function carMineTest(side, num, nm) {
+const CAR_TOUCH = ['QB', 'RB', 'WR', 'TE', 'K', 'P'];
+function carMineTest(side, num, nm, pos) {
+  const field = !CAR_TOUCH.includes(pos);
   return (e, off, txt) => {
     const jn = e && e.jn;
-    if (num != null && typeof jn === 'string' && jn.length === 44) for (let s = off ? 0 : 11; s < (off ? 11 : 22); s++) if (parseInt(jn.slice(s * 2, s * 2 + 2), 36) === num) return true;
+    if (field && num != null && typeof jn === 'string' && jn.length === 44) for (let s = off ? 0 : 11; s < (off ? 11 : 22); s++) if (parseInt(jn.slice(s * 2, s * 2 + 2), 36) === num) return true;
     return !!txt && txt.includes(nm);
   };
 }
 function carColMine(st) {
   if (!S().car || carPlaysMode() !== 'mine') return null;
   const p = HM.carPlayer(); if (!p) return null;
-  const side = st.h === p.tid ? 0 : 1, t = carMineTest(side, p.num, `${p.fn[0]}. ${p.ln}`);
+  const side = st.h === p.tid ? 0 : 1, t = carMineTest(side, p.num, `${p.fn[0]}. ${p.ln}`, p.pos);
   return x => t(x.e, x.d.o === side, HC().playTxt(x.e));
 }
 function carProMine(L) {
   if (carPlaysMode() !== 'mine') return null;
   const g = liveGame(), p = HM.carPlayer(); if (!g || !p) return null;
-  const side = g.home === p.tid ? 0 : 1, t = carMineTest(side, p.num, `${p.fn[0]}. ${p.ln}`);
+  const side = g.home === p.tid ? 0 : 1, t = carMineTest(side, p.num, `${p.fn[0]}. ${p.ln}`, p.pos);
   return e => t(e, e.p === side, e.d);
 }
 // watching only your plays in a game you never got into
