@@ -4433,7 +4433,7 @@ function startSeason() {
   }
   // trim FA pool
   const fas = freeAgents().filter(p => !p.car).sort((a, b) => pVal(b) - pVal(a));
-  for (const p of fas.slice(160)) delete S.players[p.id];
+  for (const p of fas.slice(160)) { stArchivePro(p); delete S.players[p.id]; }
   touchPlayers();
   for (const p of freeAgents()) setFaAsk(p, 1.0);
   // drop last season's play-by-play detail to keep saves small
@@ -8268,16 +8268,32 @@ function retireChance(p, rk) {
   if (p.tid === -1 && (p.age >= 30 && p.ovr < 58 || p.ovr < 47)) rp = Math.max(rp, 0.6);
   return clamp(rp, 0, 1);
 }
+// past seasons keep the lines of players who have left the league (retired, or released and never signed again),
+// so last year's leaders don't vanish from the stats pages (the lines that made a mark). Hall of Fame candidates keep their full stats on the retired record.
+function stQualifies(x) { const v = k => x[k] || 0; return v('pa') >= 150 || v('ra') >= 60 || v('rec') >= 25 || v('tkl') >= 40 || v('sck') >= 3 || v('dint') >= 2 || v('fga') >= 10 || v('pn') >= 30 || v('kr') + v('pr') >= 20 || v('prs') >= 20; } // (the ones who made a mark: enough for every leader board, not every depth player)
+const ST_ARCH_PRO = 'tid gp pa pc py ptd pint sk ra ry rtd rl rec tg rcy rctd rcl fum tkl sck dint fgm fga fgl xpm xpa pn pny kr kry krtd pr pry prtd fc db pEP psu xa xcp upa upc upy uptd upint rt tEP tsu drop yac btk rEP rsu yco pra sa prs mtk'.split(' '); // (only what the stats pages show)
+function stArchivePro(p) {
+  if (!p || !p.stats) return; const A = S.stArch || (S.stArch = {});
+  for (const y in p.stats) { const x = p.stats[y]; if (!x || !x.gp || x.tid == null || x.tid < 0 || !stQualifies(x)) continue; const L = A[y] || (A[y] = []); if (!L.some(e => e.pid === p.id)) { const st = {}; for (const k of ST_ARCH_PRO) if (x[k] || (k === 'tid' && x[k] != null)) st[k] = x[k]; L.push({ pid: p.id, fn: p.fn, ln: p.ln, pos: p.pos, st }); } }
+}
+// lines for one season from players no longer in the league: the kept retired records first, then the archive
+function formerStatRows(season) {
+  const out = [], seen = new Set();
+  for (const r of S.retired) { const x = r.stats && r.stats[season]; if (!x || !x.gp || S.players[r.id] || seen.has(r.id)) continue; seen.add(r.id); out.push({ p: { id: r.id, fn: r.fn ?? r.name.split(' ')[0], ln: r.ln ?? r.name.split(' ').slice(1).join(' '), pos: r.pos, gone: true, rid: r.id }, s: x }); }
+  for (const e of (S.stArch && S.stArch[season]) || []) { if (S.players[e.pid] || seen.has(e.pid)) continue; seen.add(e.pid); out.push({ p: { id: e.pid, fn: e.fn, ln: e.ln, pos: e.pos, gone: true, rid: S.retired.some(r => r.id === e.pid) ? e.pid : undefined }, s: e.st }); }
+  return out;
+}
 // returns true for a notable retirement
 function retirePlayer(p) {
   const car = careerTotals(p); let notable = false;
   if (car.gp >= 40 || p.ovr >= 75 || (car.gp || 0) + preLeagueGp(p) >= 40) { // (a veteran from before the league began: few box scores, a long career)
     S.retired.push({ id: p.id, colMine: p.colMine || undefined, name: fullName(p), fn: p.fn, ln: p.ln, pos: p.pos, age: p.age, s: S.season, car, teamLast: p.tid >= 0 ? team(p.tid).abbr : 'FA', byTeam: byTeamTotals(p), hon: (p.hon || []).slice(), stats: p.stats, hist: p.hist, draft: p.draft, col: p.col, peak: Math.max(p.ovr, ...(p.hist || []).map(h => h.ovr)), hofScore: hofScore(p, car), faceSeed: p.faceSeed, num: p.num });
-    const rr = S.retired[S.retired.length - 1]; honorFranchise(rr); if (rr.hofScore < 34) { delete rr.stats; delete rr.hist; }
+    const rr = S.retired[S.retired.length - 1]; honorFranchise(rr); if (rr.hofScore < 34) { stArchivePro(p); delete rr.stats; delete rr.hist; }
     notable = p.ovr >= 78 || car.gp >= 150; considerHof(p, car); maybeCoachCareer(p, car, rr);
     // some come back: keep a copy of good players who could still play
     if (p.ovr >= 68 && p.age <= 37 && car.gp >= 40 && p.farewell !== S.season) { S.retPool = (S.retPool || []).filter(x => x.s >= S.season - 2).slice(-9); const cp = JSON.parse(JSON.stringify(p)); delete cp.retQ; delete cp.prom; S.retPool.push({ s: S.season, p: cp }); }
   }
+  else stArchivePro(p);
   if (p.tid === S.userTid) news(`${fullName(p)} (${p.pos}, ${p.age}) announced his retirement.`, true);
   delete S.players[p.id]; touchPlayers();
   return notable;
@@ -10408,7 +10424,7 @@ function scholarships(tid) {
   return { max: COL_MAX, roster: r.length, commits: com, offers, leaving, xfer, used: r.length - leaving + com, next: r.length - leaving + com, open: Math.max(0, COL_MAX - (r.length - leaving + com) - offers) };
 }
 const portalLog = s => { const y = s ?? CS.season; if (CS.portal && y === CS.season) return (CS.portal.log || []).slice(); return (CS.portalHist && CS.portalHist[y]) || []; };
-function closePortal() { const n = {}; for (const t of CS.teams) n[t.tid] = croster(t.tid).length; const byPres = CS.teams.filter(t => t.tid !== CS.userTid).sort((a, b) => a.pres - b.pres); /* you only get players you offered */ for (const p of portalPlayers()) { const t = p.car && CS.car.bids && CS.car.bids.length ? cteam(CS.car.pick ?? CS.car.bids[0]) : byPres.find(x => n[x.tid] < COL_ROS_TOTAL); if (t) { p.tid = t.tid; n[t.tid] = (n[t.tid] || 0) + 1; touchC(); p.xfer = { s: CS.season, from: p.from }; } else { delete CS.players[p.id]; touchC(); } } portalWrap(); CS.portal = null; toOffseason(); }
+function closePortal() { const n = {}; for (const t of CS.teams) n[t.tid] = croster(t.tid).length; const byPres = CS.teams.filter(t => t.tid !== CS.userTid).sort((a, b) => a.pres - b.pres); /* you only get players you offered */ for (const p of portalPlayers()) { const t = p.car && CS.car.bids && CS.car.bids.length ? cteam(CS.car.pick ?? CS.car.bids[0]) : byPres.find(x => n[x.tid] < COL_ROS_TOTAL); if (t) { p.tid = t.tid; n[t.tid] = (n[t.tid] || 0) + 1; touchC(); p.xfer = { s: CS.season, from: p.from }; } else { stArchive(p); delete CS.players[p.id]; touchC(); } } portalWrap(); CS.portal = null; toOffseason(); }
 // ---------- offseason: graduation, the draft class, development ----------
 function toOffseason() {
   CS.phase = 'offseason';
@@ -10459,7 +10475,7 @@ function nextSeason() {
   for (const r of recruits()) { if (r.signed) { r.tid = r.commit; for (const k of ['int', 'off', 'vis', 'commit', 'signed', 'nilOff', 'pr', 'kn', 'tl', 'list', 'ovs', 'acts', 'cf', 'chase', 'chW', 'touch', 'hv', 'cfW', 'rk', 'early', 'scouted', 'nilAsk']) delete r[k]; r.age = 18; r.elig = 4; } else delete CS.players[r.id]; }
   touchC();
   CS.season++; coachNewYear(); CS.week = 1; CS.phase = 'season'; CS.hw = null; CS.cfp = []; CS.sel = null; CS.po = null; CS.bowls = []; CS.ccg = null; CS.recPts = recHours(CS.userTid); CS.visits = VISITS; CS.polls = []; CS.board = [];
-  for (const t of CS.teams) { t.rec = cblank(); fillRoster(t, false); const r = croster(t.tid); if (r.length > COL_MAX) r.sort((a, b) => a.ovr - b.ovr).slice(0, r.length - COL_MAX).forEach(p => delete CS.players[p.id]); touchC(); if (!isMe(t.tid)) autoRedshirt(t); }
+  for (const t of CS.teams) { t.rec = cblank(); fillRoster(t, false); const r = croster(t.tid); if (r.length > COL_MAX) r.sort((a, b) => a.ovr - b.ovr).slice(0, r.length - COL_MAX).forEach(p => { stArchive(p, true); delete CS.players[p.id]; }); touchC(); if (!isMe(t.tid)) autoRedshirt(t); }
   walkOnScholarships();
   for (const g of Object.values(CS.games)) if (g.s < CS.season) delete CS.games[g.gid];
   for (let i = 0, n = CS.teams.length * 20; i < n; i++) genRecruit(); starRecruits(); if (rnd() < 0.3) genRecruitGen();
@@ -14261,7 +14277,7 @@ return {
   get S() { return S; }, LEAGUE, CONFS, confName, setConfNames, setStartRules, setLeagueSize, packPro, applyPackPro, fdStart, fdView, fdUserPick, fdAutoPick, fdAutoRest, fdAdvance, fdAfford, progRep: () => S.progRep || null, progSeen: () => { if (S.progRep) S.progRep.seen = true; }, autoPlayStep, scoutProfile, userScout, SCOUT_SPEC, SCOUT_LEAN, devRep: () => S.devRep || null, devRepSeen: () => { if (S.devRep) S.devRep.seen = true; }, get fdOn() { return fdOn(); }, rosterCsv, importRoster, parseTable, rosterRows, PACK_RULE_KEYS, cleanLogo, DIVS, POS, POS_ORDER, ATTR, ROSTER_MIN, ROSTER_MAX, WEEKS, get TRADE_DEADLINE() { return tradeDeadline(); }, PO_ROUNDS,
   newLeague, setUser, save, load, simWeek, simToEndOfRegular, simPlayoffRound, reSign, toFreeAgency, faNextDay, toDraft, draftPlayer, aiDraftPick,
   simDraftToUser, simDraftToEnd, autoPickUser, startSeason, signPlayer, release, evaluateTrade, executeTrade, ensureDepth, teamRatings, roster, payroll, capRoom,
-  team, freeAgents, prospects, marketValue, tradeValue, userRosterIssue, confSeeds, divStandings, pct, phaseLabel, fullName, nm, careerTotals,
+  team, freeAgents, prospects, marketValue, tradeValue, userRosterIssue, confSeeds, divStandings, pct, phaseLabel, fullName, nm, careerTotals, formerStatRows,
   compactState, saveBreakdown, TV, GRADE_PTS, restructurePreview, restructure, payCutPreview, askPayCut, appealSuspension, mentorOf, menteeOf, canMentor, setMentor, endMentor, marketSize, MARKET_NAME, fanMood, merchLeaders, starMerch, rsFuture, GM_STYLES, GM_PHIL, rivalGm, relLabel, gmPremium, gmValue, gmPickValue, gmInterest, gmRead, GM_READS, dlMarket, dlNext, DL_DAYS, shopAround, shopTake, SHOP_WANTS, setDifficulty, DIFF, inCamp, rosterMax, CAMP_MAX, playPreseasonGame, finishCamp, cutCandidates, resolveBattles, treatInjury, rushBack, PRACTICE, practiceOf, setPractice, practiceEffects, setReturner, returnerScore, autoReturner, returnersFor, discLabel, AGGR_NAME, tendText, hcTend, coachProfile, coachTree, disputeAction, visitFA, marketInfo, onMarket, stEdge, SET_OPTS, SET_DEFAULT, setSimSetting, h2hFor, franchiseSeasonLeaders, SEASON_LEAD_KEYS, proComparison, GRADE_CURVE, OFF_CALLS, DEF_CALLS, CALL_TIPS, offScore, defScore, lineup, r1, draftScore, picksOf, pickValue, pickLabel, projSlot, deadFor, deadIfCut, capYear, passerRating, autoFixRoster, minSalary, seasonPayroll,
   active, available, PS_MAX, psSalary, psEligible, placeIR, activateIR, signToPS, promotePS, moveToPS,
   ROLES, ROLE_NAME, coachOf, coachRat, staffBudget, staffSpend, hireCoach, fireCoach, userStaffGaps, trainerMult,
@@ -15673,6 +15689,8 @@ function bracket() {
   return `<section class="panel"><h3>${s.season} playoffs</h3><div class="bracket">${cols.join('')}</div>${champ}</section>`;
 }
 
+// a player in a past season's stats who has left the league: his retired record if he has one, otherwise just the name
+const fplink = p => p && p.gone ? `${p.rid != null ? rlink(p.rid, (p.fn + ' ' + p.ln).trim()) : `<span title="No longer in the league">${E((p.fn + ' ' + p.ln).trim())}</span>`} <span class="muted" style="font-size:11px">(former)</span>` : plink(p);
 function statsView() {
   const s = S();
   const seasons = [...new Set([...s.history.map(h => h.s), s.season])].sort((a, b) => b - a);
@@ -15684,14 +15702,14 @@ function statsView() {
   else if (tab === 'adv') body = advStatsBody(season);
   else {
     const min = { pass: s => sv(s, 'pa') >= 50, rush: s => sv(s, 'ra') >= 20, rec: s => sv(s, 'rec') >= 8, def: s => sv(s, 'tkl') + sv(s, 'sck') + sv(s, 'dint') > 0, kick: s => sv(s, 'fga') + sv(s, 'xpa') > 0, punt: s => sv(s, 'pn') > 0, ret: s => sv(s, 'kr') + sv(s, 'pr') >= 5 }[tab];
-    let rows = Object.values(s.players).filter(p => p.stats[season] && min(p.stats[season])).map(p => ({ p, s: p.stats[season], __me: p.stats[season].tid === s.userTid }));
+    let rows = Object.values(s.players).filter(p => p.stats[season] && min(p.stats[season])).map(p => ({ p, s: p.stats[season], __me: p.stats[season].tid === s.userTid })).concat(HM.formerStatRows(season).filter(r => min(r.s)).map(r => ({ ...r, __me: r.s.tid === s.userTid })));
     if (ui.statMine) rows = rows.filter(r => r.__me);
     const def = { pass: 'py', rush: 'ry', rec: 'rcy', def: 'tkl', kick: 'fgm', punt: 'pny', ret: 'kry' }[tab];
-    const cols = [{ k: 'name', l: 'Player', f: r => plink(r.p), v: r => r.p.ln }, { k: 'pos', l: 'Pos', f: r => r.p.pos, v: r => r.p.pos }, { k: 'tm', l: 'Team', f: r => { const t = T(r.s.tid); return t ? chip(t) : ''; }, v: r => r.s.tid }]
+    const cols = [{ k: 'name', l: 'Player', f: r => fplink(r.p), v: r => r.p.ln }, { k: 'pos', l: 'Pos', f: r => r.p.pos, v: r => r.p.pos }, { k: 'tm', l: 'Team', f: r => { const t = T(r.s.tid); return t ? chip(t) : ''; }, v: r => r.s.tid }]
       .concat((STATCOLS[tab] || RET_COLS).map(([k, l, fn]) => ({ k, l, n: 1, f: r => fn ? fn(r.s) : sv(r.s, k), v: r => fn ? parseFloat(fn(r.s)) || 0 : sv(r.s, k) })));
     body = table('stat-' + tab, cols, rows, { sort: { k: def, d: 'desc' }, limit: 60, empty: 'No qualifying players yet.' });
   }
-  return `<div class="pagehead"><div><h2>League stats</h2><p>Regular season only. Leader boards use a minimum number of attempts.</p></div>
+  return `<div class="pagehead"><div><h2>League stats</h2><p>Regular season only. Leader boards use a minimum number of attempts. Players who have since retired or left the league stay in their old seasons, marked as former players.</p></div>
     <div class="row"><select id="statSeason" aria-label="Season">${seasons.map(y => `<option value="${y}" ${y === season ? 'selected' : ''}>${y}</option>`).join('')}</select>
     <button class="btn sm" data-act="seg" data-k="statMine" data-v="${ui.statMine ? '' : '1'}" aria-pressed="${!!ui.statMine}">${ui.statMine ? 'Showing my team' : 'My team only'}</button></div></div>
   <section class="panel"><div class="ph">${tabs}</div>${body}</section>`;
@@ -18877,7 +18895,7 @@ function advStatsBody(season) {
   if (sub === 'team') return `<div class="row" style="margin-bottom:8px">${tabs}</div>` + teamAdvBody(season);
   const min = { pass: x => sv(x, 'xa') >= 100, rec: x => sv(x, 'rt') >= 120, rush: x => sv(x, 'ra') >= 50, ol: x => sv(x, 'gp') >= 4, rushd: x => sv(x, 'prs') + sv(x, 'mtk') > 0 }[sub];
   const posOK = { pass: p => p.pos === 'QB', rec: p => ['WR', 'TE', 'RB'].includes(p.pos), rush: p => ['RB', 'QB'].includes(p.pos), ol: p => p.pos === 'OL', rushd: p => ['DL', 'LB', 'CB', 'S'].includes(p.pos) }[sub];
-  let rows = Object.values(s.players).filter(p => p.stats[season] && posOK(p) && min(p.stats[season])).map(p => ({ p, s: p.stats[season], __me: p.stats[season].tid === s.userTid }));
+  let rows = Object.values(s.players).filter(p => p.stats[season] && posOK(p) && min(p.stats[season])).map(p => ({ p, s: p.stats[season], __me: p.stats[season].tid === s.userTid })).concat(HM.formerStatRows(season).filter(r => posOK(r.p) && min(r.s)).map(r => ({ ...r, __me: r.s.tid === s.userTid })));
   if (ui.statMine) rows = rows.filter(r => r.__me);
   const n = (k, l, f, v) => ({ k, l, n: 1, f: r => f(r.s), v: r => { const x = v ? v(r.s) : parseFloat(f(r.s)); return isNaN(x) ? -999 : x; } });
   const cols = {
@@ -18892,7 +18910,7 @@ function advStatsBody(season) {
   }[sub];
   const def = { pass: 'cpoe', rec: 'yprr', rush: 'yco', ol: 'pra', rushd: 'prs' }[sub], dir = sub === 'ol' ? 'asc' : 'desc';
   const blurb = { pass: 'CPOE is completion percentage over expected: how often he completes passes compared with an average quarterback throwing the same throws (depth, coverage, receiver, pressure and weather). Pressure splits show passer rating on throws under pressure and from a clean pocket.', rec: 'Yards per route run counts every route on a pass play, not just targets, so it rewards receivers who produce when they are on the field. Drop rate is drops per target.', rush: 'Yards after contact per attempt and broken tackles show what the runner created himself, apart from the blocking.', ol: 'Pressures and sacks allowed are charged to the lineman who got beat. Fewer is better; sort by games to compare full-time starters.', rushd: 'Pressures include sacks. Missed tackles count tackles a runner or receiver broke.' }[sub];
-  return `<div class="row" style="margin-bottom:8px">${tabs}</div><p class="muted" style="font-size:12.5px;margin:0 0 10px">${blurb}</p>` + table('adv-' + sub, [{ k: 'name', l: 'Player', f: r => plink(r.p), v: r => r.p.ln }, { k: 'pos', l: 'Pos', f: r => r.p.pos, v: r => r.p.pos }, { k: 'tm', l: 'Team', f: r => { const t = T(r.s.tid); return t ? chip(t) : ''; }, v: r => r.s.tid }, { k: 'arch', l: 'Type', f: r => E(HM.archetype(r.p)), v: r => HM.archetype(r.p) }].concat(cols), rows, { sort: { k: def, d: dir }, limit: 60, empty: 'No qualifying players yet.' });
+  return `<div class="row" style="margin-bottom:8px">${tabs}</div><p class="muted" style="font-size:12.5px;margin:0 0 10px">${blurb}</p>` + table('adv-' + sub, [{ k: 'name', l: 'Player', f: r => fplink(r.p), v: r => r.p.ln }, { k: 'pos', l: 'Pos', f: r => r.p.pos, v: r => r.p.pos }, { k: 'tm', l: 'Team', f: r => { const t = T(r.s.tid); return t ? chip(t) : ''; }, v: r => r.s.tid }, { k: 'arch', l: 'Type', f: r => r.p.gone ? '<span class="muted">—</span>' : E(HM.archetype(r.p)), v: r => r.p.gone ? '' : HM.archetype(r.p) }].concat(cols), rows, { sort: { k: def, d: dir }, limit: 60, empty: 'No qualifying players yet.' });
 }
 function combineKV(c) {
   if (!c || c.skip || c.cone == null) return '';
