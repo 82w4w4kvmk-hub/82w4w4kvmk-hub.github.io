@@ -872,6 +872,24 @@ select[data-focus]{max-width:210px}
 .stype{font-size:12px;animation:spulse 1.6s ease-in-out infinite}
 @keyframes spulse{50%{opacity:.45}}
 @media (max-width:900px){.sgrid{grid-template-columns:minmax(0,1fr)}.sthread{margin-left:0}.sreply.sub{margin-left:20px}}
+.acard{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--panel)}
+.amsg{background:var(--panel2);border-radius:12px;padding:10px 12px;font-size:13.5px}
+.amsg.me{align-self:flex-end;max-width:80%;background:var(--markSoft);font-weight:500}
+.dmgrid{grid-template-columns:minmax(0,.9fr) minmax(0,1.6fr);align-items:start}
+.dmlist{display:flex;flex-direction:column;gap:2px}
+.dmrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;width:100%;text-align:left;background:none;border:0;border-radius:10px;padding:8px 10px;font:inherit;font-size:13.5px;color:var(--ink);cursor:pointer}
+.dmrow:hover{background:var(--panel2)}.dmrow.on{background:var(--markSoft)}
+.dmrow .pv{font-size:12.5px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dmdot{width:8px;height:8px;border-radius:50%;background:var(--mark)}
+.dmmsgs{display:flex;flex-direction:column;gap:6px;margin:12px 0;max-height:min(56vh,520px);overflow-y:auto;padding:2px}
+.dmb{max-width:80%;padding:8px 12px;border-radius:14px;font-size:13.5px;line-height:1.45;background:var(--panel2);overflow-wrap:anywhere;white-space:pre-wrap;align-self:flex-start}
+.dmb.me{align-self:flex-end;background:var(--mark);color:#14100A}
+.dmacts{gap:6px;flex-wrap:wrap;margin:6px 0}
+.pcq{font-size:17px;font-weight:600;line-height:1.4;margin:4px 0 12px}
+.pcopts{display:flex;flex-direction:column;gap:8px}
+.pcopts .btn{justify-content:flex-start;text-align:left;white-space:normal;font-weight:500;text-transform:none;letter-spacing:0;line-height:1.4;height:auto}
+.pcqa{border-left:2px solid var(--line);padding:2px 0 2px 12px;margin:8px 0 10px;font-size:13.5px}
+@media (max-width:900px){.dmgrid{grid-template-columns:minmax(0,1fr)}}
 .pill.tv{background:var(--accent);color:var(--accentInk)}
 @media (max-width:640px){.battle{grid-template-columns:34px minmax(0,1fr);}.battle > span:nth-child(3){display:none}}
 .plog .cm,.cmline{display:block;font-style:italic;color:var(--accent);font-size:12.5px;margin-top:2px}
@@ -9653,6 +9671,199 @@ function negPatience(pid, kind) {
   return { used, max: n.maxTries, left: Math.max(0, n.maxTries - used), low: p.neg && p.neg.key === negKey() ? p.neg.low || 0 : 0 };
 }
 // =====================================================================
+// GM ASSISTANT: ask in plain words ("find me a cheap startable corner") and get real players back.
+// The request becomes a search (position, budget, age, how good, trade or free agency): the game's own reader
+// handles it everywhere, and in the desktop app the AI model's reading of the words is merged in. The search runs on
+// the trade finder and the free agent list with the ratings you can see, and every answer is built from the game's
+// facts: the model may only phrase the pitch, and its words are checked against those facts.
+// =====================================================================
+
+const ASST_POS = { QB: /\b(qbs?\d?|quarterbacks?|signal ?callers?)\b/i, RB: /\b(rbs?\d?|running ?backs?|halfbacks?|tailbacks?|backs?)\b/i, WR: /\b(wrs?\d?|wide ?outs?|wide receivers?|receivers?|deep threats?|pass catchers?|playmakers?|slot)\b/i, TE: /\b(tes?\d?|tight ?ends?)\b/i, OL: /\b(ol|o-?line(men|man)?|offensive line(men|man)?|tackles?|guards?|centers?|lt|rt|linemen|protect (my|our|the) (qb|quarterback)|blind ?side|pass protect\w*)\b/i, DL: /\b(dl|d-?line(men|man)?|defensive line(men|man)?|edges?|edge rushers?|pass rushers?|dts?|defensive tackles?|defensive ends?|des?|nose ?tackles?|get after the (passer|quarterback|qb)|sacks?|pressure|run stuffers?)\b/i, LB: /\b(lbs?\d?|linebackers?|backers)\b/i, CB: /\b(cbs?\d?|corners?|cornerbacks?|db|dbs|nickel)\b/i, S: /\b(safet(y|ies)|ss|fs)\b/i, K: /\b(kickers?|k)\b/i, P: /\b(punters?)\b/i };
+const ASST_ROUND = { first: 1, '1st': 1, second: 2, '2nd': 2, third: 3, '3rd': 3, fourth: 4, '4th': 4, fifth: 5, '5th': 5, sixth: 6, '6th': 6, seventh: 7, '7th': 7 };
+// the game's own reading of a request; a follow-up ("younger", "cheaper") changes the last search instead of starting over
+function asstParse(text, prev) {
+  const s = String(text || '').toLowerCase(), q = {};
+  // "protect my quarterback" asks for a lineman, not a quarterback
+  const sq = s.replace(/\b(my|our|the|his) (qbs?|quarterbacks?|passer)\b/g, ' ');
+  const pos = Object.keys(ASST_POS).filter(k => ASST_POS[k].test(k === 'QB' ? sq : s) && !(k === 'RB' && /\b(defensive|corner|line|quarter)backs?\b/.test(s) && !/\b(running|half|tail) ?backs?\b/.test(s)));
+  if (pos.length) q.pos = pos;
+  if (/\b(cheap|cheaper|affordable|bargain|value|budget|inexpensive|low[- ]cost)\b/.test(s)) q.cheap = 1;
+  const m = s.match(/(?:under|below|less than|max|at most|no more than|<)\s*\$?\s*(\d+(?:\.\d+)?)\s*(m|mil|million)?\b/); if (m && +m[1] > 0 && +m[1] <= 80) q.maxSal = +m[1];
+  const ag = s.match(/(?:under|younger than|below)\s*(\d\d)\s*(?:years?)?(?: old)?\b/) || s.match(/\b(\d\d) or younger\b/); if (ag && +ag[1] >= 20 && +ag[1] <= 40) q.maxAge = +ag[1] - (/younger than|under|below/.test(ag[0]) ? 1 : 0);
+  if (/\b(young|younger|youth|rising|up-and-coming|prospect)\b/.test(s) && !q.maxAge) q.young = 1;
+  if (/\b(veteran|vet|proven|experienced|win-now)\b/.test(s)) q.vet = 1;
+  if (/\b(startable|starter|starting|start for us|start right away|plug and play|day one|day-one|instant)\b/.test(s)) q.need = 'start';
+  if (/\b(upgrade|better than|improve|star|stud|elite|pro bowl)\b/.test(s)) q.need = 'up';
+  if (/\b(backup|depth|insurance|rotational|cover for)\b/.test(s)) q.need = 'depth';
+  if (/\brookie (deal|contract|scale)\b/.test(s)) q.rookie = 1;
+  if (/\b(afford|fits? under the cap|cap space|cap room)\b/.test(s)) q.fit = 1;
+  if (/\b(short|one[- ]year|1[- ]year|rental|expiring)\b/.test(s)) q.maxYrs = 1;
+  if (/\b(long[- ]term|locked up|years of control|under contract)\b/.test(s)) q.minYrs = 3;
+  if (/\b(free agents?|free agency|sign|unsigned|on the street)\b/.test(s)) q.src = 'fa';
+  if (/\b(trade|trade for|acquire|deal for|on the block|shopping|available)\b/.test(s)) q.src = q.src === 'fa' ? 'both' : 'trade';
+  if (/\b(on the block|being shopped|shopping)\b/.test(s)) q.block = 1;
+  if (/\b(not|outside|out of|no one from|nobody from)\b[^.]{0,20}\b(my |our )?division\b/.test(s)) q.noDiv = 1;
+  const pk = s.match(/\b(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th|sixth|6th|seventh|7th)(?:[- ]round(?:er)?)?(?: pick)?\b/); if (pk && /\b(pick|round|rounder|for a|for an)\b/.test(s)) q.price = ASST_ROUND[pk[1]];
+  if (/\bmid[- ]round\b/.test(s)) q.price = 4; if (/\blate[- ]round\b/.test(s)) q.price = 6;
+  if (/\b(what would it take|what('?s| is) the price|how much would|what do they want|cost me)\b/.test(s)) q.ask = 1;
+  // a follow-up: no position and something to change keeps the last search
+  const follow = prev && !q.pos && Object.keys(q).length && (s.length < 60 || /\b(more|less|instead|now|also|too|again|older|younger|cheaper)\b/.test(s));
+  if (follow) {
+    const o = { ...prev, ...q };
+    if (/\bcheaper\b/.test(s)) { o.cheap = 1; o.cheaper = (prev.cheaper || 0) + 1; }
+    if (/\byounger\b/.test(s) && !q.maxAge) { o.young = 1; o.maxAge = Math.max(22, (prev.maxAge || 31) - 3); }
+    if (/\bolder\b/.test(s)) { delete o.young; delete o.maxAge; o.vet = 1; }
+    if (/\bbetter\b/.test(s)) o.need = 'up';
+    return o;
+  }
+  return q;
+}
+// the AI model's reading counts inside limits: numbers it reads must appear in the words
+function asstMerge(rule, m, text) {
+  if (!m || typeof m !== 'object') return rule;
+  const out = { ...rule };
+  // a small model marks every yes-or-no it's offered as yes, so it only fills in the position and the need, and only when the words name neither
+  if (!out.pos && Array.isArray(m.pos)) {
+    const L = m.pos.filter(p => POS[p] && p !== 'K' && p !== 'P');
+    if (L.length) { out.pos = L.slice(0, 2); if (!out.need && ['start', 'up', 'depth'].includes(m.need)) out.need = m.need; }
+  }
+  return out;
+}
+// "the price": the other team's ask, as the pick it is worth, never the number
+function asstPriceWords(v) {
+  return v >= 60 ? 'more than a first-round pick' : v >= 32 ? 'about a first-round pick' : v >= 16 ? 'a late first or an early second-round pick' : v >= 8 ? 'about a second-round pick' : v >= 3.5 ? 'about a third-round pick' : v >= 1.8 ? 'a mid-round pick' : 'a late-round pick or a backup';
+}
+const ASST_PRICE = { 1: 60, 2: 16, 3: 8, 4: 3.5, 5: 2.2, 6: 1.8, 7: 1.5 };
+// league salaries at a position: what "cheap" means there
+function asstPosSal(pos) {
+  const L = allPlayers().filter(p => p.tid >= 0 && p.pos === pos && !p.ps), st = [];
+  for (const t of S.teams) { const d = (lineup(t)[pos] || []).slice(0, POS[pos].start); for (const p of d) st.push(p.contract.sal); }
+  const a = st.length ? st : L.map(p => p.contract.sal); a.sort((x, y) => x - y);
+  return a.length ? a[Math.floor(a.length / 2)] : 5;
+}
+// the search: real players, scored for what was asked
+function asstSearch(q) {
+  const u = S.userTid, ut = team(u), L = lineup(ut), room = capRoom(u), out = [];
+  const pos = q.pos && q.pos.length ? q.pos : POS_ORDER.filter(p => p !== 'K' && p !== 'P');
+  const phaseFa = S.phase === 'fa' || S.phase === 'resign';
+  const src = q.src || (phaseFa ? 'both' : 'trade');
+  const closed = S.phase === 'playoffs' || (S.phase === 'regular' && S.week > tradeDeadline());
+  for (const ps of pos) {
+    const mine = (L[ps] || []).slice(0, POS[ps].start), weakest = mine.length < POS[ps].start ? 0 : Math.min(...mine.map(p => p.ovr)), wp = mine.length ? mine.reduce((a, b) => (a.ovr <= b.ovr ? a : b)) : null;
+    const bk = (L[ps] || [])[POS[ps].start] || null;
+    const med = asstPosSal(ps), cheapCap = q.maxSal || (q.cheap ? med * Math.pow(0.6, 1 + (q.cheaper || 0)) * (1 + (q.loose || 0) * 0.5) : null);
+    const pool = [];
+    if (src !== 'fa' && !closed) for (const p of allPlayers()) if (p.tid >= 0 && p.tid !== u && p.pos === ps && !p.ps && !(p.contract && p.contract.ntc) && !(p.inj > 4)) pool.push({ p, src: 'trade' });
+    if (src !== 'trade') for (const p of freeAgents()) if (p.pos === ps && p.ask) pool.push({ p, src: 'fa' });
+    for (const x of pool) {
+      const p = x.p, sal = x.src === 'fa' ? p.ask.sal : p.contract.sal, yrs = x.src === 'fa' ? p.ask.yrs : p.contract.yrs;
+      if (cheapCap && sal > cheapCap + 0.01) continue;
+      if (q.maxAge && p.age > q.maxAge + (q.loose || 0) * 2) continue;
+      if (q.young && !q.maxAge && p.age > 26) continue;
+      if (q.vet && p.age < 27) continue;
+      if (q.rookie && !(x.src === 'trade' && p.contract.rk)) continue;
+      if (q.maxYrs && yrs > q.maxYrs) continue; if (q.minYrs && yrs < q.minYrs) continue;
+      if (q.noDiv && x.src === 'trade' && team(p.tid).div === ut.div) continue;
+      const up = p.ovr - weakest;
+      if (q.need === 'up' ? up < 3 : q.need === 'depth' ? !(p.ovr > (bk ? bk.ovr : 0) && up < 3) : up < (q.need === 'start' ? 0 : -2) - (q.loose || 0) * 3) continue;
+      const blk = x.src === 'trade' && onAiBlock(p), cost = x.src === 'trade' ? r1(gmValue(p.tid, p) * blockDisc(p.tid, p) * gmPremium(p.tid) + 0.3) : 0;
+      if (q.block && !blk) continue;
+      if (q.price && x.src === 'trade' && cost > ASST_PRICE[q.price]) continue;
+      if (q.price && x.src === 'fa') continue;
+      const a = x.src === 'fa' ? faAppeal(p, u) : null, pay = x.src === 'fa' ? r1(sal * (1 - (a ? a.d : 0))) : sal;
+      // what makes him a good answer: how much better, what he costs, how hard he is to get
+      // "cheap" means cheap to get, too: what his team wants counts as much as his salary
+      let sc = up * 1.2 + (q.cheap || q.maxSal ? (med - sal) / Math.max(1, med) * 10 : -sal / Math.max(1, med) * 2) + (q.young ? (27 - p.age) * 0.8 : 0) + (blk ? 3 : 0) - (x.src === 'trade' ? cost / (q.cheap || q.price ? 3 : q.need === 'up' ? 16 : 8) : 0) + (q.vet ? Math.min(p.age, 31) * 0.1 : 0);
+      if (pay > room + 0.01) { if (q.fit) continue; if (x.src === 'fa') sc -= 6; }
+      sc -= Math.max(0, p.age - 29) * 0.6;
+      out.push({ p, pid: p.id, src: x.src, tid: x.src === 'fa' ? -1 : p.tid, pos: ps, sal, yrs, pay, up, weakest, wp: wp ? wp.id : null, blk, why: blk ? ((aiBlocks()[p.tid] || []).find(y => y.pid === p.id) || {}).why : null, cost, price: x.src === 'trade' ? asstPriceWords(cost) : null, fits: pay <= room + 0.01, sc });
+    }
+  }
+  return { rows: out.sort((a, b) => b.sc - a.sc), closed, src };
+}
+// in plain words: what the search looked for
+function asstRead(q) {
+  const L = [];
+  L.push(q.pos && q.pos.length ? q.pos.join(' or ') : 'any position');
+  if (q.need === 'start') L.push('would start for you'); else if (q.need === 'up') L.push('a real upgrade'); else if (q.need === 'depth') L.push('depth');
+  if (q.maxSal) L.push(`under $${q.maxSal}M`); else if (q.cheap) L.push(q.cheaper ? 'cheaper' : 'cheap for the position');
+  if (q.maxAge) L.push(`${q.maxAge} or younger`); else if (q.young) L.push('young');
+  if (q.vet) L.push('a proven veteran');
+  if (q.rookie) L.push('on a rookie deal');
+  if (q.fit) L.push('fits your cap space');
+  if (q.maxYrs) L.push('a short deal'); if (q.minYrs) L.push('years of control');
+  if (q.block) L.push('on the block');
+  if (q.noDiv) L.push('outside your division');
+  if (q.price) L.push(`for about a round ${q.price} pick`);
+  L.push(q.src === 'fa' ? 'free agents' : q.src === 'trade' ? 'trades' : 'trades and free agents');
+  return L;
+}
+// a player's facts, the only things a pitch may say
+function asstFacts(r) {
+  const p = r.p, me = S.players[r.wp], t = r.src === 'trade' ? team(r.tid) : null;
+  const L = [`${p.fn} ${p.ln}, ${p.pos}, age ${p.age}, ${t ? `plays for ${t.city} ${t.name}` : 'a free agent'}.`];
+  // what he does well and badly, from his ratings in words: given nothing, the model makes up "elite speed"
+  const ks = POS[p.pos].attrs.slice().sort((a, b) => p.a[b] - p.a[a]);
+  if (ks.length >= 3) L.push(`Best at: ${ATTR[ks[0]].toLowerCase()} and ${ATTR[ks[1]].toLowerCase()}. Weakest at: ${ATTR[ks[ks.length - 1]].toLowerCase()}.`);
+  L.push(r.src === 'fa' ? `Asking $${p.ask.sal}M a year for ${p.ask.yrs} ${p.ask.yrs === 1 ? 'year' : 'years'}${r.pay < p.ask.sal ? `; would likely take about $${r.pay}M from you` : ''}.` : `Contract: $${r.sal}M a year, ${r.yrs} ${r.yrs === 1 ? 'year' : 'years'} left${p.contract.rk ? ' (rookie deal)' : ''}.`);
+  L.push(r.weakest ? (r.up > 0 ? `Better than ${me ? `${me.fn} ${me.ln}, your weakest starter at ${p.pos}` : 'your weakest starter there'}.` : r.up >= -2 ? `About as good as ${me ? `${me.fn} ${me.ln}, your weakest starter at ${p.pos}` : 'your weakest starter there'}.` : 'A backup for you.') : `You have a hole at ${p.pos}; he would start.`);
+  if (r.src === 'trade') L.push(r.blk ? `His team is shopping him: ${String(r.why || '').toLowerCase()}.` : 'His team is not shopping him.');
+  if (r.price) L.push(`Price: ${r.price}.`);
+  if (!r.fits) L.push(r.src === 'fa' ? 'He costs more than your cap space.' : 'His salary is more than your cap space unless you send salary back.');
+  return L.join(' ');
+}
+// the pitch in the game's words; the AI model writes over it in the desktop app
+function asstPitch(r) {
+  const p = r.p, me = S.players[r.wp];
+  const a = r.weakest ? (r.up > 0 ? `Would start over ${me ? me.ln : 'your weakest starter'} right away.` : r.up >= -2 ? `Would push ${me ? me.ln : 'your starter'} for the job.` : 'Solid depth.') : 'Fills a hole in your lineup.';
+  const b = r.src === 'fa' ? (r.pay < p.ask.sal ? 'He likes your situation, so he might come a little cheaper.' : 'He would sign at his asking price.') : r.blk ? `${team(r.tid).abbr} is shopping him.` : `${team(r.tid).abbr} isn't shopping him, so it'll cost you.`;
+  return `${a} ${b}`;
+}
+function gmAsk(text, prev, modelQ) {
+  if (!S || S.userTid == null) return { err: 'No team to work for.' };
+  const raw = String(text || '').trim(); if (!raw) return { err: 'Ask me something.' };
+  let q = asstMerge(asstParse(raw, prev), modelQ, raw);
+  // "what would it take?" about the last answer
+  if (q.ask && prev && prev.top == null) return { text, q: prev, ask: { msg: 'Which player? Ask me for one first, then I can find out what his team wants.' } };
+  if (q.ask && prev && prev.top != null) {
+    const t = S.players[prev.top]; if (!t) return { err: 'That player is gone.' };
+    if (t.tid === -1) return { text, q: prev, ask: { pid: t.id, fa: true, msg: `${t.fn} ${t.ln} is a free agent: no trade needed. He's asking $${t.ask ? t.ask.sal : '?'}M a year. Open negotiations to see what he'll take.` } };
+    const r = tradeAsk(t.id); if (!r.ok) return { text, q: prev, ask: { pid: t.id, msg: r.msg } };
+    const give = r.give.map(id => S.players[id]).filter(Boolean).map(x => `${x.pos} ${x.fn} ${x.ln}`), pk = r.givePk.map(id => (S.picks || []).find(x => x.id === id)).filter(Boolean).map(x => `your ${pickLabel(x)} pick`);
+    return { text, q: prev, ask: { pid: t.id, ok: true, give: r.give, givePk: r.givePk, tid: r.tid, msg: `${team(r.tid).abbr} would do ${t.ln} for ${[...give, ...pk].join(', ') || 'what you have'}.${r.starters ? ' It includes a starter of yours.' : ''}` } };
+  }
+  if (!q.pos && !prev && !Object.keys(q).length) return { text, q, read: [], rows: [], none: 'Tell me a position or what you need, like "a cheap startable corner" or "a young pass rusher on a rookie deal".' };
+  let res = asstSearch(q), loose = 0;
+  // nobody fits exactly: bend the budget, the age and the bar a little and say so
+  while (!res.rows.length && loose < 2 && !(res.closed && res.src === 'trade')) { loose++; res = asstSearch({ ...q, loose }); }
+  const rows = res.rows.slice(0, 5);
+  for (const r of rows) r.pitch = asstPitch(r);
+  const none = rows.length ? null : res.closed && res.src === 'trade' ? 'The trade deadline has passed. Ask about free agents instead.' : 'Nobody fits all of that. Loosen something: the budget, the age, or how good he has to be.';
+  q.top = rows.length ? rows[0].pid : null;
+  return { text, q, read: asstRead(q), loose: rows.length && loose ? 'Nobody fit all of that exactly. These are the closest, with a little give on the budget, the age or how good he is.' : null, rows: rows.map(r => ({ pid: r.pid, src: r.src, tid: r.tid, pos: r.pos, sal: r.sal, yrs: r.yrs, pay: r.pay, up: r.up, blk: r.blk, why: r.why, price: r.price, fits: r.fits, pitch: r.pitch, facts: asstFacts(r) })), none };
+}
+// the AI model's jobs: read the request, then phrase the pitches
+const ASST_SYS = 'You work for the general manager of a pro football team in a video game, as his personnel assistant. Be brief and concrete.';
+function gmAskPrompt(text, prev) {
+  // the game's reader handles budgets, ages and the rest; the model only answers what the words leave open: which position, and how good
+  const user = `The general manager asked: "${String(text).slice(0, 300)}"${prev ? `\nHis last search was: ${asstRead(prev).join(', ')}.` : ''}\n\nWhich position is he looking for? QB (quarterback), RB (running back), WR (wide receiver, deep threat, slot), TE (tight end), OL (offensive line: tackles, guards, centers, someone to protect the quarterback), DL (defensive line: edge rushers, pass rushers, defensive tackles), LB (linebacker), CB (cornerback), S (safety), K, P. Usually one position. A position he only mentions as context (his own quarterback he wants protected) is not the one he wants.\nneed: start (someone who would start), up (a big upgrade or a star), depth (a backup), or none if he did not say.\n\nAnswer with JSON.`;
+  return { system: ASST_SYS, user, schema: { type: 'object', properties: { pos: { type: 'array', items: { enum: POS_ORDER }, minItems: 1, maxItems: 2 }, need: { enum: ['start', 'up', 'depth', 'none'] } }, required: ['pos', 'need'] }, maxTokens: 40, temperature: 0.1 };
+}
+function gmPitchPrompt(ans) {
+  if (!ans || !ans.rows || !ans.rows.length) return null;
+  const user = `The general manager asked: "${String(ans.text).slice(0, 300)}"\n\nFor each player, write a one or two sentence pitch to the GM, in a scout's voice, using only that player's facts. Describe his game only with what he is best and weakest at; never add other skills, traits or roles (like left tackle or deep threat) that his facts don't name. No numbers except the ones in his facts.\n\n${ans.rows.map((r, i) => `${i + 1}. ${r.facts}`).join('\n')}\n\nAnswer with JSON: {"pitches": ["pitch 1", ...]} with exactly ${ans.rows.length} pitches in that order.`;
+  return { system: ASST_SYS + ' Never invent stats, injuries, ratings or trade talks. No em dashes.', user, schema: { type: 'object', properties: { pitches: { type: 'array', items: { type: 'string', maxLength: 260 }, minItems: ans.rows.length, maxItems: ans.rows.length } }, required: ['pitches'] }, maxTokens: 70 * ans.rows.length + 30, temperature: 0.6 };
+}
+// a pitch is kept only if it sticks to that player's facts
+function gmPitchCheck(text, facts) {
+  let t = String(text == null ? '' : text).replace(/\s+/g, ' ').trim().replace(/^\d+[.)]\s*/, '').replace(/\s*[—–]\s*/g, ', ');
+  if (t.length < 10 || t.length > 300) return null;
+  if (/\b(rating|ratings|overall|ovr|fame|video game|as an ai|language model)\b|[{}[\]<]/i.test(t)) return null;
+  const nums = new Set(String(facts).match(/\d+(\.\d+)?/g) || []);
+  for (const m of t.matchAll(/\d+(\.\d+)?/g)) if (!nums.has(m[0])) return null;
+  return t;
+}
+// =====================================================================
 // COLLEGE MODE: a separate game. You coach a school: recruit, redshirt, work the transfer portal,
 // spend NIL money, climb the polls and chase the 12-team playoff. Players who leave become a draft
 // class that a pro league can import. Its state (CS) never touches the pro league (S).
@@ -12930,7 +13141,7 @@ function carAfterStep() {
     carTrust(p);
     if (c.stage === 'col') carSnapCollege();
     if (c.stage === 'pro') carSnapPro();
-    if (c.stage === 'pro' && S.phase === 'regular' && p.tid >= 0) c.money.sal = r1((c.money.sal || 0) + p.contract.sal / 18);
+    if (c.stage === 'pro' && S.phase === 'regular' && p.tid >= 0) { c.money.sal = r1((c.money.sal || 0) + p.contract.sal / 18); if (mxAgFee()) c.money.fee = (c.money.fee || 0) + p.contract.sal / 18 * mxAgFee(); }
     if (c.stage === 'col' && inSeason) c.money.nil = r1((c.money.nil || 0) + (p.nil || 0) / 14 + c.fame * 0.00008);
   }
   socStep();
@@ -13257,8 +13468,8 @@ function carEventChoose(i) {
   if (f.fame) carFame(f.fame);
   if (f.xp && p) carSkillGainPts(f.xp, null, p);
   if (f.nil) { c.money.nil = r1((c.money.nil || 0) + f.nil); msg += ` Earned $${Math.round(f.nil * 1000)}K.`; }
-  if (f.end) { const amt = r1(0.5 + c.fame / 40); c.money.end = r1((c.money.end || 0) + amt); msg += ` A $${amt}M deal.`; }
-  if (f.endRisk) { if (rnd() < 0.5) { const amt = r1(1 + c.fame / 30); c.money.end = r1((c.money.end || 0) + amt); msg += ` It worked: they came back with $${amt}M.`; } else msg += ' They signed someone else.'; }
+  if (f.end) { const amt = r1((0.5 + c.fame / 40) * mxAgEnd()); c.money.end = r1((c.money.end || 0) + amt); msg += ` A $${amt}M deal.`; }
+  if (f.endRisk) { if (rnd() < 0.5) { const amt = r1((1 + c.fame / 30) * mxAgEnd()); c.money.end = r1((c.money.end || 0) + amt); msg += ` It worked: they came back with $${amt}M.`; } else msg += ' They signed someone else.'; }
   if (f.buzz && p) { for (const t in p.int) p.int[t] = clamp(p.int[t] + f.buzz, 0, 100); c.hs.buzz = (c.hs.buzz || 0) + f.buzz; }
   if (f.risk && rnd() < f.risk) {
     if (f.riskKind === 'academic') { msg += ' You fell behind in class and sat out a game while you caught up.'; c.trust = clamp(c.trust - 4, 0, 100); if (p) p.inj = Math.max(p.inj || 0, 1); }
@@ -13286,7 +13497,7 @@ function carFinishDraft() { if (S.phase === 'draft') { simDraftToEnd(); } autoFi
 // ---------- contracts ----------
 function carResignOffer(p, wants) {
   const c = S.car; if (!c) return;
-  const sal = r1(Math.max(vetMin(p), marketValue(p) * (0.9 + rnd() * 0.12))), yrs = askYears(p);
+  const sal = r1(Math.max(vetMin(p), marketValue(p) * mxAgMul() * (0.9 + rnd() * 0.12))), yrs = askYears(p);
   c.re = { tid: p.tid, ok: !!wants, sal, yrs };
   carLog(wants ? `The ${team(p.tid).name} offered a new deal: ${yrs} years, $${sal}M a year.` : `The ${team(p.tid).name} don't plan to re-sign you.`, 'money');
 }
@@ -13299,7 +13510,7 @@ function carResign(accept) {
 }
 function carExtOffer(p, tid) {
   const c = S.car; if (!c || c.ext) return;
-  const sal = r1(Math.max(p.contract.sal, marketValue(p) * (1 + rnd() * 0.08))), yrs = 1 + clamp(askYears(p), 2, 4);
+  const sal = r1(Math.max(p.contract.sal, marketValue(p) * mxAgMul() * (1 + rnd() * 0.08))), yrs = 1 + clamp(askYears(p), 2, 4);
   c.ext = { tid, sal, yrs, s: S.season }; carLog(`The ${team(tid).name} offered an extension: ${yrs} years, $${sal}M a year.`, 'money');
 }
 function carExtend(accept) {
@@ -13311,7 +13522,8 @@ function carExtend(accept) {
 function carFaOffers(fresh) {
   const c = S.car, p = S.players[c.pid]; if (!p) return [];
   const key = `${S.season}|${S.phase}|${S.faDay || 0}|${S.week || 0}`; if (!fresh && c.fa && c.fa.k === key) return c.fa.offers;
-  const mv = marketValue(p), out = [];
+  // an agent gets you a little more
+  const mv = marketValue(p) * mxAgMul(), out = [];
   // a record of blowups online scares some teams off and lowers what the rest will pay
   const pen = socCharPen();
   for (const t of shuffle(S.teams.slice())) {
@@ -13483,7 +13695,7 @@ function socStatus(c, p, inCol, o) {
   const L = [];
   if (c.stage === 'col' && p) {
     const yr = clamp(4 - (p.elig || 4) + 1, 1, 5), cls = ['freshman', 'sophomore', 'junior', 'senior', 'senior'][yr - 1];
-    L.push(`a ${p.rsUsed ? 'redshirt ' : p.rs ? 'true ' : ''}${cls}`);
+    L.push(`a ${cls}`);
   }
   if (c.stage === 'pro' && p && p.draft && p.draft.year === S.season) L.push('a rookie');
   if (o.role === 'redshirting') L.push('redshirting this season: he practices with the team but sits out the games to save a year of eligibility');
@@ -13508,7 +13720,7 @@ function socCtx() {
   if (t) {
     const mates = (inCol ? COLLEGE.roster(t.tid) : roster(t.tid)).filter(x => x !== p && x.id !== (p && p.id)).sort((a, b) => b.ovr - a.ovr);
     const same = mates.filter(x => x.pos === c.pos).slice(0, 2), qb = c.pos !== 'QB' ? mates.filter(x => x.pos === 'QB').slice(0, 1) : [];
-    o.mates = [...new Set([...same, ...qb, ...mates.slice(0, 5)])].slice(0, 7).map(x => ({ id: x.id, name: `${x.fn} ${x.ln}`, ln: x.ln, pos: x.pos }));
+    o.mates = [...new Set([...same, ...qb, ...mates.filter(x => x.pos !== 'K' && x.pos !== 'P').slice(0, 5)])].slice(0, 7).map(x => ({ id: x.id, name: `${x.fn} ${x.ln}`, ln: x.ln, pos: x.pos }));
     const depth = (inCol ? COLLEGE.roster(t.tid) : roster(t.tid)).filter(x => x.pos === c.pos).sort((a, b) => (b.ovr + (b.cb || 0)) - (a.ovr + (a.cb || 0)));
     const start = inCol ? COLLEGE.COL_START[c.pos] : POS[c.pos].start; o.role = p && depth.indexOf(p) >= 0 && depth.indexOf(p) < start ? 'starter' : 'backup';
     if (p && p.rs) o.role = 'redshirting';
@@ -13863,8 +14075,8 @@ function socFx(post, ctx) {
     // out of line: suspensions, fines, lost deals
     if (lab.sev >= 4) {
       const g = lab.threat ? 4 : 2; fx.susp = g; trust(-30); fame(-12); fx.endBan = 2; fx.flag = 1;
-      fx.notes.push(`${lab.threat ? 'A threat' : 'A slur'} in a public post: ${col || hs ? 'the school' : 'the team'} suspended you ${g} games${pro ? ' without pay' : ''}, and sponsors are pulling out.`);
-      post.removed = true;
+      fx.notes.push(`${lab.threat ? 'A threat' : 'A slur'} ${socWhere(post)}: ${col || hs ? 'the school' : 'the team'} suspended you ${g} games${pro ? ' without pay' : ''}, and sponsors are pulling out.`);
+      if (!post.by) post.removed = true;
     } else if (big && ['coach', 'org', 'team'].includes(tg)) {
       fx.susp = 1; fx.notes.push(`${col ? 'The coaches' : hs ? 'Your high school coach' : 'The team'} suspended you for the next game for conduct detrimental to the team.`); fx.endBan = 1;
     } else if (big && tg === 'fans') fx.endBan = 1;
@@ -13896,7 +14108,7 @@ function socApply(fx, post, ctx) {
   if (fx.endBan) so.endBan = carSeason() + fx.endBan - 1;
   if (fx.mate) { const m = (ctx.mates || []).find(x => x.name === fx.mate); const mp = m && (socInCol() ? COLLEGE.S.players[m.id] : S.players[m.id]); if (mp && mp.mor != null) mp.mor = clamp(mp.mor - (lab.sev >= 3 ? 14 : 8), 0, 100); so.beef = so.beef || {}; so.beef[fx.mate] = (so.beef[fx.mate] || 0) + 1; }
   if (lab.sev >= 2 && pro && p && p.tid >= 0 && lab.tgt === 'team') for (const x of roster(p.tid)) if (x !== p && x.mor != null) x.mor = clamp(x.mor - (lab.sev >= 4 ? 5 : 2), 0, 100);
-  if (lab.sev >= 2 && !['refs', 'media', 'troll'].includes(lab.tgt) || lab.sev >= 4) so.inc.push({ s: ctx.season, stage: c.stage, sev: lab.sev, tgt: lab.tgt, text: post.text.slice(0, 90), pid: post.id });
+  if (lab.sev >= 2 && !['refs', 'media', 'troll'].includes(lab.tgt) || lab.sev >= 4) so.inc.push({ s: ctx.season, stage: c.stage, sev: lab.sev, tgt: lab.tgt, text: (post.q || post.text).slice(0, 90), pid: post.id });
   if (fx.flag) so.flag = (so.flag || 0) + 1;
   // three serious incidents in one pro season: the team has seen enough
   if (pro && p && p.tid >= 0 && lab.sev >= 3 && so.cut !== ctx.season && so.inc.filter(x => x.s === ctx.season && x.stage === 'pro' && x.sev >= 3).length >= 3) {
@@ -13904,7 +14116,7 @@ function socApply(fx, post, ctx) {
   }
   if (fx.fallout) so.out.push({ post: post.id, due: so.n + 1 });
   const tw = { coach: 'the coaching staff', team: fx.mate ? fx.mate : 'teammates', org: col ? 'the program' : 'the front office', fans: 'the fans', refs: 'the officials', media: 'the media', troll: 'a troll', opp: ctx.last ? ctx.last.oppShort : 'an opponent' }[lab.tgt];
-  if (lab.sev >= 2) carLog(`A post aimed at ${tw || 'everyone'} blew up online (${lab.sev >= 4 ? 'way out of line' : lab.sev >= 3 ? 'out of line' : 'controversial'}).${fx.notes.length ? ' ' + fx.notes.join(' ') : ''}`, 'social');
+  if (lab.sev >= 2) carLog(`${post.about === 'press' ? `What you said about ${tw || 'everyone'} at the podium` : post.about === 'leak' ? `A DM aimed at ${tw || 'everyone'}` : `A post aimed at ${tw || 'everyone'}`} blew up online (${lab.sev >= 4 ? 'way out of line' : lab.sev >= 3 ? 'out of line' : 'controversial'}).${fx.notes.length ? ' ' + fx.notes.join(' ') : ''}`, 'social');
   else if (fx.notes.length) carLog(fx.notes.join(' '), 'social');
 }
 
@@ -13920,14 +14132,17 @@ function socStep() {
     if (post && !post.del) c.dec = socFalloutDec(post);
   }
   so.out = so.out.filter(x => { const p = so.posts.find(y => y.id === x.post); return p && !p.del; });
+  mxStep();
   // trolls who have watched you win for years come around
   const s = carSeason();
   if (so.lastS !== s) { so.lastS = s; for (const t of so.trolls) if (!t.blocked && !t.turned && s - t.since >= 2 && c.fame >= 60 && rnd() < 0.25) t.turned = true; }
 }
+const socWhere = post => (post.about === 'press' ? 'at a press conference' : post.about === 'leak' ? 'in a message that got out' : 'in a public post');
 function socFalloutDec(post) {
   const c = S.car, lab = post.lab, ctx = socCtx(), who = c.stage === 'hs' ? 'Your high school coach and two college recruiters' : ctx.coach ? `${c.stage === 'col' ? 'Coach' : 'Head coach'} ${ctx.coach.split(' ').pop()}` : 'The team';
-  const what = lab.sev >= 4 ? 'The post is everywhere, and the statement from the team is already out.' : lab.tgt === 'coach' ? 'He saw what you posted about the staff.' : lab.tgt === 'team' ? `Your teammates saw it${lab.mate ? `, ${lab.mate} included` : ''}.` : lab.tgt === 'fans' ? 'The fans are furious, and the marketing people are calling.' : lab.tgt === 'org' ? 'Upstairs saw it.' : 'It is all anyone is talking about.';
-  return { id: 'soc', post: post.id, title: 'Your post blew up', body: `${who} ${c.stage === 'hs' ? 'want' : 'wants'} to see you. ${what} "${post.text.length > 120 ? post.text.slice(0, 117) + '…' : post.text}"`, opts: [['Apologize publicly', 'sorry'], ['Delete it and say nothing', 'quiet'], ['Stand by it', 'stand']] };
+  const what = lab.sev >= 4 ? 'The post is everywhere, and the statement from the team is already out.' : lab.tgt === 'coach' ? `He saw what you ${post.q ? 'said' : 'posted'} about the staff.` : lab.tgt === 'team' ? `Your teammates saw it${lab.mate ? `, ${lab.mate} included` : ''}.` : lab.tgt === 'fans' ? 'The fans are furious, and the marketing people are calling.' : lab.tgt === 'org' ? 'Upstairs saw it.' : 'It is all anyone is talking about.';
+  const said = post.q || post.text;
+  return { id: 'soc', post: post.id, title: post.about === 'press' ? 'Your comments blew up' : post.about === 'leak' ? 'Your DM got out' : 'Your post blew up', body: `${who} ${c.stage === 'hs' ? 'want' : 'wants'} to see you. ${what} "${said.length > 120 ? said.slice(0, 117) + '…' : said}"`, opts: [['Apologize publicly', 'sorry'], [post.q ? 'Say nothing more' : 'Delete it and say nothing', 'quiet'], ['Stand by it', 'stand']] };
 }
 function socFallout(d, v) {
   const c = S.car, so = socS(), post = so.posts.find(x => x.id === d.post), p = carPlayer(), ctx = socCtx(); if (!post) return null;
@@ -13936,12 +14151,12 @@ function socFallout(d, v) {
   if (v === 'sorry') {
     if (!hs) c.trust = clamp(r1(c.trust + lost * 0.5), 0, 100); carFame(-0.5);
     if (post.fx && post.fx.mate) { const m = (ctx.mates || []).find(x => x.name === post.fx.mate), mp = m && (socInCol() ? COLLEGE.S.players[m.id] : S.players[m.id]); if (mp && mp.mor != null) mp.mor = clamp(mp.mor + 6, 0, 100); }
-    post.apol = true; socSelfPost(socFill(pick(['I let my emotions get the best of me. That\'s not who I want to be. I apologize to {who} and I\'ll be better.', 'Shouldn\'t have posted that. I apologized to {who} in person, and I owe everyone the same. My fault.', 'Heat of the moment, but no excuse. Sorry to {who}. Back to work.']).replace('{who}', { coach: 'my coaches', team: lab.mate || 'my teammates', org: 'the organization', fans: 'our fans' }[lab.tgt] || 'everyone I hurt'), ctx), ctx);
+    post.apol = true; socSelfPost(socFill(pick(['I let my emotions get the best of me. That\'s not who I want to be. I apologize to {who} and I\'ll be better.', 'Shouldn\'t have posted that. I apologized to {who} in person, and I owe everyone the same. My fault.', 'Heat of the moment, but no excuse. Sorry to {who}. Back to work.']).replace('posted that', post.q ? 'said that' : 'posted that').replace('{who}', { coach: 'my coaches', team: lab.mate || 'my teammates', org: 'the organization', fans: 'our fans' }[lab.tgt] || 'everyone I hurt'), ctx), ctx);
     msg = 'You apologized publicly. Most people are ready to move on.';
   } else if (v === 'quiet') {
-    post.del = true;
-    if (rnd() < 0.45) { carFame(-1); msg = 'You deleted it, but the screenshots were already everywhere.'; }
-    else { if (!hs) c.trust = clamp(r1(c.trust + lost * 0.25), 0, 100); msg = 'You deleted it and kept your head down. It faded after a few days.'; }
+    if (!post.q) post.del = true;
+    if (rnd() < 0.45) { carFame(-1); msg = post.q ? 'You kept quiet, but the clip kept running everywhere.' : 'You deleted it, but the screenshots were already everywhere.'; }
+    else { if (!hs) c.trust = clamp(r1(c.trust + lost * 0.25), 0, 100); msg = post.q ? 'You kept quiet and kept your head down. It faded after a few days.' : 'You deleted it and kept your head down. It faded after a few days.'; }
   } else {
     if (!hs) c.trust = clamp(r1(c.trust - 4 - lab.sev * 2), 0, 100); carFame(lab.sev >= 4 ? -3 : 1.5);
     msg = lab.sev >= 4 ? 'You stood by it. The backlash got worse.' : 'You stood by it. Some fans love you for it; the people in charge do not.';
@@ -13951,7 +14166,7 @@ function socFallout(d, v) {
     }
     if (hs && p) for (const tid of p.off) p.int[tid] = clamp((p.int[tid] || 0) - 4, 0, 100);
   }
-  post.resp = v; carLog(`Your post blew up: ${msg}`, 'social');
+  post.resp = v; carLog(`${post.about === 'press' ? 'Your comments blew up' : post.about === 'leak' ? 'Your DM got out' : 'Your post blew up'}: ${msg}`, 'social');
   return null;
 }
 // the player's own follow-up posts (an apology), which draw their own replies
@@ -13966,7 +14181,9 @@ function socSelfPost(text, ctx) {
 // ---------- posts about you: big games, bad games, commitments, the draft, signings, trades ----------
 // called from the career code; inside a calendar step the post waits for the step's end so it lands on the new day
 function socAbout(kind, ev, extra, now) {
-  const c = S.car; if (!c || !c.socV || !SOC_ABOUT[kind]) return; const so = c.soc;
+  const c = S.car; if (!c || !c.socV) return; const so = c.soc;
+  if (MX_Q1[kind]) mxQueue(kind, ev, extra);
+  if (!SOC_ABOUT[kind]) return;
   if (!now) { (so.pend || (so.pend = [])).push({ kind, ev: ev || '', x: extra || {} }); return; }
   socAboutMake(kind, ev || '', extra || {});
 }
@@ -13994,6 +14211,7 @@ function socAfterGame(grade) {
   const c = S.car; if (!c || !c.socV) return;
   if (grade === 'A+' || (grade === 'A' && c.fame >= 35 && rnd() < 0.6)) socAbout('big');
   else if (/^[DF]/.test(grade) && rnd() < 0.35) socAbout('bad');
+  mxAfterGame(grade);
 }
 // ideas for the composer, from what just happened
 function carSocIdeas() {
@@ -14105,7 +14323,7 @@ function socFacts(ctx, school, line) {
   if (ctx.inc && ctx.inc.length) L.push(`Past controversial posts: ${ctx.inc.map(x => `${x.s}: "${x.text}"`).join('; ')}.`);
   return L.join('\n');
 }
-const SOC_SYS = 'You write replies on a sports social media app for a football video game. Write like real people on sports twitter: short (most replies under 90 characters), mostly lowercase, slang, loose punctuation, an emoji only sometimes. Every person sounds different and keeps their own attitude: trolls are mean, rival fans mock, teammates back him up, reporters are dry. Everything has to fit his situation in the facts: a player who is redshirting, injured, suspended or did not play gets no takes on how he played. The facts are background to keep replies accurate, not topics for every reply: most replies just react to his post, and only some bring up his situation. Each reply must make sense as a real reply to his post. Never invent what other people said or saw. Each reply has its own angle and length: stick to them, so no two replies sound alike or start the same way. Only a reply whose angle is his numbers may mention his stats or last game line; numbers only from the facts. Profanity is fine when it fits the person. Never use slurs, never threaten anyone, never mention anyone\'s family, race, religion, sexuality, body or looks. Never invent stats, scores, injuries, quotes or news. Never mention fame, grades, ratings or anything about the video game itself. No em dashes, no hashtags, no quotation marks around a reply.';
+const SOC_SYS = 'You write replies on a sports social media app for a football video game. Write like real people on sports twitter: short (most replies under 90 characters), fans mostly lowercase, slang, loose punctuation, an emoji only sometimes; reporters write plain sentences with normal capitalization. Every person sounds different and keeps their own attitude: trolls are mean, rival fans mock, teammates back him up, reporters are dry. Everything has to fit his situation in the facts, and nothing may contradict them. The facts are background to keep replies accurate, not topics for every reply: most replies just react to his post, and only some bring up his situation. Each reply must make sense as a real reply to his post. Never invent what other people said or saw. Each reply has its own angle and length: stick to them, so no two replies sound alike or start the same way. Only a reply whose angle is his numbers may mention his stats or last game line; numbers only from the facts. Profanity is fine when it fits the person. Never use slurs, never threaten anyone, never mention anyone\'s family, race, religion, sexuality, body or looks. Never invent stats, scores, injuries, quotes or news. Never mention fame, grades, ratings or anything about the video game itself. No em dashes, no hashtags, no quotation marks around a reply.';
 // who each account is and how it talks (example lines got copied word for word, so the voices are described instead)
 const SOC_VOICE = {
   fan: 'a fan of his team, reacting the way fans do in the replies',
@@ -14117,17 +14335,28 @@ const SOC_VOICE = {
   recfan: 'a fan of a college recruiting him. Recruits him hard and only talks up their own school',
   troll: 'an internet troll. Mean and mocking, never helpful or encouraging'
 };
-const socWho = r => {
+// a rival fan knows where his team stands with yours: just beat, just lost to, or up next
+const socRival = ctx => { const l = ctx.last, t = (l && l.oppShort) || (ctx.next && ctx.next.oppShort); if (!t) return SOC_VOICE.rival; const rel = l && l.fresh && l.oppShort === t ? (l.won ? 'whose team just lost to his team. Salty about the loss, mocks him anyway' : 'whose team just beat his team. Gloating') : 'whose team plays his team soon. Mocks him and his team, smug'; return `a fan of ${t}, ${rel}`; };
+const socWho = (r, ctx) => {
   if (r.k === 'troll') return `${r.name} (${r.h}), ${SOC_VOICE.troll}. This troll ${SOC_TROLLS[r.ty] || 'mocks him'}${r.st === 'grudging respect' ? ', but now finally gives him grudging respect, still a little salty' : ''}`;
   if (r.k === 'beat' || r.k === 'mate') return `${r.name}, ${SOC_VOICE[r.k]}`;
   if (r.k === 'opp') return `${r.name}, ${SOC_VOICE.opp.replace('the other team', r.team || 'the other team')}`;
+  if (r.k === 'rival' && ctx) return socRival(ctx);
   if (r.k === 'recfan') return SOC_VOICE.recfan.replace('a college recruiting him', r.school || 'a college recruiting him');
   return SOC_VOICE[r.k] || SOC_VOICE.fan;
 };
 // a different angle and length for every reply in a request, so a thread reads like many people and not one; picked from the reply's id, not the game's dice
-const SOC_ANGLE = [['words', 'react to the exact words he posted'], ['joke', 'a joke or meme-style reaction'], ['ask', 'a question to him'], ['next', 'the next game'], ['team', 'the team and how the season is going'], ['coach', 'the coach'], ['mate', 'one of his teammates, by name'], ['feel', 'pure emotion, barely any words'], ['take', 'a hot take'], ['stats', 'his numbers from the last game']];
+const SOC_ANGLE = [['words', 'react to the exact words he posted'], ['joke', 'a joke or meme-style reaction'], ['ask', 'a question to him'], ['next', 'the next game'], ['team', 'how the season is going for his team so far'], ['coach', 'the coach'], ['mate', 'give one of his teammates some credit too, by name'], ['feel', 'pure emotion, barely any words'], ['take', 'a hot take'], ['stats', 'his numbers from the last game']];
 const SOC_BEAT_ANGLE = [['means', 'what it means for the team'], ['watch', 'what to watch for next'], ['land', 'how the post is landing around the team']];
 const SOC_LEN = ['2 to 5 words', '2 to 5 words', '2 to 5 words', 'one short line', 'one short line', 'one short line', 'one short line', 'a sentence or two'];
+// the angle names the exact thing to talk about: a small model given "a teammate" picks one at random and forces a comparison
+function socAngleText(k, a, ctx, h, r) {
+  if (k === 'next' && ctx.next) return `the next game, against ${ctx.next.oppShort}`;
+  if (k === 'team' && ctx.rec) return `how his team is doing so far this season (${ctx.rec})`;
+  if (k === 'coach' && ctx.coach) return `the head coach, ${ctx.coach}`;
+  if (k === 'mate') { const L = (ctx.mates || []).filter(m => m.id !== r.mid), m = L[(h >>> 8) % Math.max(1, L.length)]; if (m) return `give his teammate ${m.name} (${m.pos}) some credit too`; }
+  return a;
+}
 function socAngles(want, ctx) {
   const used = new Set();
   return want.map(r => {
@@ -14136,9 +14365,9 @@ function socAngles(want, ctx) {
     if (r.to != null) return { k: 'answer', a: 'answer what they said', len };
     if (r.k === 'troll' && r.ty === 'stat' && ctx.last && ctx.last.played !== false && !used.has('stats')) { used.add('stats'); return { k: 'stats', a: SOC_ANGLE[9][1], len }; }
     // the box score comes up now and then, not in every thread
-    const pool = r.k === 'beat' ? SOC_BEAT_ANGLE : SOC_ANGLE.filter(([k]) => (k !== 'next' || ctx.next) && (k !== 'coach' || ctx.coach) && (k !== 'mate' || (ctx.mates && ctx.mates.length)) && (k !== 'stats' || (ctx.last && ctx.last.played !== false && r.k !== 'mate' && r.k !== 'recfan' && (h >>> 12) % 4 === 0)));
+    const pool = r.k === 'beat' ? SOC_BEAT_ANGLE : SOC_ANGLE.filter(([k]) => (k !== 'next' || ctx.next) && (k !== 'coach' || ctx.coach) && (k !== 'mate' || (ctx.mates && ctx.mates.length && !['rival', 'troll', 'opp'].includes(r.k))) && (k !== 'stats' || (ctx.last && ctx.last.played !== false && r.k !== 'mate' && r.k !== 'recfan' && (h >>> 12) % 4 === 0)));
     let i = h % pool.length; for (let n = 0; n < pool.length && used.has(pool[i][0]); n++) i = (i + 1) % pool.length;
-    used.add(pool[i][0]); return { k: pool[i][0], a: pool[i][1], len };
+    used.add(pool[i][0]); return { k: pool[i][0], a: socAngleText(pool[i][0], pool[i][1], ctx, h, r), len };
   });
 }
 function carSocPrompt(postId, ids) {
@@ -14146,7 +14375,7 @@ function carSocPrompt(postId, ids) {
   // a post about the player: the model writes the post itself first
   if (post.by && (ids || []).some(id => +id === 0)) {
     const ctx = socCtx(), what = { big: 'He just had a big game.', bad: 'He just had a bad game.', commit: `He just committed to ${post.x.school || 'a school'}.`, drafted: `He was just drafted (${post.ev}).`, signed: `He just signed a new contract (${post.ev}).`, traded: 'He was just traded.', released: `He was just released by the ${post.ev}.` }[post.about] || '';
-    const user = `Facts:\n${socFacts(ctx, post.x && post.x.school, post.about === 'big' || post.about === 'bad')}\n\nNews: ${what}\nWrite the post that ${socWho({ ...post.by, st: '' })} makes about ${ctx.me} right now. One post, under 160 characters, in that person's voice.\n\nAnswer with JSON: {"replies": ["the post"]}`;
+    const user = `Facts:\n${socFacts(ctx, post.x && post.x.school, post.about === 'big' || post.about === 'bad')}\n\nNews: ${what}\nWrite the post that ${socWho({ ...post.by, st: '' }, ctx)} makes about ${ctx.me} right now. One post, under 160 characters, in that person's voice.${post.by.k === 'beat' ? ' Normal capitalization and punctuation, like a news post. Report the news and at most one other fact.' : ' Mention at most one other fact.'}\n\nAnswer with JSON: {"replies": ["the post"]}`;
     return { system: SOC_SYS, user, ids: [0], schema: { type: 'object', properties: { replies: { type: 'array', items: { type: 'string', maxLength: 220 }, minItems: 1, maxItems: 1 } } }, maxTokens: 90 };
   }
   const want = (ids || []).map(id => post.rep.find(r => r.id === +id)).filter(r => r && !r.me); if (!want.length) return null;
@@ -14155,9 +14384,9 @@ function carSocPrompt(postId, ids) {
   const lines = want.map((r, i) => {
     const to = r.to != null ? byId(r.to) : null, up = to && to.to != null ? byId(to.to) : null;
     const thread = to ? ` They are answering ${to.me ? `${ctx.ln}'s reply "${to.text}"` : `"${to.text}"`}${up ? ` (which answered "${up.text}")` : ''}.` : '';
-    return `${i + 1}. ${socWho(r)}. Attitude: ${r.st}. Angle: ${ang[i].a}. Length: ${ang[i].len}.${thread}`;
+    return `${i + 1}. ${socWho(r, ctx)}. Attitude: ${r.st}. Angle: ${ang[i].a}. Length: ${ang[i].len}.${thread}`;
   });
-  const user = `Facts:\n${socFacts(ctx, sch.length === 1 ? sch[0] : null, ang.some(a => a.k === 'stats'))}\n\n${post.by ? `${post.by.name} (${post.by.h}) posted about ${ctx.me}` : `${ctx.me} (@${socTag(ctx.fn + ctx.ln)}) posted`}: "${post.text}"\n${post.lab.sev >= 2 ? `This post is ${post.lab.sev >= 4 ? 'way out of line and is causing a scandal' : 'out of line and causing controversy'}.\n` : ''}\nWrite one reply for each of these people:\n${lines.join('\n')}\n\nAnswer with JSON: {"replies": ["reply 1", "reply 2", ...]} with exactly ${want.length} replies in that order.`;
+  const user = `Facts:\n${socFacts(ctx, sch.length === 1 ? sch[0] : null, ang.some(a => a.k === 'stats'))}\n\n${post.by ? `${post.by.name} (${post.by.h}) posted about ${ctx.me}` : `${ctx.me} (@${socTag(ctx.fn + ctx.ln)}) posted`}: "${post.text}"\n${post.lab.sev >= 2 ? `This post is ${post.lab.sev >= 4 ? 'way out of line and is causing a scandal' : 'out of line and causing controversy'}.\n` : ''}${ctx.last && ctx.last.played === false && ctx.last.fresh ? 'He did not play in his team\'s last game, so no reply talks about how he played in it.\n' : ''}\nWrite one reply for each of these people:\n${lines.join('\n')}\n\nAnswer with JSON: {"replies": ["reply 1", "reply 2", ...]} with exactly ${want.length} replies in that order.`;
   return { system: SOC_SYS, user, ids: want.map(r => r.id), schema: { type: 'object', properties: { replies: { type: 'array', items: { type: 'string', maxLength: 220 }, minItems: want.length, maxItems: want.length } }, required: ['replies'] }, maxTokens: 70 * want.length + 40, temperature: 0.8 };
 }
 function carSocLabelPrompt(text, re) {
@@ -14206,6 +14435,422 @@ function carSocView() {
   return { posts: so.posts, n: so.n, at: so.at, trolls: so.trolls, inc: so.inc, seen: so.seen, blocked: so.blocked, muted: so.muted || [], flag: so.flag || 0, pen: socCharPen(), ideas: carSocIdeas(), handle: '@' + socTag(c.fn + c.ln) };
 }
 function carSocSeen(t) { socS().seen = t || Date.now(); }
+// =====================================================================
+// CAREER MEDIA: press conferences and direct messages.
+// After big moments (a big or bad game, a loss, signing day, the draft, a new contract, a trade, media day) the
+// player steps up to the podium: reporters ask three questions, and he picks an answer or types his own. The game
+// reads every answer (the AI model's reading is merged in, the same way as posts) and decides what it costs or earns;
+// the most quotable answer becomes a reporter's post in the feed, and a line that crosses the line plays out like a
+// post that blew up. Direct messages come from teammates, coaches, recruiters, agents, fans and trolls; some carry a
+// real choice (an official visit, extra work, an agent), and a troll can screenshot what you send him.
+// The AI model writes the people on the other end of a DM in the desktop app; the game's templates do elsewhere.
+// S.car.mx holds the open press conference, past ones, the DM threads and the player's agent.
+// =====================================================================
+
+function mxMigrate() {
+  const c = S && S.car; if (!c || c.mxV) return; c.mxV = 1;
+  c.mx = { pc: null, pcs: [], pend: [], dm: [], seq: 1, ag: null, did: {}, lastG: null };
+}
+function mxS() { mxMigrate(); return S.car.mx; }
+// shorthand for how an answer reads: target, tone, how far out of line, and extras (ego: cocky; walk: walking an earlier answer back)
+const mxL = (tone, sev, tgt, x) => ({ tgt: tgt || 'none', tone, sev: sev || 0, ...(x || {}) });
+
+// ---------- press conferences: the questions ----------
+const MX_OUT = { 'high school': ['the local paper', 'Prep Football Report', 'Friday Night Radio'], college: ['{team} Insider', 'Campus Radio', 'College Football Weekly', 'the student paper', '{team} Sports Network'], pro: ['{team} Beat', 'Sports Radio 101', 'National Football Daily', 'the local paper', 'Gridiron Weekly'] };
+function mxReporter(ctx, i) {
+  if (i === 0) { const b = socBeat(ctx); return { name: b.name, out: b.out }; }
+  const n = fakeName(); return { name: `${n.fn} ${n.ln}`, out: pick(MX_OUT[ctx.level] || MX_OUT.pro).replace('{team}', ctx.short || 'Team') };
+}
+// the first question, from what just happened
+const MX_Q1 = {
+  big: { t: 'Postgame', q: 'Walk us through your day against {opp}.', o: [['Credit to my teammates. They put me in position to make plays.', mxL('grateful')], ['I told y\'all all week. I knew it was going to be a big one.', mxL('hype', 0, 'none', { ego: 1 })], ['{opp} had no answer for me today.', mxL('trash', 1, 'opp')]] },
+  bad: { t: 'Postgame', q: 'Rough day for you against {opp}. What happened out there?', o: [['That\'s on me. I have to be better, and I will be.', mxL('humble')], ['Some days it doesn\'t go your way. On to the next one.', mxL('neutral')], ['Hard to make plays when the ball doesn\'t come your way.', mxL('angry', 2, 'coach')]] },
+  loss: { t: 'Postgame', q: 'Tough loss to {opp}. What went wrong?', o: [['We didn\'t execute, and it starts with me.', mxL('humble')], ['They made more plays than we did. Credit to them.', mxL('neutral')], ['Some guys weren\'t ready to play today.', mxL('angry', 2, 'team')]] },
+  commit: { t: 'Signing day', q: 'Why {school}?', o: [['It felt like home. The coaches, the players, all of it.', mxL('grateful')], ['I want to win a national championship, and this is the place to do it.', mxL('hype')], ['I\'m going to start from day one. They know it and I know it.', mxL('hype', 0, 'none', { ego: 1 })]] },
+  drafted: { t: 'Draft night', q: 'What does it mean to be a {team}?', o: [['It\'s a dream come true. I can\'t wait to get to work.', mxL('grateful')], ['They got a steal tonight. I\'m going to show everybody.', mxL('hype', 0, 'none', { ego: 1 })], ['Some teams passed on me. They\'re going to regret it.', mxL('trash', 1, 'opp')]] },
+  signed: { t: 'Introductory press conference', q: 'Why did you choose the {team}?', o: [['They believed in me, and I want to repay that.', mxL('grateful')], ['I\'m here to win now. That\'s it.', mxL('hype')], ['They paid me what I\'m worth. Simple as that.', mxL('neutral', 0, 'none', { ego: 1 })]] },
+  traded: { t: 'Introductory press conference', q: 'How did you take the news of the trade?', o: [['I\'m thankful for my time there. Now I\'m ready to work here.', mxL('grateful')], ['It\'s a business. You learn that fast.', mxL('neutral')], ['Circle that game on the calendar. They\'ll see me twice.', mxL('trash', 1, 'opp')]] },
+  opener: { t: 'Media day', q: 'What are your goals this season?', o: [['Get better every day and help us win games.', mxL('humble')], ['Championship or bust.', mxL('hype')], ['Be the best {pos} in the country. Nothing less.', mxL('hype', 0, 'none', { ego: 1 })]] },
+};
+// the second and third questions: whatever the room wants to know about
+const MX_POOL = [
+  { id: 'role', when: (x, c) => x.role === 'backup' && c.stage !== 'hs', q: 'You\'re still behind {mate} on the depth chart. Frustrated with your role?', o: [['I\'ll keep working and be ready when my number is called.', mxL('humble')], ['I think I\'ve shown I belong on the field more.', mxL('neutral', 1, 'coach')], ['Ask {coach}. I don\'t make those decisions.', mxL('angry', 2, 'coach')]] },
+  { id: 'rs', when: x => x.role === 'redshirting', q: 'How are you handling the redshirt year?', o: [['It\'s a chance to get stronger and learn the playbook.', mxL('humble')], ['Not gonna lie, it\'s tough watching. I want to be out there.', mxL('sad')], ['I should be playing. Everybody in that building knows it.', mxL('angry', 2, 'coach')]] },
+  { id: 'next', k: ['big', 'bad', 'loss', 'opener'], when: x => !!x.next, q: 'What do you expect from {next} this week?', o: [['They\'re a good team. We have to respect them and play our game.', mxL('neutral')], ['We\'re ready. We\'ll see who shows up.', mxL('hype')], ['Honestly? I don\'t think they can stay with us.', mxL('trash', 1, 'opp')]] },
+  { id: 'fans', k: ['big', 'bad', 'loss'], when: x => { const r = (x.rec || '0-0').split('-').map(Number); return r[1] >= r[0] + 2; }, q: 'Fans are getting restless at {rec}. What do you say to them?', o: [['We hear them. We owe them better, and we\'re going to give it to them.', mxL('humble')], ['Stick with us. This thing is going to turn.', mxL('hype')], ['Real fans don\'t jump off when it gets hard.', mxL('angry', 2, 'fans')]] },
+  { id: 'coach', when: x => !!x.coach, q: 'How would you describe your relationship with {coach}?', o: [['He pushes me every day. I\'m lucky to play for him.', mxL('grateful')], ['It\'s a business. He coaches, I play.', mxL('neutral')], ['We don\'t always see things the same way.', mxL('neutral', 1, 'coach')]] },
+  { id: 'mate', when: x => (x.mates || []).length > 0, q: 'What has {mate} meant to this team?', o: [['He\'s the heart of this team. Love that guy.', mxL('grateful')], ['He\'s been good, and he knows he can be better.', mxL('neutral')], ['Some guys need to look in the mirror. I\'ll leave it at that.', mxL('angry', 2, 'team')]] },
+  { id: 'post', when: (x, c) => (c.soc && c.soc.inc || []).some(i => i.s === x.season), q: 'About that post that got everyone talking. Any regrets?', o: [['I shouldn\'t have put that out there. Lesson learned.', mxL('humble', 0, 'none', { walk: 1 })], ['I said what I said. I\'m focused on football now.', mxL('neutral', 1)], ['I meant every word.', mxL('angry', 2, '@inc')]] },
+  { id: 'season', k: ['big', 'bad', 'loss'], when: () => true, q: 'What\'s the goal for the rest of the year?', o: [['Get better every week and help the team win.', mxL('humble')], ['Win it all. Nothing less.', mxL('hype')], ['Prove everybody wrong. I\'m keeping a list.', mxL('hype', 0, 'none', { ego: 1 })]] },
+  { id: 'nextlvl', when: (x, c) => c.stage === 'col' && c.fame >= 35, q: 'Scouts are starting to talk about you as a pro prospect. Are you paying attention?', o: [['Not at all. I\'m locked in on this season.', mxL('humble')], ['It\'s a dream. Of course I think about it.', mxL('neutral')], ['I know I\'m one of the best players in the country.', mxL('hype', 0, 'none', { ego: 1 })]] },
+  { id: 'contract', when: (x, c) => c.stage === 'pro' && (() => { const p = carPlayer(); return p && p.contract && p.contract.yrs <= 1; })(), q: 'You\'re in the last year of your deal. Any update on an extension?', o: [['My agent handles that. I\'m focused on football.', mxL('neutral')], ['I\'d love to be here long term.', mxL('grateful')], ['We\'ll see who wants to pay me.', mxL('neutral', 1, 'org', { ego: 1 })]] },
+  { id: 'work', k: ['opener'], when: () => true, q: 'What did you work on most this offseason?', o: [['Everything. I came back a better player and a better teammate.', mxL('humble')], ['Speed and strength. You will see it Saturday.', mxL('hype')], ['Honestly, not much needed fixing.', mxL('hype', 0, 'none', { ego: 1 })]] },
+  { id: 'hype', when: () => true, q: 'There is a lot of buzz around you. How do you handle it?', o: [['I try to block it out and stay humble.', mxL('humble')], ['I love it. Pressure is a privilege.', mxL('hype')], ['The buzz is earned. I do not think about it.', mxL('neutral', 0, 'none', { ego: 1 })]] },
+  { id: 'refs', k: ['bad', 'loss'], when: x => x.last && x.last.fresh && !x.last.won, q: 'Did the officials cost you today?', o: [['No excuses. We didn\'t make enough plays.', mxL('humble')], ['There were a couple of calls I\'d like to see again.', mxL('neutral', 1, 'refs')], ['That crew was terrible all day.', mxL('angry', 2, 'refs')]] },
+];
+// signing day, the draft and a new team get questions of their own
+const MX_POOL2 = {
+  commit: [{ q: 'Do you expect to play right away?', o: [['I\'ll earn whatever I get.', mxL('humble')], ['That\'s the plan.', mxL('hype')], ['Nobody on that roster is taking my spot.', mxL('hype', 0, 'none', { ego: 1 })]] }, { q: 'What did you tell the other schools?', o: [['I\'m thankful for every school that recruited me.', mxL('grateful')], ['I made the best decision for me.', mxL('neutral')], ['They\'ll see me on the schedule.', mxL('trash', 1, 'opp')]] }],
+  drafted: [{ q: 'Where do you see yourself fitting in?', o: [['Wherever they need me. I\'m here to learn.', mxL('humble')], ['I\'m coming to compete for a starting job right away.', mxL('hype')], ['I\'m the best {pos} in this class, and it isn\'t close.', mxL('hype', 0, 'none', { ego: 1 })]] }, { q: 'Did you expect to go higher?', o: [['I\'m just blessed to be here.', mxL('grateful')], ['It doesn\'t matter where you start. It matters where you finish.', mxL('neutral')], ['Yeah. And I won\'t forget it.', mxL('trash', 1, 'opp')]] }],
+  signed: [{ q: 'What do you bring to this team?', o: [['Whatever they ask of me. I\'m a team guy.', mxL('humble')], ['A winner. That\'s what I bring.', mxL('hype')], ['They\'re getting the best player on the field.', mxL('hype', 0, 'none', { ego: 1 })]] }, { q: 'What\'s your message to the fans here?', o: [['I can\'t wait to play for you. Let\'s go win.', mxL('grateful')], ['Come early and be loud.', mxL('hype')], ['Buy my jersey now, before it sells out.', mxL('joke', 0, 'none', { ego: 1 })]] }],
+};
+MX_POOL2.traded = MX_POOL2.signed;
+// a follow-up when an answer gave the room something
+const MX_FOLLOW = [
+  { when: l => l.tgt === 'coach' && l.sev >= 1, q: 'Have you talked to {coach} about that?', o: [['Not yet. I\'ll handle it in house from here.', mxL('humble')], ['No. He knows where I stand.', mxL('angry', 2, 'coach')], ['I misspoke. I\'m behind Coach one hundred percent.', mxL('humble', 0, 'none', { walk: 1 })]] },
+  { when: l => l.tgt === 'team' && l.sev >= 2, q: 'Who were you talking about?', o: [['I\'m not naming names. That stays in the locker room.', mxL('neutral')], ['They know who they are.', mxL('angry', 2, 'team')], ['That came out wrong. I love my teammates.', mxL('humble', 0, 'none', { walk: 1 })]] },
+  { when: l => l.tgt === 'fans' && l.sev >= 2, q: 'Do you want to clarify that?', o: [['Our fans are the best. I was frustrated and it came out wrong.', mxL('humble', 0, 'none', { walk: 1 })], ['No. I said what I said.', mxL('angry', 2, 'fans')], ['Next question.', mxL('neutral')]] },
+  { when: l => l.tgt === 'refs' && l.sev >= 1, q: 'Are you worried about hearing from the league?', o: [['I\'m not going to say anything else about it.', mxL('neutral')], ['Somebody had to say it.', mxL('angry', 2, 'refs')], ['I\'ll let them handle it.', mxL('neutral')]] },
+  { when: l => l.tone === 'trash', q: 'Any worry that ends up on their bulletin board?', o: [['I respect them. I just believe in us.', mxL('neutral', 0, 'none', { walk: 1 })], ['Put it on the board. I\'ll say it again.', mxL('trash', 1, 'opp')], ['Nope.', mxL('neutral')]] },
+  { when: l => !!l.ego, q: 'Some people would call that cocky. Fair?', o: [['It\'s confidence. I put the work in.', mxL('hype')], ['Maybe. I\'ll let my play do the talking.', mxL('humble')], ['Call it whatever you want.', mxL('neutral', 0, 'none', { ego: 1 })]] },
+];
+function mxQuestion(src, ctx, by) {
+  const ex = { school: ctx.commit || (ctx.schools || [])[0] };
+  return { by, q: socFill(src.q, ctx, ex), o: src.o.map(([t, l]) => ({ t: socFill(t, ctx, ex), lab: { ...l } })), a: null };
+}
+// a press conference opens: three questions, the first from what happened and the rest from what the room is curious about
+function mxPressMake(kind, ev, x) {
+  const mx = mxS(), so = socS(), c = S.car, ctx = socCtx(); x = x || {};
+  if (kind === 'game') kind = /^A/.test(x.grade || '') ? 'big' : /^[DF]/.test(x.grade || '') ? 'bad' : ctx.last && ctx.last.fresh && !ctx.last.won ? 'loss' : null;
+  if (!kind || !MX_Q1[kind]) return null;
+  if (kind === 'commit' && x.school) ctx.commit = x.school;
+  const pool = MX_POOL2[kind] ? MX_POOL2[kind].slice() : shuffle(MX_POOL.filter(q => (q.k || ['big', 'bad', 'loss', 'opener']).includes(kind) && q.when(ctx, c)));
+  const qs = [mxQuestion(MX_Q1[kind], ctx, mxReporter(ctx, 0))];
+  for (const q of pool.slice(0, 2)) qs.push(mxQuestion(q, ctx, mxReporter(ctx, qs.length)));
+  // a question about your post asks about that post's target
+  const inc = (c.soc.inc || []).slice(-1)[0]; for (const q of qs) for (const o of q.o) if (o.lab.tgt === '@inc') o.lab.tgt = inc ? inc.tgt : 'none';
+  const title = kind === 'big' || kind === 'bad' || kind === 'loss' ? `After the ${ctx.last && ctx.last.won ? 'win over' : 'loss to'} ${ctx.last ? ctx.last.oppShort : 'them'}` : MX_Q1[kind].t;
+  mx.pc = { id: mx.seq++, kind, n: so.n, s: ctx.season, wk: socWeek(), title, qs, i: 0, done: false, fol: false };
+  return mx.pc;
+}
+// queued from the career code; it opens when the calendar step ends, like a post about you
+function mxQueue(kind, ev, x) { const c = S.car; if (!c || !c.socV) return; mxS().pend.push({ kind, ev: ev || '', x: x || {} }); }
+// not every game gets you to the podium
+function mxAfterGame(grade) {
+  const c = S.car; if (!c || !c.socV) return;
+  const ch = (/^A/.test(grade) ? 0.55 : /^[DF]/.test(grade) ? 0.45 : 0.25) * (c.stage === 'hs' ? 0.6 : 1);
+  if (rnd() < ch) mxQueue('game', '', { grade });
+}
+
+// ---------- press conferences: answering ----------
+// v: an option's index, 'nc' for no comment, or the player's own words (read by the game, with the AI model's reading merged in)
+function carPcAnswer(v, modelLab) {
+  const mx = mxS(), pc = mx.pc; if (!pc || pc.done) return 'No press conference right now.';
+  const q = pc.qs[pc.i], ctx = socCtx(); let a;
+  if (v === 'nc') a = { t: 'No comment.', lab: mxL('neutral', 0, 'none', { nc: 1 }), nc: 1 };
+  else if (typeof v === 'number' || /^\d$/.test(String(v))) { const o = q.o[+v]; if (!o) return 'Pick an answer.'; a = { t: o.t, lab: { ...o.lab } }; }
+  else {
+    const t = String(v || '').replace(/\s+/g, ' ').trim(); if (!t) return 'Say something first.'; if (t.length > SOC_MAX) return `Keep it under ${SOC_MAX} characters.`;
+    a = { t, lab: socMerge(socRead(t, ctx), modelLab), typed: 1 };
+    if (/^(i misspoke|that came out wrong|i shouldn'?t have said|i take (that|it) back|i apologi[sz]e|my fault for saying)/i.test(t)) a.lab.walk = 1;
+  }
+  q.a = a; pc.i++;
+  // a follow-up when the answer gave the room something to chew on
+  if (!pc.fol && pc.i < pc.qs.length && !a.nc && (a.lab.sev >= 1 || a.lab.ego || a.lab.tone === 'trash')) {
+    const f = MX_FOLLOW.find(x => x.when(a.lab)); if (f) { pc.qs[pc.i] = mxQuestion(f, ctx, mxReporter(ctx, pc.i)); pc.fol = true; }
+  }
+  if (pc.i >= pc.qs.length) mxPressFinish(pc);
+  return null;
+}
+// how quotable an answer is: the one the papers run with
+const mxQuotable = a => a.nc ? -1 : a.lab.sev * 10 + (a.lab.ego ? 3 : 0) + ({ trash: 4, angry: 3, hype: 2, joke: 2, humble: 1, grateful: 1 }[a.lab.tone] || 0) + (a.typed ? 2 : 0);
+function mxPressFinish(pc) {
+  const c = S.car, ans = pc.qs.map(q => q.a).filter(Boolean), ctx = socCtx(), notes = [];
+  pc.done = true; let fame = 0, trust = 0;
+  const said = ans.filter(a => !a.nc);
+  if (!said.length) { fame -= 0.4; notes.push('You didn\'t give them anything. The story became that you didn\'t talk.'); }
+  const head = said.slice().sort((a, b) => mxQuotable(b) - mxQuotable(a))[0], hi = ans.indexOf(head);
+  const walk = head && head.lab.sev >= 1 && ans.slice(hi + 1).some(a => a.lab.walk);
+  // everything but the headline: small and certain
+  for (const a of ans) {
+    if (a === head) continue; const l = a.lab;
+    if (a.nc) fame -= 0.15;
+    else if (l.sev >= 2) trust -= 2;
+    else if (l.sev === 1) trust -= 0.5;
+    else if (l.tone === 'humble' || l.tone === 'grateful') trust += 0.5;
+    else if (l.tone === 'hype') fame += 0.3;
+    if (l.ego) { trust -= 1; fame += 0.4; }
+  }
+  if (head && head.lab.ego) { trust -= 1.5; fame += 0.6; }
+  if (c.stage === 'hs') trust = 0;
+  if (fame) carFame(r1(fame));
+  if (trust) c.trust = clamp(r1(c.trust + trust), 0, 100);
+  pc.fx = { fame: r1(fame), trust: r1(trust), notes };
+  // the headline becomes a reporter's post in the feed, and plays out like a post of your own
+  if (head) {
+    const post = mxQuotePost(pc, head, walk, ctx); pc.post = post.id;
+    const f = post.fx || {}; pc.fx.fame = r1(pc.fx.fame + (f.fame || 0)); pc.fx.trust = r1(pc.fx.trust + (f.trust || 0)); pc.fx.notes.push(...(f.notes || []));
+    if (f.susp) pc.fx.susp = f.susp; if (f.fine) pc.fx.fine = f.fine;
+    if (walk) pc.fx.notes.push('Walking it back later in the presser took some of the sting out.');
+  }
+  const mx = mxS(); mx.pcs.unshift(pc); if (mx.pcs.length > 12) mx.pcs.length = 12;
+  carLog(head ? `${pc.title}: "${head.t.length > 110 ? head.t.slice(0, 107) + '…' : head.t}"` : `${pc.title}: no comment.`, 'media');
+}
+function mxQuotePost(pc, a, walk, ctx) {
+  const so = socS(), c = S.car, b = socBeat(ctx), lab = { tgt: a.lab.tgt, tone: a.lab.tone, sev: a.lab.sev, slur: !!a.lab.slur, threat: !!a.lab.threat, cuss: !!a.lab.cuss, neg: !!a.lab.neg, mate: a.lab.mate || null };
+  const quote = a.t.length > 200 ? a.t.slice(0, 197) + '…' : a.t;
+  const when = { big: 'after the game', bad: 'after the game', loss: 'after the loss', commit: `on choosing ${ctx.commit || 'his school'}`, drafted: `on joining the ${ctx.short || 'team'}`, signed: `on signing with the ${ctx.short || 'team'}`, traded: 'on the trade', opener: 'at media day' }[pc.kind] || 'today';
+  const post = { id: so.seq++, n: so.n, s: ctx.season, stage: c.stage, wk: socWeek(), by: { k: 'beat', name: b.name, h: b.h, v: 1, out: b.out }, about: 'press', q: quote, ev: '', x: {}, text: `${ctx.fn} ${ctx.ln} ${when}: "${quote}"`, ai: 1, lab, sit: socSit(lab, ctx), reach: 0, likes: 0, rts: 0, rep: [], at: Date.now(), fx: null, re: walk || undefined };
+  post.reach = Math.round(socReach(lab, ctx) * 1.2); post.likes = Math.round(post.reach * (lab.sev >= 2 ? 0.35 : 0.55) * (0.6 + rnd() * 0.8)); post.rts = Math.round(post.likes * (0.1 + lab.sev * 0.05));
+  socTrollsFill(ctx);
+  const n = clamp(Math.round(4 + c.fame / 8 + lab.sev * 4 + rnd() * 3), 4, 24);
+  for (const [k, wave] of [[Math.ceil(n * 0.55), 0], [Math.ceil(n * 0.3), 1], [Math.max(1, Math.floor(n * 0.15)), 2]]) post.rep.push(...socReplies(post, ctx, k, wave));
+  so.posts.unshift(post); post.fx = socFx(post, ctx); socTrim();
+  return post;
+}
+function carPcView() {
+  const c = S.car; if (!c) return null; const mx = mxS();
+  return { pc: mx.pc, past: mx.pcs.filter(x => x !== mx.pc).slice(0, 8), open: !!(mx.pc && !mx.pc.done) };
+}
+
+// ---------- direct messages ----------
+const MX_DM_MAX = 30;
+const MX_PITCH = { time: 'play early here', win: 'compete for a national title here', nil: 'build your brand here', home: 'stay close to home and be a hometown hero', prestige: 'be the face of a blue blood', staff: 'learn from the best staff in the country', academics: 'get a world-class degree while you play' };
+function mxThread(k, who, act) {
+  const mx = mxS(), so = socS(), th = { id: mx.seq++, k, who, msgs: [], act: act || null, res: null, n: so.n, last: Date.now(), seen: 0, end: false, mine: 0 };
+  mx.dm.unshift(th); if (mx.dm.length > MX_DM_MAX) mx.dm.length = MX_DM_MAX; return th;
+}
+// a message from the other side: the template words until the AI model writes it (p is what the message has to do)
+function mxMsg(th, text, p, secs) {
+  const mx = mxS(), m = { id: mx.seq++, me: 0, text, p: p || '', ai: 0, at: Date.now() + Math.round((secs == null ? 2 + rnd() * 6 : secs) * 1000) };
+  th.msgs.push(m); th.last = m.at; return m;
+}
+const mxWhoLine = th => {
+  const w = th.who;
+  return { coach: `${w.name}, his head coach. Direct, demanding, cares about him`, mate: `${w.name}, his teammate. Talks like a friend, casual texting`, rec: `${w.name}, head coach at ${w.sub.replace(/^Head coach, /, '')}, recruiting him. Warm, persuasive, sells the program`, agent: `${w.name}, a sports agent at ${w.ag ? w.ag.agency : 'an agency'}. Smooth, confident, all business`, troll: `${w.name} (${w.h}), an internet troll in his DMs. Mean and mocking about football, never about family`, fan: `${w.name}, a fan. Excited, polite, a little starstruck` }[th.k] || w.name;
+};
+// starting a conversation: who, what they say first, and the choice it carries
+function mxDmStart(kind, o) {
+  const c = S.car, ctx = socCtx(), so = socS(), mx = mxS(), p = carPlayer(); o = o || {};
+  const exp = n => so.n + n;
+  if (kind === 'rec') {
+    const t = COLLEGE.team(o.tid), co = t.coach ? `${t.coach.fn} ${t.coach.ln}` : `Coach ${fakeName().ln}`, pr = (p && p.pr || [])[0] || 'win', pitch = MX_PITCH[pr] || MX_PITCH.win;
+    const th = mxThread('rec', { name: co, sub: `Head coach, ${t.name}`, tid: t.tid }, o.welcome ? null : { kind: 'rec', opts: [['Set up an official visit', 'visit'], ['Tell him you\'re interested', 'int'], ['Not interested', 'no']], exp: exp(4) });
+    if (o.welcome) mxMsg(th, `Welcome to the family, ${c.fn}. Big things ahead for you at ${t.name}. Get your rest and stay ready.`, `Welcome him to ${t.name} after he committed there. Excited, short.`);
+    else mxMsg(th, `${c.fn}, this is ${co} at ${t.name}. We think you can ${pitch}. We would love to get you on campus for an official visit.`, `Recruit him to ${t.name}: tell him he can ${pitch}, and invite him on an official visit.`);
+    return th;
+  }
+  if (kind === 'coach') {
+    const th = mxThread('coach', { name: ctx.coach || 'Coach', sub: `Head coach, ${ctx.team}` }, o.bad ? { kind: 'coach', opts: [['I\'ll be there early', 'early'], ['OK, coach', 'ok']], exp: exp(2) } : null);
+    if (o.bad) mxMsg(th, 'Come by my office tomorrow. We will go through the tape together.', `He played poorly in the last game. Ask him to come to your office tomorrow to watch the film together. Firm, not angry.`);
+    else mxMsg(th, `Hell of a game against ${ctx.last ? ctx.last.oppShort : 'them'}. Keep stacking days like that.`, 'He just played a great game. Tell him you are proud of him and to keep it up. Brief.');
+    return th;
+  }
+  if (kind === 'mate') {
+    const m = o.mate || pick(ctx.mates || []); if (!m) return null;
+    const who = { name: m.name, sub: `Teammate, ${m.pos}`, mid: m.id };
+    if (o.beef) {
+      const th = mxThread('mate', who, { kind: 'beef', opts: [['Apologize', 'sorry'], ['Talk it out in person', 'talk'], ['Leave him on read', 'no']], exp: exp(3) }); th.beef = 1;
+      mxMsg(th, 'saw what you posted. if you got a problem with me say it to my face', 'He publicly called out this teammate on social media. The teammate is hurt and angry, and confronts him about it.'); return th;
+    }
+    if (o.lift) { const th = mxThread('mate', who, { kind: 'lift', opts: [['I\'m in', 'yes'], ['Can\'t this week', 'no']], exp: exp(2) }); mxMsg(th, `${c.fn} you trying to get some extra work in this weekend? couple of us hitting the field`, 'Invite him to an extra weekend workout with a few teammates.'); return th; }
+    if (o.out) { const th = mxThread('mate', who, { kind: 'out', opts: [['Pull up', 'go'], ['Not tonight', 'no']], exp: exp(1) }); mxMsg(th, 'few of us going out tonight. you coming?', 'Invite him out tonight with a few teammates.'); return th; }
+    const th = mxThread('mate', who); mxMsg(th, pick(['lets goooo. thats what we do', 'big win bro. we needed that one', 'thats a W. proud of this group']), 'The team just won. Celebrate with him, like a teammate texting.'); return th;
+  }
+  if (kind === 'agent') {
+    const ag = o.ag, n = fakeName();
+    const th = mxThread('agent', { name: `${n.fn} ${n.ln}`, sub: `Agent, ${ag.agency}`, ag }, { kind: 'agent', opts: [[`Sign with ${ag.agency}`, 'sign'], ['Not right now', 'no']], exp: exp(10) });
+    mxMsg(th, `${c.fn}, ${n.fn} ${n.ln} with ${ag.agency}. ${ag.pitch} We would love to represent you.`, `Pitch your agency to him: ${ag.pitch} Ask to represent him.`);
+    return th;
+  }
+  if (kind === 'agentNote') {
+    const ag = mx.ag, th = mx.dm.find(x => x.k === 'agent' && x.who.ag && x.who.ag.agency === ag.agency) || mxThread('agent', { name: ag.name, sub: `Agent, ${ag.agency}`, ag });
+    mxMsg(th, o.text, o.p); th.end = false; mx.dm.splice(mx.dm.indexOf(th), 1); mx.dm.unshift(th); return th;
+  }
+  if (kind === 'troll') {
+    const tr = o.tr; const th = mxThread('troll', { name: tr.name, h: tr.h, sub: tr.h, tr: tr.id });
+    mxMsg(th, pick(['you are the most overrated player in the sport and you know it', 'cant wait to watch you fumble this season away lol', 'nobody on your team even likes you', `${ctx.short || 'your team'} would be better without you`, 'still waiting on you to do something 🥱']), `He trolls the player in his DMs: ${SOC_TROLLS[tr.type] || 'mocks him'}. Football only.`);
+    return th;
+  }
+  if (kind === 'fan') {
+    const a = socAccount('fan', ctx), th = mxThread('fan', { name: a.name, h: a.h, sub: a.h });
+    mxMsg(th, pick([`my son has your poster on his wall. he would lose his mind if you said hi 🙏`, `been a ${ctx.short || 'football'} fan for 30 years and you are my favorite player to watch. thank you`, 'you got me through a rough year honestly. every game i watch you. keep going']), `A fan sends a kind message: how much he means to them. Polite, a little starstruck.`);
+    return th;
+  }
+  return null;
+}
+// once a step, the people in your life reach out
+function mxDms(ctx) {
+  const c = S.car, mx = mxS(), so = socS(), p = carPlayer(), CS = carC(), did = mx.did;
+  // a teammate you called out in public wants a word
+  for (const [name, n] of Object.entries(so.beef || {})) { if ((did['beef|' + name] || 0) >= n) continue; did['beef|' + name] = n; const m = (ctx.mates || []).find(x => x.name === name); if (m) { mxDmStart('mate', { mate: m, beef: 1 }); return; } }
+  // agents come calling once you are headed to the pros, and again before a pro contract runs out
+  const declared = c.stage === 'draft' || (c.stage === 'col' && CS && CS.car && CS.car.declare === CS.season);
+  const expiring = c.stage === 'pro' && p && p.contract && p.contract.yrs <= 1 && S.phase === 'regular' && S.week >= 6;
+  if (!mx.ag && ((declared && !did.agents) || (expiring && !did['agents|' + S.season]))) {
+    if (declared) did.agents = 1; else did['agents|' + S.season] = 1;
+    for (const ag of mxAgents(declared ? 3 : 2)) mxDmStart('agent', { ag });
+    return;
+  }
+  // your agent's read on a contract offer, and on free agency
+  if (mx.ag && c.re && c.re.ok && !did['re|' + S.season]) {
+    did['re|' + S.season] = 1; const mv = marketValue(p) * mx.ag.m, good = c.re.sal >= mv * 0.97;
+    mxDmStart('agentNote', { text: good ? `That offer is fair, ${c.fn}. I would take it. The market will not do much better.` : `They are low. I think we can do better on the open market.`, p: good ? 'His team offered him a new contract. Tell him it is a fair deal and you would take it.' : 'His team offered him a new contract. Tell him it is low and you think he can do better in free agency.' }); return;
+  }
+  if (mx.ag && c.stage === 'fa' && !did['fa|' + S.season]) { did['fa|' + S.season] = 1; mxDmStart('agentNote', { text: 'Phones are ringing. Sit tight and I will get you the best deal out there.', p: 'He is a free agent. Tell him teams are calling and you will get him the best deal.' }); return; }
+  // high school: recruiters
+  if (c.stage === 'hs' && p && CS.phase === 'season') {
+    if (p.commit != null) { if (!did['welcome|' + p.commit]) { did['welcome|' + p.commit] = 1; mxDmStart('rec', { tid: p.commit, welcome: 1 }); return; } }
+    else if (rnd() < 0.3) { const tids = p.off.slice().sort((a, b) => (p.int[b] || 0) - (p.int[a] || 0)).slice(0, 8).filter(tid => !did['rec|' + tid]); if (tids.length) { const tid = pick(tids); did['rec|' + tid] = 1; mxDmStart('rec', { tid }); return; } }
+  }
+  // after a game: the coach, a teammate
+  const g = ctx.last, gk = g && g.fresh ? `${ctx.season}|${g.opp}|${g.score}` : null;
+  if (gk && gk !== mx.lastG && (c.stage === 'col' || c.stage === 'pro')) {
+    mx.lastG = gk;
+    if (g.played && /^A/.test(g.grade || '') && ctx.coach && rnd() < 0.35) { mxDmStart('coach'); return; }
+    if (g.played && /^[DF]/.test(g.grade || '') && ctx.coach && rnd() < 0.4) { mxDmStart('coach', { bad: 1 }); return; }
+    if (g.won && rnd() < 0.18) { mxDmStart('mate'); return; }
+  }
+  if ((c.stage === 'col' || c.stage === 'pro') && (ctx.mates || []).length) {
+    const r = rnd();
+    if (r < 0.08) { mxDmStart('mate', { lift: 1 }); return; }
+    if (r < 0.13) { mxDmStart('mate', { out: 1 }); return; }
+  }
+  // strangers
+  const tr = so.trolls.filter(t => !t.blocked && !t.turned && !(so.muted || []).includes(t.h) && !mx.dm.some(x => x.k === 'troll' && x.who.tr === t.id && so.n - x.n < 10));
+  if (c.fame >= 25 && tr.length && rnd() < 0.07) { mxDmStart('troll', { tr: pick(tr) }); return; }
+  if (c.fame >= 15 && rnd() < 0.05) mxDmStart('fan');
+}
+// the agencies that call: a big shop gets bigger deals and endorsements, a boutique costs less and knows you by name
+const MX_AGENCIES = [['Summit Sports Group', 'big'], ['Apex Athlete Partners', 'big'], ['Meridian Sports Management', 'big'], ['Crossroads Athlete Management', 'bout'], ['Keystone Sports Agency', 'bout'], ['Lantern Sports', 'bout']];
+function mxAgents(n) {
+  const big = shuffle(MX_AGENCIES.filter(a => a[1] === 'big')), bout = shuffle(MX_AGENCIES.filter(a => a[1] === 'bout')), L = [big[0], bout[0], n > 2 ? big[1] : null].filter(Boolean);
+  return L.map(([agency, tier]) => tier === 'big'
+    ? { agency, tier, fee: 0.03, m: 1.06, e: 1.3, pitch: 'We represent more starters than anyone, and teams pay our clients. Endorsements too.' }
+    : { agency, tier, fee: 0.02, m: 1.04, e: 1.1, pitch: 'We keep a small list on purpose. You would get my cell, not an assistant.' });
+}
+const mxAgMul = () => { const a = S.car && S.car.mx && S.car.mx.ag; return a ? a.m : 1; };
+const mxAgEnd = () => { const a = S.car && S.car.mx && S.car.mx.ag; return a ? a.e : 1; };
+const mxAgFee = () => { const a = S.car && S.car.mx && S.car.mx.ag; return a ? a.fee : 0; };
+
+// a step on the calendar: press conferences open and close, messages come in
+function mxStep() {
+  const c = S.car; if (!c || !c.socV) return; const mx = mxS(), so = socS();
+  // a press conference lasts the day: one you started gets finished with what you said, one you skipped goes away
+  if (mx.pc && mx.pc.n < so.n) { if (!mx.pc.done && mx.pc.i > 0) mxPressFinish(mx.pc); mx.pc = null; }
+  // the choices in messages run out
+  for (const th of mx.dm) if (th.act && !th.res && th.act.exp != null && th.act.exp < so.n) { th.res = 'You never answered.'; th.act = null; }
+  const ctx = socCtx(), CS = carC();
+  if (mx.pend.length) {
+    const L = mx.pend; mx.pend = [];
+    const order = ['drafted', 'signed', 'traded', 'commit', 'game'], x = L.slice().sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind))[0];
+    mxPressMake(x.kind, x.ev, x.x);
+  }
+  // media day: the first week of each season
+  const wk1 = c.stage === 'col' ? CS && CS.phase === 'season' && CS.week <= 2 : c.stage === 'pro' && S.phase === 'regular' && S.week <= 2;
+  if (!mx.pc && wk1 && !mx.did['open|' + ctx.season] && ctx.team) { mx.did['open|' + ctx.season] = 1; mxPressMake('opener'); }
+  mxDms(ctx);
+}
+
+// ---------- direct messages: what you do ----------
+function mxTh(id) { return mxS().dm.find(x => x.id === +id) || null; }
+// the buttons on a message: a visit, extra work, an agent
+function carDmAct(thId, v) {
+  const th = mxTh(thId); if (!th || !th.act || th.res) return 'Nothing to answer.';
+  const c = S.car, mx = mxS(), p = carPlayer(), k = th.act.kind, opt = th.act.opts.find(o => o[1] === v); if (!opt) return 'Pick an option.';
+  const mate = th.who.mid != null ? (socInCol() ? COLLEGE.S.players[th.who.mid] : S.players[th.who.mid]) : null, mor = d => { if (mate && mate.mor != null) mate.mor = clamp(mate.mor + d, 0, 100); };
+  let res = '', reply = null;
+  if (k === 'rec') {
+    if (v === 'visit') { const e = carVisit(th.who.tid); if (e) return e; res = 'Official visit set.'; reply = ['Fantastic. We will take care of everything. See you on campus.', 'He agreed to an official visit. Thank him and say you will see him on campus.']; }
+    else if (v === 'int') { if (p) p.int[th.who.tid] = clamp((p.int[th.who.tid] || 0) + 3, 0, 100); res = 'You told him you\'re interested.'; reply = ['Love to hear it. We will stay on you.', 'He said he is interested in your school. Respond warmly.']; }
+    else { if (p) p.int[th.who.tid] = clamp((p.int[th.who.tid] || 0) - 5, 0, 100); res = 'You passed.'; reply = ['Understood. The door is always open.', 'He told you he is not interested. Be gracious and leave the door open.']; }
+  } else if (k === 'coach') {
+    if (v === 'early') { c.trust = clamp(r1(c.trust + 2), 0, 100); carSkillGainPts(0.3, null, p); res = 'You showed up early and watched every snap.'; reply = ['Good. That is how you get better.', 'He showed up early to watch film. Approve, briefly.']; }
+    else { c.trust = clamp(r1(c.trust + 0.5), 0, 100); res = 'You watched the tape together.'; }
+  } else if (k === 'beef') {
+    const so = socS();
+    if (v === 'sorry') { mor(8); res = 'You apologized. He accepted.'; reply = ['appreciate that. we good', 'He apologized for calling you out online. Accept it, a little guarded.']; delete (so.beef || {})[th.who.name]; }
+    else if (v === 'talk') { if (rnd() < 0.6) { mor(10); c.trust = clamp(c.trust + 1, 0, 100); res = 'You talked it out face to face. It\'s settled.'; reply = ['real talk. glad we did that', 'You two talked it out in person and settled it. Say you are glad you did.']; delete (so.beef || {})[th.who.name]; } else { mor(-3); res = 'It got heated. Teammates had to step in.'; reply = ['yeah we not good', 'The talk in person got heated. You are still angry.']; } }
+    else { mor(-5); res = 'You left him on read.'; }
+  } else if (k === 'lift') {
+    if (v === 'yes') { mor(3); c.trust = clamp(r1(c.trust + 1), 0, 100); carSkillGainPts(0.4, null, p); res = 'Extra work, done.'; reply = ['bet. 8am', 'He agreed to the extra workout. Confirm the time, short.']; } else { mor(-1); res = 'You passed this time.'; }
+  } else if (k === 'out') {
+    if (v === 'go') { mor(2); carFame(0.4); if (rnd() < 0.15) { c.trust = clamp(r1(c.trust - 3), 0, 100); carFame(-0.6); res = 'You went. Photos of you out late made the rounds, and the coaches heard about it.'; carLog('A night out with teammates ended up online. The coaches were not happy.', 'social'); } else res = 'You went. Good night, no problems.'; }
+    else { c.trust = clamp(r1(c.trust + 0.5), 0, 100); res = 'You stayed in.'; }
+  } else if (k === 'agent') {
+    if (v === 'sign') {
+      const ag = th.who.ag; mx.ag = { ...ag, name: th.who.name };
+      for (const o of mx.dm) if (o !== th && o.k === 'agent' && o.act && !o.res) { o.res = 'You signed with someone else.'; o.act = null; }
+      res = `You signed with ${ag.agency}.`; reply = ['Welcome aboard. Let\'s go get paid.', 'He just signed with your agency. Welcome him, confident.'];
+      carLog(`Signed with ${th.who.name} of ${ag.agency} (${Math.round(ag.fee * 1000) / 10}% fee).`, 'money');
+    } else res = 'You said not right now.';
+  }
+  th.res = res; th.act = null;
+  if (reply) mxMsg(th, reply[0], reply[1], 3 + rnd() * 6);
+  return null;
+}
+// typing your own message: the game reads it, and what you say in private can still get out
+function carDmSend(thId, text, modelLab) {
+  const th = mxTh(thId); if (!th) return 'That conversation is gone.'; if (th.end || th.blocked) return 'This conversation is over.';
+  const t = String(text || '').replace(/\s+/g, ' ').trim(); if (!t) return 'Write something first.'; if (t.length > SOC_MAX) return `Messages are limited to ${SOC_MAX} characters.`;
+  const c = S.car, so = socS(), ctx = socCtx(), p = carPlayer(), mx = mxS();
+  const lab = socMerge(socRead(t, ctx, { troll: th.k === 'troll' }), modelLab);
+  const me = { id: mx.seq++, me: 1, text: t, lab, at: Date.now(), ai: 1 }; th.msgs.push(me); th.last = me.at; th.mine++; th.seen = me.at;
+  const hostile = lab.sev >= 1 || lab.tone === 'angry' || lab.tone === 'trash', nice = !hostile && ['grateful', 'humble', 'hype', 'joke', 'neutral'].includes(lab.tone);
+  const mate = th.who.mid != null ? (socInCol() ? COLLEGE.S.players[th.who.mid] : S.players[th.who.mid]) : null;
+  let rep, p2;
+  if (th.k === 'coach') { if (c.stage !== 'hs') c.trust = clamp(r1(c.trust + (lab.sev >= 2 ? -4 : hostile ? -1 : 0.4)), 0, 100); rep = hostile ? 'Watch your tone. My door is open when you are ready to talk like a pro.' : pick(['Good. Keep working.', 'Appreciate you. See you at practice.']); p2 = hostile ? 'He just talked back to you, his coach, disrespectfully. Answer firmly.' : 'Answer him briefly, like a coach.'; }
+  else if (th.k === 'mate') { if (mate && mate.mor != null) mate.mor = clamp(mate.mor + (lab.sev >= 2 ? -6 : hostile ? -2 : 1), 0, 100); rep = hostile ? 'aight bet. we will see' : pick(['bet 💯', 'say less', 'facts. see you at practice']); p2 = hostile ? 'He was rude to you. Answer, annoyed.' : 'Answer him like a teammate texting.'; }
+  else if (th.k === 'rec') { if (p && p.int) p.int[th.who.tid] = clamp((p.int[th.who.tid] || 0) + (lab.sev >= 2 ? -6 : hostile ? -2 : 1), 0, 100); rep = hostile ? 'Understood. Good luck to you, son.' : 'Love to hear it. We will be in touch.'; p2 = hostile ? 'He was disrespectful. Answer politely but coolly.' : 'Answer him warmly and keep recruiting him.'; }
+  else if (th.k === 'agent') { rep = 'Sounds good. I will be in touch.'; p2 = 'Answer him briefly and professionally.'; }
+  else if (th.k === 'troll') { if (hostile) so.fed++; rep = hostile ? 'lol got him 😂 screenshot saved' : pick(['nobody asked', 'ok and?', 'still overrated']); p2 = hostile ? 'He took the bait and fired back at you. Gloat about getting under his skin.' : 'Answer dismissively.'; }
+  else { if (nice) carFame(0.2); rep = nice ? pick(['OMG THANK YOU 😭🙏', 'you just made my whole year', 'he answered!!! thank you so much']) : 'wow ok. sorry i bothered you'; p2 = nice ? 'He answered your message kindly. Be thrilled and grateful.' : 'He was rude to you. Answer, hurt.'; }
+  // a private message that goes too far can end up in public
+  const leakCh = lab.sev >= 4 ? 0.8 : th.k === 'troll' ? (lab.sev >= 2 ? 0.55 : hostile ? 0.35 : 0) : th.k === 'fan' && hostile ? 0.4 : 0;
+  let leak = null; if (leakCh && rnd() < leakCh) leak = mxLeak(th, t, lab, ctx);
+  if (th.mine >= 3) th.end = true;
+  mxMsg(th, rep, p2, 3 + rnd() * 8);
+  return leak ? 'leak' : null;
+}
+// a screenshot of your DM, posted for everyone
+function mxLeak(th, t, lab, ctx) {
+  const so = socS(), c = S.car, quote = t.length > 200 ? t.slice(0, 197) + '…' : t;
+  const by = th.k === 'troll' ? { k: 'troll', name: th.who.name, h: th.who.h, tr: th.who.tr, ty: (so.trolls.find(x => x.id === th.who.tr) || {}).type } : { k: 'fan', name: th.who.name, h: th.who.h };
+  const L = { tgt: th.k === 'troll' ? 'troll' : 'fans', tone: lab.tone, sev: Math.max(1, lab.sev), slur: !!lab.slur, threat: !!lab.threat, cuss: !!lab.cuss, neg: true, mate: null };
+  const post = { id: so.seq++, n: so.n, s: ctx.season, stage: c.stage, wk: socWeek(), by, about: 'leak', q: quote, ev: '', x: {}, text: th.k === 'troll' ? `${ctx.fn} ${ctx.ln} really sent me this in the DMs 💀 "${quote}"` : `wow. I sent ${ctx.fn} ${ctx.ln} a nice message and this is what I got back: "${quote}"`, ai: 1, lab: L, sit: socSit(L, ctx), reach: 0, likes: 0, rts: 0, rep: [], at: Date.now(), fx: null };
+  post.reach = Math.round(socReach(L, ctx) * 1.3); post.likes = Math.round(post.reach * 0.4); post.rts = Math.round(post.likes * 0.2);
+  const n = clamp(Math.round(5 + c.fame / 8 + L.sev * 3), 5, 22);
+  post.rep.push(...socReplies(post, ctx, Math.ceil(n * 0.6), 0)); post.rep.push(...socReplies(post, ctx, Math.floor(n * 0.4), 1));
+  so.posts.unshift(post); post.fx = socFx(post, ctx); socTrim();
+  carLog(`${by.h} posted a screenshot of your DM.`, 'social');
+  th.leak = post.id;
+  return post;
+}
+function carDmBlock(thId) {
+  const th = mxTh(thId); if (!th) return 'That conversation is gone.'; if (!['troll', 'fan'].includes(th.k)) return 'You can\'t block them.';
+  const so = socS(); th.blocked = true; th.end = true; if (th.who.h && !so.blocked.includes(th.who.h)) so.blocked.push(th.who.h);
+  const tr = th.who.tr != null && so.trolls.find(x => x.id === th.who.tr); if (tr) tr.blocked = true;
+  return `Blocked ${th.who.h || th.who.name}.`;
+}
+function carDmSeen(thId, t) { const th = mxTh(thId); if (th) th.seen = t || Date.now(); }
+function carDmView() {
+  const c = S.car; if (!c) return null; const mx = mxS();
+  return { threads: mx.dm.slice().sort((a, b) => b.last - a.last), ag: mx.ag };
+}
+// the AI writer's queue: the other side's messages, due soonest first; anything already on screen in the template's words stays
+function carDmQueue(max) {
+  const out = [], old = Date.now() - 25000;
+  for (const th of mxS().dm.slice(0, 12)) for (const m of th.msgs) if (!m.me && m.ai === 0 && m.at >= old) out.push({ th: th.id, id: m.id, at: m.at });
+  return out.sort((a, b) => a.at - b.at).slice(0, max || 20);
+}
+const MX_SYS = 'You write private direct messages for a football video game. Write the next message from the person described, to the player, in that person\'s own voice: texting style, one to three short sentences, no hashtags, no em dashes, no quotation marks around the message. Do exactly what the message has to do, and keep any choice it offers. Stick to the facts given and never invent stats, injuries, trades, offers, money or what anyone said. Never mention fame, grades, ratings or that this is a game. No slurs, no threats, nothing about anyone\'s family.';
+function carDmPrompt(thId, msgId) {
+  const th = mxTh(thId); if (!th) return null; const m = th.msgs.find(x => x.id === +msgId); if (!m || m.me) return null;
+  const ctx = socCtx(), before = th.msgs.slice(0, th.msgs.indexOf(m)).slice(-6).map(x => `${x.me ? ctx.me : th.who.name}: ${x.text}`);
+  const user = `Facts:\n${socFacts(ctx)}\n\nYou are ${mxWhoLine(th)}.\n${before.length ? `The conversation so far:\n${before.join('\n')}\n\n` : ''}What this message has to do: ${m.p || 'continue the conversation'}\nWrite ${th.who.name}'s next message to ${ctx.me}.\n\nAnswer with JSON: {"text": "the message"}`;
+  return { system: MX_SYS, user, ids: [m.id], schema: { type: 'object', properties: { text: { type: 'string', maxLength: 300 } }, required: ['text'] }, maxTokens: 110, temperature: 0.8 };
+}
+function carDmWrite(thId, msgId, text) {
+  const th = mxTh(thId); if (!th) return 0; const m = th.msgs.find(x => x.id === +msgId); if (!m || m.me || m.ai) return 0;
+  const t = typeof text === 'string' ? socCheck(text, socCtx()) : null;
+  if (t) { m.text = t; m.ai = 1; return 1; } m.ai = -1; return 0;
+}
+// badges: unanswered press conference, unread messages
+function carMxBadges(now) {
+  const c = S.car; if (!c || !c.socV) return { press: 0, msgs: 0 }; const mx = mxS(); now = now || Date.now();
+  let msgs = 0; for (const th of mx.dm) if (th.msgs.some(m => !m.me && m.at <= now && m.at > (th.seen || 0))) msgs++;
+  return { press: mx.pc && !mx.pc.done ? 1 : 0, msgs };
+}
 // ---------- stats helpers ----------
 function careerTotals(p) { const t = {}; for (const s in p.stats) for (const k in p.stats[s]) if (k !== 'tid') { if (['rl', 'rcl', 'fgl', 'pl'].includes(k)) t[k] = Math.max(t[k] || 0, p.stats[s][k]); else inc(t, k, p.stats[s][k]); } return t; }
 
@@ -14254,7 +14899,7 @@ function load(json) { const d = typeof json === 'string' ? JSON.parse(json) : js
   for (const k of ['potw', 'recaps']) if (!S[k]) S[k] = {};
   if (!S.hofBallots) S.hofBallots = {};
   upgradeRatings();
-  fixCollegeRookies(); fixGuarantees(); fieldDefault(); socMigrate();
+  fixCollegeRookies(); fixGuarantees(); fieldDefault(); socMigrate(); mxMigrate();
   initH2H(); S.set = { ...SET_DEFAULT, ...(S.set || {}) };
   for (const p of allPlayers()) if (p.disc == null) p.disc = rollDisc(p.pers);
   for (const c of [...Object.values(S.coaches || {}), ...Object.values(S.coachArc || {})]) if (c.mentors && c.role && ['SC', 'TR', 'HC'].includes(c.role) && !(c.stops || []).some(x => ['OC', 'DC', 'ST'].includes(x.role))) c.mentors = [];
@@ -14304,7 +14949,7 @@ return {
   pruneOffers, acceptOffer, declineOffer, takeJob, teamRank, draftForecast, warNextPick, teamNeeds, ratingWith, playoffOdds, tradeOdds, faSignRead, contractComps, negPatience, ODDS_SIMS,
   careerRecords, franchiseLeaders, REC_KEYS, REC_LABEL, hofScore, hofOutlook, hofWatch, LEAD_KEYS, mainTeam,
   weekBegin, weekEnd, watchWeek, uniBgStep, weekRestStep, weekFlush, weekPending: () => !!(S && S.weekLazy), poBegin, poEnd, poPairs, coachStart, coachFinish, runGen, scoutingReport, setGamePlan, OFF_PLANS, DEF_PLANS, gamePlanFor,
-  optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carSeasons, carGameLine, carHofStatus, carDraftProjection, carSocPost, carSocReply, carSocBlock, carSocMute, carSocIdeas, socCharPen, socAbout, carSocDelete, carSocMore, carSocPrompt, carSocLabelPrompt, carSocWrite, carSocQueue, carSocView, carSocSeen, socShowAt, socRead, socCtx, socCheck, SOC_MAX, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
+  optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carSeasons, carGameLine, carHofStatus, carDraftProjection, carSocPost, carSocReply, carSocBlock, carSocMute, carSocIdeas, socCharPen, socAbout, carSocDelete, carSocMore, carSocPrompt, carSocLabelPrompt, carSocWrite, carSocQueue, carSocView, gmAsk, gmAskPrompt, gmPitchPrompt, gmPitchCheck, asstParse, carSocSeen, socShowAt, socRead, socCtx, socCheck, SOC_MAX, carPcView, carPcAnswer, carDmView, carDmSend, carDmAct, carDmBlock, carDmSeen, carDmQueue, carDmPrompt, carDmWrite, carMxBadges, mxPressMake, mxDmStart, mxStep, mxAgMul, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
   injStatus, injuryReport, toggleRest, gameKey, pkgFor, setPackage, marketComps, positionMarket, hotSeat, hotSeatHeat,
   PROTECT_N, defaultProtect, ACHIEVEMENTS, RULES_DEFAULT, PROPOSALS, castVote, expandLeague: (n, pr) => { const r = expandLeague(n, pr); topUpProspects(); return r; }, MILESTONES, MS_NAME, stadiumTag, tradeDeadline,
   TRAITS, traitsKnown, POS_MOVES, positionPreview, changePosition, AGENT_STYLES, agentOf, capHit, voidCapHit, toggleBlock, shopPlayer, tradeAsk, mockDraft, visitProspect, VISITS_PER_YEAR,
@@ -15048,7 +15693,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && (ui.simMen
 const NAV_GROUPS = [
   { t: null, items: [['dashboard', 'Front office'], ['todo', 'To-do'], ['inbox', 'Inbox']] },
   { t: 'Team', items: [['roster', 'Roster'], ['dchart', 'Depth chart'], ['depth', 'Game plan'], ['staff', 'Coaching staff'], ['dev', 'Player development'], ['finance', 'Finances']] },
-  { t: 'Front office', items: [['fa', 'Free agents'], ['trade', 'Trades'], ['draft', 'Draft'], ['gm', 'GM career']] },
+  { t: 'Front office', items: [['fa', 'Free agents'], ['trade', 'Trades'], ['asst', 'Assistant'], ['draft', 'Draft'], ['gm', 'GM career']] },
   { t: 'League', items: [['schedule', 'Schedule & scores'], ['standings', 'Standings'], ['stats', 'League stats'], ['pulse', 'League pulse'], ['college', 'College football'], ['history', 'History'], ['hof', 'Hall of Fame']] },
   { t: 'More', more: true, items: [['health', 'League health'], ['editor', 'League editor'], ['league', 'League & saves'], ['help', 'Help']] },
 ];
@@ -20677,7 +21322,7 @@ const CV = () => HM.carView();
 const carInCol = () => { const c = S() && S().car; return !!c && (c.stage === 'hs' || c.stage === 'col'); };
 const carRv = x => (carInCol() ? rcv(x) : rv(x));
 const CAR_STAGE = { hs: 'High school senior', col: 'College', draft: 'Draft prospect', pro: 'Pro', fa: 'Free agent', ret: 'Retired' };
-const CAR_NAV = () => { const c = S().car; return [['home', 'Home'], ['feed', 'Feed'], ...(!['hs', 'ret'].includes(c.stage) ? [['skills', 'Skills']] : []), ...(c.stage === 'hs' ? [['recruit', 'Recruiting']] : []), ...(c.stage === 'draft' ? [['draft', 'Draft day']] : []), ['games', 'Game log'], ['team', 'Team'], ['career', 'Career'], ['news', 'Timeline']]; };
+const CAR_NAV = () => { const c = S().car; return [['home', 'Home'], ['feed', 'Feed'], ['press', 'Press'], ['msgs', 'Messages'], ...(!['hs', 'ret'].includes(c.stage) ? [['skills', 'Skills']] : []), ...(c.stage === 'hs' ? [['recruit', 'Recruiting']] : []), ...(c.stage === 'draft' ? [['draft', 'Draft day']] : []), ['games', 'Game log'], ['team', 'Team'], ['career', 'Career'], ['news', 'Timeline']]; };
 // the league around you, read-only: the college world while you're in high school or college, the pros after the draft
 const CAR_LEAGUE = () => carInCol()
   ? [['lfront', 'Front page'], ['lpolls', 'Rankings'], ['lstand', 'Standings'], ['lsched', 'Scores'], ['lpo', 'Playoff'], ['stats', 'Leaders'], ['lawards', 'Awards'], ['lhist', 'History'], ['lrivals', 'Rivalries']]
@@ -20715,7 +21360,7 @@ function careerStart(saved, modeSeg) {
 function careerRender() {
   guideMark();
   const v = CV(), c = v.c, p = v.p, nav = CAR_NAV(); let view = ui.carView || 'home';
-  const views = { home: carHome, feed: carFeed, skills: carSkills, recruit: carRecruit, draft: carDraft, games: carGames, team: carTeam, career: carCareer, news: carNews };
+  const views = { home: carHome, feed: carFeed, press: carPress, msgs: carMsgs, skills: carSkills, recruit: carRecruit, draft: carDraft, games: carGames, team: carTeam, career: carCareer, news: carNews };
   // league screens are borrowed from the GM and coach games and shown read-only (see 97r-career-league.js)
   for (const k in CAR_RO) views[k] = () => { try { return `<div class="carro">${CAR_RO[k]()}</div>`; } catch (e) { console.error(e); return '<div class="note">That screen is not available right now.</div>'; } };
   if (!views[view] || (!nav.some(x => x[0] === view) && !CAR_LEAGUE().some(x => x[0] === view) && view !== 'pl' && view !== 'tm')) ui.carView = view = 'home';
@@ -20727,7 +21372,7 @@ function careerRender() {
   const top = shellTop({ mode: 'career', sub: 'Career', team: `${p && typeof faceOf === 'function' ? faceOf(p, 30) : ''}<b>${E(c.fn + ' ' + c.ln)}</b> <span class="muted tb-pos">${E(c.pos)} · ${E(CAR_STAGE[c.stage])}</span>`, acts,
     meta: [`<span>${v.season} · <strong>${E(v.phase)}</strong></span>`, tm ? `<span>${inCol ? cchip(tm) : chip(tm)} <strong>${E(tm.name)}</strong> <span class="num">${inCol ? crec(tm.rec) : recStr(tm.rec)}</span></span>` : '', p ? `<span>OVR <strong class="num">${carRv(p.ovr)}</strong></span>` : ''] });
   return `${top}
-  <div class="shell">${navGroups([{ t: null, items: nav }, { t: 'League', items: CAR_LEAGUE() }], view, 'carNav', k => (k === 'home' && b ? '<span class="badge">!</span>' : k === 'feed' && view !== 'feed' && socUnread() ? `<span class="badge">${Math.min(99, socUnread())}</span>` : k === 'skills' && v.skills && !v.skills.auto && v.skills.attrs.some(x => !x.max && x.cost <= v.skills.sp) ? `<span class="badge">${Math.floor(v.skills.sp)}</span>` : ''), '<button data-act="carTitle">Title screen</button>')}
+  <div class="shell">${navGroups([{ t: null, items: nav }, { t: 'League', items: CAR_LEAGUE() }], view, 'carNav', k => (k === 'home' && b ? '<span class="badge">!</span>' : k === 'feed' && view !== 'feed' && socUnread() ? `<span class="badge">${Math.min(99, socUnread())}</span>` : k === 'press' && mxBadges().press ? '<span class="badge">!</span>' : k === 'msgs' && view !== 'msgs' && mxBadges().msgs ? `<span class="badge">${mxBadges().msgs}</span>` : k === 'skills' && v.skills && !v.skills.auto && v.skills.attrs.some(x => !x.max && x.cost <= v.skills.sp) ? `<span class="badge">${Math.floor(v.skills.sp)}</span>` : ''), '<button data-act="carTitle">Title screen</button>')}
   <main class="main">${ui.saveErr ? `<div class="note err">${E(ui.saveErr)}</div>` : ''}${ui.carMsg ? `<div class="note ok">${E(ui.carMsg)}</div>` : ''}${guideHint() || pageTip('career:' + view)}${b && view !== 'home' ? `<div class="note err row" style="justify-content:space-between"><span>${E(b.text)}</span><button class="btn sm" data-act="carNav" data-v="home">Decide</button></div>` : ''}${(views[view] || carHome)(v)}</main></div>${modal}`;
 }
 function nextLabel(v) {
@@ -20759,6 +21404,7 @@ function carHome(v) {
 // whatever needs an answer right now
 function carDecisionCard(v) {
   const c = v.c, p = v.p, out = [];
+  const pcCard = mxPressCard(); if (pcCard) out.push(pcCard);
   if (c.ev) out.push(`<section class="panel" style="border-left:4px solid var(--accent)"><div class="lbl">This week</div><h3 style="margin:2px 0 6px">${E(c.ev.title)}</h3><p style="margin:0 0 10px">${LN(c.ev.body)}</p><div class="row">${c.ev.opts.map((o, i) => `<button class="btn${i === 0 ? ' primary' : ''}" data-act="carEv" data-i="${i}">${E(o)}</button>`).join('')}</div></section>`);
   if (c.dec) out.push(`<section class="panel" style="border-left:4px solid var(--accent)"><div class="lbl">Decision</div><h3 style="margin:2px 0 6px">${E(c.dec.title)}</h3><p style="margin:0 0 10px">${LN(c.dec.body)}</p><div class="row">${c.dec.opts.map(([l, val], i) => `<button class="btn${i === 0 ? ' primary' : ''}" data-act="carDecide" data-v="${val}">${E(l)}</button>`).join('')}</div></section>`);
   const b = v.blocker;
@@ -20879,9 +21525,9 @@ function carCareer(v) {
   const count = {}; for (const h of hon) { const k = h.lvl + '|' + h.t; count[k] = (count[k] || 0) + 1; }
   const nice = { MVP: 'MVP', PB: 'Pro Bowl', AP: 'All-Pro', OPOY: 'Offensive Player of the Year', DPOY: 'Defensive Player of the Year', ROY: 'Rookie of the Year', RING: 'Championship ring', FMVP: `${HM.LEAGUE.final} MVP`, CPOY: 'Comeback Player of the Year', LEAD: 'League leader', POTW: 'Player of the Week', MS: 'Milestone' };
   const cases = Object.entries(count).filter(([k]) => !/\|(POTW|MS)$/.test(k)).sort((a, b) => b[1] - a[1]).map(([k, n]) => { const [lvl, t] = k.split('|'); return `<span class="pill" style="font-size:11.5px">${lvl === 'College' ? 'NCAA · ' : ''}${E(nice[t] || t)}${n > 1 ? ' ×' + n : ''}</span>`; }).join(' ');
-  const m = c.money, earned = Math.round(((m.sal || 0) + (m.end || 0) + (m.nil || 0) - (m.fine || 0)) * 10) / 10;
+  const m = c.money, earned = Math.round(((m.sal || 0) + (m.end || 0) + (m.nil || 0) - (m.fine || 0) - (m.fee || 0)) * 10) / 10;
   const canRetire = ['pro', 'fa'].includes(c.stage) && !['regular', 'playoffs'].includes(S().phase);
-  return `<div class="pagehead"><div><h2>Career</h2><p>${E(c.fn + ' ' + c.ln)} · ${E(c.pos)} · ${E(c.archName)}. Earned about $${earned}M so far${m.nil ? ` ($${Math.round(m.nil * 1000)}K in NIL)` : ''}${m.end ? `, $${m.end}M from endorsements` : ''}${m.fine ? `, minus $${m.fine}M in fines and lost game checks` : ''}.</p></div>${canRetire ? `<button class="btn" data-act="carRetire">${ui.confirm && ui.confirm.act === 'carRetire' ? 'Confirm: retire now' : 'Retire'}</button>` : ''}</div>
+  return `<div class="pagehead"><div><h2>Career</h2><p>${E(c.fn + ' ' + c.ln)} · ${E(c.pos)} · ${E(c.archName)}. Earned about $${earned}M so far${m.nil ? ` ($${Math.round(m.nil * 1000)}K in NIL)` : ''}${m.end ? `, $${m.end}M from endorsements` : ''}${m.fine ? `, minus $${m.fine}M in fines and lost game checks` : ''}${m.fee >= 0.05 ? `, minus $${Math.round(m.fee * 10) / 10}M in agent fees` : ''}.</p></div>${canRetire ? `<button class="btn" data-act="carRetire">${ui.confirm && ui.confirm.act === 'carRetire' ? 'Confirm: retire now' : 'Retire'}</button>` : ''}</div>
   <section class="panel"><h3>Trophy case</h3>${cases || '<p class="muted" style="margin:0">Nothing yet. Keep going.</p>'}</section>
   <section class="panel"><h3>Season by season</h3><div class="tw"><table class="t"><thead><tr><th>Season</th><th>Level</th><th>Team</th><th class="n">GP</th>${cols.map(([l]) => `<th class="n">${E(l)}</th>`).join('')}<th>Honors</th></tr></thead><tbody>${rows.map(r => `<tr><td class="num">${r.s}</td><td>${E(r.lvl)}</td><td>${E(r.team)}</td><td class="num">${r.gp || 0}</td>${cols.map(([, k]) => `<td class="num">${Math.round(r.st[k] || 0).toLocaleString()}</td>`).join('')}<td style="font-size:12px">${E((r.hon || []).filter(h => h !== 'POTW' && h !== 'MS').map(h => nice[h] || h).join(', '))}</td></tr>`).join('')}
     ${['College', 'Pro'].filter(l => rows.some(r => r.lvl === l)).map(l => { const t = tot(l); return `<tr class="sub"><td colspan="3"><b>${l} total</b></td><td class="num">${rows.filter(r => r.lvl === l).reduce((a, r) => a + (r.gp || 0), 0)}</td>${cols.map(([, k]) => `<td class="num"><b>${Math.round(t[k] || 0).toLocaleString()}</b></td>`).join('')}<td></td></tr>`; }).join('')}</tbody></table></div></section>
@@ -20948,6 +21594,21 @@ function socAiInit() {
 // the AI writer: replies due soonest first, a few at a time from the same post
 async function socWriter() {
   if (SOC_AI.busy || !socAiOn() || !(S() && S().car)) return;
+  // direct messages first: someone is waiting on an answer
+  const dq = S().car.mx ? HM.carDmQueue(4).filter(x => x.at <= Date.now() + 8000) : [];
+  if (dq.length) {
+    const dr = HM.carDmPrompt(dq[0].th, dq[0].id);
+    if (dr) {
+      SOC_AI.busy = true;
+      try {
+        const r = await DESKTOP.ai.generate({ ...dr, timeout: 30000 }), t = r && r.ok && r.json && typeof r.json.text === 'string' ? r.json.text : null;
+        if (!t) socAiFail(); else SOC_AI.fails = 0;
+        if (S() && S().car) { HM.carDmWrite(dq[0].th, dq[0].id, t); socSaveSoon(); }
+      } catch (e) { socAiFail(); }
+      finally { SOC_AI.busy = false; }
+      setTimeout(socWriter, 50); return;
+    }
+  }
   const q = HM.carSocQueue(12); if (!q.length) return;
   const post = q[0].post, ids = q.filter(x => x.post === post).slice(0, 3).map(x => x.id), req = HM.carSocPrompt(post, ids); if (!req) return;
   SOC_AI.busy = true;
@@ -21093,6 +21754,112 @@ Object.assign(actions, {
   socMore: d => { const e = HM.carSocMore(+d.p); if (e) toast(e); else socWriter(); persist(); },
   socAll: d => { (ui.socAll || (ui.socAll = {}))[d.p] = true; },
   socAiToggle: () => { try { STORE.setItem('hm-soc-ai', socAiPref() ? '0' : '1'); } catch (e) { /* the choice lasts this session */ } SOC_AI.fails = 0; SOC_AI.pause = 0; if (socAiPref()) { SOC_AI.init = false; socAiInit(); } },
+});
+// =====================================================================
+// CAREER PRESS AND MESSAGES: the podium after big moments, and the DMs.
+// The game reads every answer and message and decides what it costs (98-x-career-media.js); in the desktop app the
+// AI model reads what you type and writes the people messaging you, the same way it writes the feed.
+// =====================================================================
+NAV_ICO.press = '<path d="M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6"/>';
+NAV_ICO.msgs = '<path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H9l-5 3.5z"/>';
+// a message shows once the AI has written it (or once it is clearly late, in the game's own words)
+const dmShown = (m, now) => m.me || (m.at <= now && (m.ai !== 0 || !socAiOn() || now - m.at > 25000));
+const dmUnread = (th, now) => th.msgs.some(m => !m.me && dmShown(m, now) && m.at > (th.seen || 0));
+function mxBadges() {
+  const c = S() && S().car; if (!c || !c.mx) return { press: 0, msgs: 0 }; const now = Date.now();
+  return { press: c.mx.pc && !c.mx.pc.done ? 1 : 0, msgs: c.mx.dm.filter(th => dmUnread(th, now)).length };
+}
+// the home page card while reporters are waiting
+function mxPressCard() {
+  const c = S().car, pc = c.mx && c.mx.pc; if (!pc || pc.done) return '';
+  return `<section class="panel" style="border-left:4px solid var(--accent)"><div class="lbl">Press conference</div><h3 style="margin:2px 0 6px">${E(pc.title)}</h3><p style="margin:0 0 10px">Reporters are waiting with ${pc.qs.length} questions. What you say ends up in the feed, and your coaches and teammates read it too. It's gone once you move on to the next day.</p><button class="btn primary" data-act="carNav" data-v="press">Step up to the podium</button></section>`;
+}
+const pcPills = fx => [fx.fame ? `<span class="pill ${fx.fame > 0 ? 'w' : 'l'}">Fame ${fx.fame > 0 ? '+' : ''}${fx.fame}</span>` : '', fx.trust && S().car.stage !== 'hs' ? `<span class="pill ${fx.trust > 0 ? 'w' : 'l'}">Coach trust ${fx.trust > 0 ? '+' : ''}${fx.trust}</span>` : '', fx.susp ? `<span class="pill l">Suspended ${fx.susp} game${fx.susp > 1 ? 's' : ''}</span>` : '', fx.fine ? `<span class="pill l">Fined $${Math.round(fx.fine * 1000)}K</span>` : ''].filter(Boolean).join(' ');
+const pcQa = q => `<div class="pcqa"><div class="muted" style="font-size:12px">${E(q.by.name)}, ${E(q.by.out)}</div><div style="margin:2px 0"><b>${E(q.q)}</b></div><div>${q.a.nc ? '<span class="muted">No comment.</span>' : `"${E(q.a.t)}"`}</div></div>`;
+function carPress(v) {
+  const pv = HM.carPcView(), pc = pv.pc, c = v.c;
+  let main;
+  if (pc && !pc.done) {
+    const q = pc.qs[pc.i];
+    main = `<section class="panel"><div class="lbl">${E(pc.title)} · question ${pc.i + 1} of ${pc.qs.length}</div>
+      ${pc.qs.slice(0, pc.i).map(pcQa).join('')}
+      <div class="muted" style="font-size:12.5px;margin-top:6px">${E(q.by.name)}, ${E(q.by.out)}</div><div class="pcq">${E(q.q)}</div>
+      <div class="pcopts">${q.o.map((o, i) => `<button class="btn" data-act="pcAns" data-i="${i}"${ui.mxBusy ? ' disabled' : ''}>"${E(o.t)}"</button>`).join('')}</div>
+      <div class="scompose sm" style="margin-top:12px"><textarea id="pcIn" rows="2" maxlength="${HM.SOC_MAX}" placeholder="Or say it your own way">${E(ui.pcDraft || '')}</textarea><div class="row" style="gap:6px"><button class="btn sm primary" data-act="pcSay"${ui.mxBusy ? ' disabled' : ''}>${ui.mxBusy ? 'Answering…' : 'Answer'}</button><button class="btn sm" data-act="pcAns" data-i="nc"${ui.mxBusy ? ' disabled' : ''}>No comment</button></div></div></section>`;
+  } else if (pc && pc.done) {
+    main = `<section class="panel"><div class="lbl">${E(pc.title)} · how it played</div>${pc.qs.filter(q => q.a).map(pcQa).join('')}
+      <div class="row" style="gap:4px;flex-wrap:wrap;margin-top:6px">${pcPills(pc.fx || {}) || '<span class="muted" style="font-size:12.5px">Nothing much came of it.</span>'}</div>
+      ${pc.fx && pc.fx.notes.length ? `<p class="muted" style="margin:8px 0 0;font-size:12.5px">${E(pc.fx.notes.join(' '))}</p>` : ''}
+      ${pc.post ? '<button class="btn sm" style="margin-top:10px" data-act="carNav" data-v="feed">See it in the feed</button>' : ''}</section>`;
+  } else main = `<section class="panel"><p class="muted" style="margin:0">No press conference right now. Reporters want you after big games, bad games and tough losses, on signing day, on draft night, when you sign or get traded, and at media day before each season.</p></section>`;
+  const past = pv.past.filter(x => x.done);
+  return `<div class="pagehead"><div><h2>Press</h2><p>Pick an answer or say it your own way. The most quotable thing you say becomes the story: the humble answer earns you respect inside the building, a cocky one gets clicks, and blaming your coaches or teammates plays out like a post that blew up.</p></div></div>
+  <div class="grid2 sgrid"><div class="stack" style="gap:14px">${main}</div><div class="stack" style="gap:14px"><section class="panel"><h3>Past press conferences</h3>${past.length ? `<div class="stack" style="gap:10px;font-size:13px">${past.map(x => { const h = x.qs.map(q => q.a).filter(a => a && !a.nc).sort((a, b) => b.lab.sev - a.lab.sev)[0]; return `<div><div class="row" style="justify-content:space-between;gap:6px"><b>${E(x.title)}</b><span class="muted num">${E(x.wk || '')} ${x.s}</span></div>${h ? `<div style="margin:2px 0">"${E(h.t)}"</div>` : '<div class="muted">No comment.</div>'}<div class="row" style="gap:4px;flex-wrap:wrap">${pcPills(x.fx || {})}</div></div>`; }).join('')}</div>` : '<p class="muted" style="margin:0;font-size:12.5px">None yet.</p>'}</section></div></div>`;
+}
+
+// ---------- messages ----------
+const DM_KIND = { coach: 'Coach', mate: 'Teammate', rec: 'Recruiter', agent: 'Agent', troll: 'Troll', fan: 'Fan' };
+function dmRowHtml(th, now, on) {
+  const shown = th.msgs.filter(m => dmShown(m, now)), last = shown[shown.length - 1];
+  return `<button class="dmrow${on ? ' on' : ''}" data-act="dmOpen" data-t="${th.id}">${socAvatar(th.who.name, th.who.h || th.who.name, 34)}<span style="min-width:0"><b>${E(th.who.name)}</b> <span class="muted" style="font-size:11.5px">${E(DM_KIND[th.k] || '')}</span><div class="pv">${last ? E((last.me ? 'You: ' : '') + last.text) : '<span class="stype">typing…</span>'}</div></span>${dmUnread(th, now) && !on ? '<span class="dmdot"></span>' : '<span></span>'}</button>`;
+}
+function dmMsgsHtml(th, now) {
+  const shown = th.msgs.filter(m => dmShown(m, now)), typing = th.msgs.some(m => !m.me && m.at <= now && !dmShown(m, now)) || th.msgs.some(m => !m.me && m.at > now && m.at - now < 15000 && m.at > (th.msgs.filter(x => x.me).pop() || { at: 0 }).at);
+  return `${shown.map(m => `<div class="dmb${m.me ? ' me' : ''}">${E(m.text)}</div>`).join('')}${typing ? `<div class="muted stype" style="font-size:12px">${E(th.who.name.split(' ')[0])} is typing…</div>` : ''}`;
+}
+function dmThreadHtml(th, now) {
+  if (!th) return '<section class="panel"><p class="muted" style="margin:0">No messages yet. Teammates, coaches, recruiters, agents and fans reach out as your career goes, and trolls slide into your DMs once people know your name.</p></section>';
+  const canBlock = th.k === 'troll' || th.k === 'fan';
+  return `<section class="panel"><div class="row" style="justify-content:space-between;gap:8px"><div class="row" style="gap:10px">${socAvatar(th.who.name, th.who.h || th.who.name, 40)}<div><b>${E(th.who.name)}</b><div class="muted" style="font-size:12.5px">${E(th.who.sub || '')}</div></div></div>${canBlock && !th.blocked ? `<button class="btn sm" data-act="dmBlock" data-t="${th.id}">Block</button>` : ''}</div>
+    <div class="dmmsgs" id="dmMsgs" data-t="${th.id}">${dmMsgsHtml(th, now)}</div>
+    ${th.act && !th.res ? `<div class="row dmacts">${th.act.opts.map(([l, val], i) => `<button class="btn sm${i === 0 ? ' primary' : ''}" data-act="dmAct" data-t="${th.id}" data-v="${val}">${E(l)}</button>`).join('')}</div>` : ''}
+    ${th.res ? `<div class="note ok" style="margin:6px 0">${E(th.res)}</div>` : ''}${th.leak ? '<div class="note err" style="margin:6px 0">He posted a screenshot of what you sent. It\'s in the feed.</div>' : ''}
+    ${th.end || th.blocked ? `<p class="muted" style="margin:6px 0 0;font-size:12.5px">${th.blocked ? 'You blocked them.' : 'That\'s the end of this conversation.'}</p>` : `<div class="scompose sm"><textarea id="dmIn" rows="2" maxlength="${HM.SOC_MAX}" placeholder="Message ${E(th.who.name.split(' ')[0])}">${E(ui.dmDraft || '')}</textarea><div class="row" style="gap:6px"><button class="btn sm primary" data-act="dmSend" data-t="${th.id}"${ui.mxBusy ? ' disabled' : ''}>${ui.mxBusy ? 'Sending…' : 'Send'}</button><span class="muted" style="font-size:12px">Private, until someone takes a screenshot.</span></div></div>`}
+  </section>`;
+}
+function carMsgs(v) {
+  socAiInit();
+  const dv = HM.carDmView(), now = Date.now(), L = dv.threads, th = L.find(x => x.id === ui.dmOpen) || L[0];
+  if (th) HM.carDmSeen(th.id, now);
+  const ag = dv.ag;
+  return `<div class="pagehead"><div><h2>Messages</h2><p>Your DMs. Answer with a button or in your own words. What you say in private still counts: coaches remember, teammates hold grudges, and a troll will post a screenshot.</p></div></div>
+  <div class="grid2 dmgrid"><div class="stack" style="gap:14px"><section class="panel" style="padding:6px"><div class="dmlist" id="dmList">${L.length ? L.map(x => dmRowHtml(x, now, th && x.id === th.id)).join('') : '<p class="muted" style="margin:8px;font-size:12.5px">No messages yet.</p>'}</div></section>
+    <section class="panel"><h3>Your agent</h3><p style="margin:0;font-size:13px">${ag ? `${E(ag.name)}, ${E(ag.agency)}. Takes ${Math.round(ag.fee * 1000) / 10}% of your playing contracts; gets you about ${Math.round((ag.m - 1) * 100)}% more on them${ag.e > 1 ? `, and ${Math.round((ag.e - 1) * 100)}% more on endorsements` : ''}.` : 'None yet. Agents reach out once you are headed to the pros, and again before a pro contract runs out.'}</p></section></div>
+  <div class="stack" style="gap:14px" id="dmThread">${dmThreadHtml(th, now)}</div></div>`;
+}
+// keep an open conversation live without redrawing the page (or touching what you're typing)
+function mxRefresh() {
+  if (ui.mode !== 'career' || !(S() && S().car && S().car.mx)) return;
+  if (ui.carView === 'msgs') {
+    const now = Date.now(), el = document.getElementById('dmMsgs'), list = document.getElementById('dmList'); if (!el) return;
+    const th = S().car.mx.dm.find(x => x.id === +el.dataset.t); if (!th) return;
+    const html = dmMsgsHtml(th, now); if (el.dataset.h !== html) { el.dataset.h = html; el.innerHTML = html; el.scrollTop = el.scrollHeight; HM.carDmSeen(th.id, now); }
+    if (list) { const L = HM.carDmView().threads, lh = L.map(x => dmRowHtml(x, now, x.id === th.id)).join(''); if (list.dataset.h !== lh) { list.dataset.h = lh; list.innerHTML = lh; } }
+  }
+}
+setInterval(() => { try { mxRefresh(); } catch (e) { /* messages never break the page */ } }, 1500);
+
+app.addEventListener('input', e => {
+  if (e.target.id === 'pcIn') ui.pcDraft = e.target.value;
+  if (e.target.id === 'dmIn') ui.dmDraft = e.target.value;
+});
+const pcAfter = () => { const pc = S().car.mx.pc; if (pc && pc.done) { socWriter(); toast(pc.post ? 'The quote is out. See how it lands in the feed.' : 'Press conference over.'); } };
+Object.assign(actions, {
+  pcAns: d => { if (ui.mxBusy) return; const e = HM.carPcAnswer(d.i === 'nc' ? 'nc' : +d.i); if (e) toast(e); else { ui.pcDraft = ''; pcAfter(); } persist(); },
+  pcSay: () => {
+    const text = (ui.pcDraft || '').trim(), pc = S().car.mx.pc; if (!text || ui.mxBusy || !pc || pc.done) { if (!text) toast('Say something first.'); return; }
+    const q = pc.qs[pc.i]; ui.mxBusy = true;
+    socLabel(text, `a reporter (${q.by.name}, ${q.by.out}) who asked at a press conference: "${q.q}"`).then(lab => { ui.mxBusy = false; const e = HM.carPcAnswer(text, lab); if (e) toast(e); else { ui.pcDraft = ''; pcAfter(); } persist(); render(); });
+  },
+  dmOpen: d => { ui.dmOpen = +d.t; ui.dmDraft = ''; setTimeout(() => { const el = document.getElementById('dmMsgs'); if (el) el.scrollTop = el.scrollHeight; }, 0); },
+  dmAct: d => { const e = HM.carDmAct(+d.t, d.v); if (e) toast(e); else socWriter(); persist(); },
+  dmBlock: d => { toast(HM.carDmBlock(+d.t)); persist(); },
+  dmSend: d => {
+    const text = (ui.dmDraft || '').trim(); if (!text || ui.mxBusy) { if (!text) toast('Write something first.'); return; }
+    const th = S().car.mx.dm.find(x => x.id === +d.t); if (!th) return; const last = th.msgs.filter(m => !m.me).pop();
+    ui.mxBusy = true;
+    socLabel(text, `${th.who.name} (${th.who.sub}) in a private message${last ? `, who wrote "${last.text}"` : ''}`).then(lab => { ui.mxBusy = false; const e = HM.carDmSend(+d.t, text, lab); if (e === 'leak') toast(`${th.who.h || th.who.name} posted a screenshot of your message.`); else if (e) toast(e); else { ui.dmDraft = ''; socWriter(); } if (e === 'leak') ui.dmDraft = ''; persist(); render(); setTimeout(() => { const el = document.getElementById('dmMsgs'); if (el) el.scrollTop = el.scrollHeight; }, 0); });
+  },
 });
 // =====================================================================
 // PROGRESSION REPORT: opens by itself when a new season starts (pro) or after the offseason (college), showing how
@@ -22176,6 +22943,64 @@ Object.assign(actions, {
   selDone: () => { ui.selSeen = CSx().season; ui.selN = 0; },
 });
 // =====================================================================
+// GM ASSISTANT: ask for a player in plain words and get real ones back (97y-gm-assistant.js does the search).
+// In the desktop app the AI model reads the request and phrases the pitches; everywhere else the game's own reader
+// and pitches do the same job.
+// =====================================================================
+NAV_ICO.asst = '<circle cx="11" cy="11" r="6"/><path d="m20 20-4.2-4.2M11 8v6M8 11h6"/>';
+const ASST_IDEAS = () => {
+  const s = S(), L = ['A cheap startable corner', 'A young pass rusher on a rookie deal', 'A WR2 under $8M', 'A backup QB for the stretch run'];
+  if (s.phase === 'fa' || s.phase === 'resign') L.unshift('The best free agent I can afford');
+  if (s.phase === 'regular' && s.week <= HM.TRADE_DEADLINE) L.push('A veteran upgrade on the block, for a mid-round pick');
+  return L.slice(0, 5);
+};
+function asstCard(r) {
+  const p = P(r.pid); if (!p) return '';
+  const t = r.tid >= 0 ? T(r.tid) : null, up = r.up;
+  return `<div class="acard"><div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><div class="row" style="gap:10px">${faceOf(p, 40)}<div><b>${plink(p)}</b> <span class="muted">${E(p.pos)} · ${p.age}</span><div class="muted" style="font-size:12.5px">${t ? `${chip(t)} ${E(t.city + ' ' + t.name)}` : 'Free agent'} · ${r.src === 'fa' ? `asking ${money(p.ask.sal)} × ${p.ask.yrs}` : `${money(r.sal)} × ${r.yrs}`}${r.src === 'trade' && p.contract.rk ? ' · rookie deal' : ''}</div></div></div>
+    <div class="row" style="gap:6px;flex-wrap:wrap">${ovrB(rv(p.ovr))}<span class="pill ${up > 0 ? 'w' : up < -2 ? 'l' : ''}">${r.up > 0 ? `+${rv(p.ovr) - rv(p.ovr - up)} over your starter` : r.up >= -2 ? 'about your starter' : 'depth'}</span>${r.blk ? '<span class="pill">on the block</span>' : ''}</div></div>
+    <p style="margin:8px 0 6px;font-size:13.5px">${E(r.pitch)}</p>
+    <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center">${r.src === 'trade' ? `<span class="muted" style="font-size:12.5px">Price: ${E(r.price)}${r.fits ? '' : ' · his salary is more than your cap space'}</span><button class="btn sm" data-act="asstTake" data-id="${r.pid}">What would it take?</button><button class="btn sm primary" data-act="tradeAsk" data-id="${r.pid}">Get a price</button>` : `<span class="muted" style="font-size:12.5px">${r.pay < p.ask.sal ? `Likely about ${money(r.pay)} from you` : 'At his asking price'}${r.fits ? '' : ' · more than your cap space'}</span><button class="btn sm primary" data-act="neg" data-kind="fa" data-id="${r.pid}">Negotiate</button>`}</div></div>`;
+}
+function asstAnswer(a) {
+  const ask = a.ask;
+  return `<div class="amsg me">${E(a.text)}</div><div class="amsg">${ask ? `<p style="margin:0">${E(ask.msg)}</p>${ask.ok ? `<button class="btn sm primary" style="margin-top:8px" data-act="tradeAsk" data-id="${ask.pid}">Open it in the trade builder</button>` : ''}`
+    : `${a.read && a.read.length ? `<div class="row" style="gap:4px;flex-wrap:wrap;margin-bottom:8px"><span class="muted" style="font-size:12px">I looked for:</span>${a.read.map(x => `<span class="pill">${E(x)}</span>`).join('')}</div>` : ''}${a.loose ? `<p class="muted" style="margin:0 0 8px;font-size:12.5px">${E(a.loose)}</p>` : ''}${a.none ? `<p style="margin:0">${E(a.none)}</p>` : `<div class="stack" style="gap:8px">${a.rows.map(asstCard).join('')}</div>`}${a.pitching ? '<p class="muted stype" style="margin:8px 0 0;font-size:12px">Writing up the pitches…</p>' : ''}`}</div>`;
+}
+function asstView() {
+  socAiInit();
+  const A = ui.asst || (ui.asst = { log: [] }), ai = socAiOn();
+  return `<div class="pagehead"><div><h2>Assistant</h2><p>Tell your personnel assistant what you're looking for, in plain words: a position, a budget, an age, how good he has to be, trade or free agency. He searches every roster and the free agent list and brings back real players with what they'd cost. Follow up with "younger", "cheaper" or "what would it take?"</p></div>${A.log.length ? '<button class="btn sm" data-act="asstClear">Start over</button>' : ''}</div>
+  <section class="panel"><div class="stack" style="gap:10px">${A.log.length ? A.log.map(asstAnswer).join('') : '<p class="muted" style="margin:0;font-size:13px">Nothing asked yet. Try one of these:</p>'}
+    ${ui.asstBusy ? '<div class="amsg"><span class="muted stype">Looking…</span></div>' : ''}</div>
+    <div class="row sideas" style="margin:10px 0 8px">${ASST_IDEAS().map((t, i) => `<button class="btn sm" data-act="asstIdea" data-i="${i}">${E(t)}</button>`).join('')}</div>
+    <div class="scompose sm"><textarea id="asstIn" rows="2" maxlength="300" placeholder="Find me a cheap startable corner">${E(ui.asstDraft || '')}</textarea><div class="row" style="gap:8px"><button class="btn sm primary" data-act="asstAsk"${ui.asstBusy ? ' disabled' : ''}>${ui.asstBusy ? 'Looking…' : 'Ask'}</button><span class="muted" style="font-size:12px">${ai ? 'The built-in AI model reads your request and writes the pitches; the players and prices come from the game.' : 'The game reads your request. In the desktop app, the built-in AI model reads it too and writes the pitches.'}</span></div></div></section>`;
+}
+async function asstRun(text) {
+  const A = ui.asst || (ui.asst = { log: [] }), prev = A.log.length ? A.log[A.log.length - 1].q : null;
+  ui.asstBusy = true; render();
+  let mq = null;
+  if (socAiOn()) { try { const r = await Promise.race([DESKTOP.ai.generate({ ...HM.gmAskPrompt(text, prev), timeout: 15000 }), new Promise(res => setTimeout(() => res(null), 17000))]); mq = r && r.ok && r.json ? r.json : null; } catch (e) { mq = null; } }
+  const a = HM.gmAsk(text, prev, mq); ui.asstBusy = false;
+  if (a.err) { toast(a.err); render(); return; }
+  A.log.push(a); if (A.log.length > 12) A.log.shift();
+  render(); asstScroll();
+  // the model phrases the pitches; each one is kept only if it sticks to that player's facts
+  const pr = socAiOn() && a.rows && a.rows.length ? HM.gmPitchPrompt(a) : null; if (!pr) return;
+  a.pitching = true; render();
+  try { const r = await DESKTOP.ai.generate({ ...pr, timeout: 30000 }), L = r && r.ok && r.json && Array.isArray(r.json.pitches) ? r.json.pitches : []; a.rows.forEach((row, i) => { const t = HM.gmPitchCheck(L[i], row.facts); if (t) row.pitch = t; }); } catch (e) { /* the game's pitches stay */ }
+  a.pitching = false; if (ui.view === 'asst') render();
+}
+const asstScroll = () => setTimeout(() => { const el = document.getElementById('asstIn'); if (el) el.scrollIntoView({ block: 'nearest' }); }, 0);
+app.addEventListener('input', e => { if (e.target.id === 'asstIn') ui.asstDraft = e.target.value; });
+app.addEventListener('keydown', e => { if (e.target.id === 'asstIn' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); actions.asstAsk(); } });
+Object.assign(actions, {
+  asstAsk: () => { const t = (ui.asstDraft || '').trim(); if (!t || ui.asstBusy) { if (!t) toast('Ask me something.'); return; } ui.asstDraft = ''; asstRun(t); },
+  asstIdea: d => { const t = ASST_IDEAS()[+d.i]; if (t && !ui.asstBusy) asstRun(t); },
+  asstTake: d => { const A = ui.asst; if (!A || ui.asstBusy) return; const last = A.log[A.log.length - 1], p = P(+d.id); const a = HM.gmAsk('what would it take?', { ...(last && last.q || {}), top: +d.id }); a.text = `What would it take to get ${p ? p.fn + ' ' + p.ln : 'him'}?`; A.log.push(a); asstScroll(); },
+  asstClear: () => { ui.asst = { log: [] }; },
+});
+// =====================================================================
 // LEAGUE EDITOR: a team designer with a live logo preview (pro and college), conference names,
 // college player and recruit editing, league packs (share a custom league as a file) and
 // league setup on the pro start screen (size, rules, difficulty).
@@ -22541,7 +23366,7 @@ function render() {
   if (ui.live) { app.innerHTML = liveShell() + toastHtml(); liveUpdate(true); return; }
   if (s.fired) { app.innerHTML = topbar() + `<div class="shell">${nav()}<main class="main">${dashboard()}</main></div>` + firedScreen() + toastHtml(); return; }
   if (HM.fdOn) ui.view = 'fdraft';
-  const views = { dchart: () => depthBoard('pro'), pl: playerPage, tm: teamPage, fdraft: fdRoomView, seasonreview: () => reviewPage(ui.rvSeason ?? S().season), dashboard, inbox: inboxView, staff: staffView, roster: rosterView, depth: depthView, dev: devView, schedule: scheduleView, standings: standingsView, stats: statsView, fa: faView, trade: tradeView, draft: draftView, history: historyView, league: leagueView, pulse: pulseView, hof: hofView, todo: todoView, gm: gmView, finance: financeView, editor: editorView, health: healthView, help: helpView, college: collegeOutlookView };
+  const views = { dchart: () => depthBoard('pro'), pl: playerPage, tm: teamPage, fdraft: fdRoomView, seasonreview: () => reviewPage(ui.rvSeason ?? S().season), dashboard, inbox: inboxView, staff: staffView, roster: rosterView, depth: depthView, dev: devView, schedule: scheduleView, standings: standingsView, stats: statsView, fa: faView, trade: tradeView, asst: asstView, draft: draftView, history: historyView, league: leagueView, pulse: pulseView, hof: hofView, todo: todoView, gm: gmView, finance: financeView, editor: editorView, health: healthView, help: helpView, college: collegeOutlookView };
   tourMark();
   let modal = '';
   if (!HM.fdOn && !s.car && !ui.sim) { mqCollect([['devRep', () => { const dr = HM.devRep(); return dr && !dr.seen; }, () => HM.devRepSeen()], ['progRep', () => { const pr = HM.progRep(); return pr && !pr.seen; }, () => HM.progSeen()]]); mqOpen(); } // reports wait their turn
