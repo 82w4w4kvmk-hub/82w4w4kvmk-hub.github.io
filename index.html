@@ -9540,9 +9540,29 @@ function draftForecast(target, slotTid) {
   const d = S.draft; if (!d || S.phase !== 'draft' || target == null || target < d.idx) return {};
   const key = `${S.season}:${d.idx}:${target}:${slotTid ?? ''}:${d.log.length}`;
   if (warCache && warCache.key === key) return warCache.out;
+  const out = warSim(target, slotTid, null, WAR_SIMS).out;
+  warCache = { key, out };
+  return out;
+}
+// where one prospect goes (a career player watching his own draft): the pick and the team, sim by sim, over the next `span` picks
+let carOddsCache = null;
+function draftOddsFor(pid, span) {
+  const d = S.draft, p = S.players[pid]; if (!d || S.phase !== 'draft' || !p) return null;
+  // look far enough ahead for where the media has him; a long look runs fewer drafts to stay quick
+  const proj = (projRanks()[pid] ?? d.order.length) - d.idx;
+  const target = Math.min(d.order.length, d.idx + (span || Math.max(64, Math.round(proj * 1.6) + 40))), sims = target - d.idx > 120 ? 150 : 250;
+  const key = `${S.season}:${d.idx}:${pid}:${target}:${d.log.length}`;
+  if (carOddsCache && carOddsCache.key === key) return carOddsCache.out;
+  const r = warSim(target, null, pid, sims), out = { from: d.idx, target, sims, end: target >= d.order.length, at: r.at, by: r.by };
+  carOddsCache = { key, out };
+  return out;
+}
+function warSim(target, slotTid, watch, sims) {
+  const d = S.draft;
   const late = d.idx >= 96, all = prospects().filter(p => p.sc && (late || (p.pos !== 'K' && p.pos !== 'P')));
-  const n = target - d.idx, pool = all.sort((a, b) => draftScore(b) - draftScore(a)).slice(0, n + 70), out = {};
-  if (n <= 0) { for (const p of pool) out[p.id] = 1; warCache = { key, out }; return out; }
+  const n = target - d.idx, pool = all.sort((a, b) => draftScore(b) - draftScore(a)).slice(0, n + 70), out = {}, at = new Array(Math.max(0, n)).fill(0), by = {};
+  if (watch != null && !pool.some(p => p.id === watch) && S.players[watch] && S.players[watch].tid === -2) pool.push(S.players[watch]);
+  if (n <= 0) { for (const p of pool) out[p.id] = 1; return { out, at, by }; }
   const tids = [];
   for (let i = d.idx; i < target; i++) tids.push(d.order[i] === S.userTid ? (slotTid ?? -1) : d.order[i]);
   // each team's fixed board and roster, worked out once
@@ -9556,9 +9576,10 @@ function draftForecast(target, slotTid) {
   }
   const left = new Array(pool.length).fill(0), rng = warRng(S.season * 7919 + d.idx * 131 + target), taken = new Uint8Array(pool.length);
   const gz = () => { let u = 0; while (!u) u = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng()); };
-  for (let sim = 0; sim < WAR_SIMS; sim++) {
+  for (let sim = 0; sim < sims; sim++) {
     taken.fill(0); const add = {};
-    for (const tid of tids) {
+    for (let k = 0; k < tids.length; k++) {
+      const tid = tids[k];
       const b = base[tid], nd = need[tid], ad = add[tid] || (add[tid] = {});
       let top = -1, topSc = -1e9;
       for (let j = 0; j < pool.length; j++) {
@@ -9573,12 +9594,12 @@ function draftForecast(target, slotTid) {
       }
       if (top < 0) break;
       taken[top] = 1; ad[pool[top].pos] = (ad[pool[top].pos] || 0) + 1;
+      if (pool[top].id === watch) { at[k]++; by[d.order[d.idx + k]] = (by[d.order[d.idx + k]] || 0) + 1; break; }
     }
     for (let j = 0; j < pool.length; j++) if (!taken[j]) left[j]++;
   }
-  pool.forEach((p, j) => { out[p.id] = left[j] / WAR_SIMS; });
-  warCache = { key, out };
-  return out;
+  pool.forEach((p, j) => { out[p.id] = left[j] / sims; });
+  return { out, at, by };
 }
 // where a team is thinnest: its starters at each position against the league's, plus empty starting spots
 let needCache = null;
@@ -15190,7 +15211,7 @@ return {
   ROLES, ROLE_NAME, coachOf, coachRat, staffBudget, staffSpend, hireCoach, fireCoach, userStaffGaps, trainerMult,
   userView, deepScout, scoutSd, scoutPointsFor,
   negotiation, scoreOffer, makeOffer, tagPrice, franchiseTag,
-  pruneOffers, acceptOffer, declineOffer, takeJob, teamRank, draftForecast, warNextPick, teamNeeds, ratingWith, playoffOdds, tradeOdds, faSignRead, contractComps, negPatience, ODDS_SIMS,
+  pruneOffers, acceptOffer, declineOffer, takeJob, teamRank, draftForecast, draftOddsFor, warNextPick, teamNeeds, ratingWith, playoffOdds, tradeOdds, faSignRead, contractComps, negPatience, ODDS_SIMS,
   careerRecords, franchiseLeaders, REC_KEYS, REC_LABEL, hofScore, hofOutlook, hofWatch, LEAD_KEYS, mainTeam,
   weekBegin, weekEnd, watchWeek, uniBgStep, weekRestStep, weekFlush, weekPending: () => !!(S && S.weekLazy), poBegin, poEnd, poPairs, coachStart, coachFinish, runGen, scoutingReport, setGamePlan, OFF_PLANS, DEF_PLANS, gamePlanFor,
   optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carWatchable, carWatchStart, carWatchFinish, carStoryPrompt, carStoryWrite, carStoryQueue, carStoryView, carStorySeen, stForce, stStep, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carSeasons, carGameLine, carHofStatus, carDraftProjection, carSocPost, carSocReply, carSocBlock, carSocMute, carSocIdeas, socCharPen, socAbout, carSocDelete, carSocMore, carSocPrompt, carSocLabelPrompt, carSocWrite, carSocQueue, carSocView, gmAsk, gmAskPrompt, gmPitchPrompt, gmPitchCheck, asstParse, carSocSeen, socShowAt, socRead, socCtx, socCheck, SOC_MAX, carPcView, carPcAnswer, carDmView, carDmSend, carDmAct, carDmBlock, carDmSeen, carDmQueue, carDmPrompt, carDmWrite, carMxBadges, mxPressMake, mxDmStart, mxStep, mxAgMul, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
@@ -21659,7 +21680,7 @@ function carDecisionCard(v) {
   if (b && b.k === 'draft') out.push(`<section class="panel" style="border-left:4px solid var(--accent)"><div class="lbl">Draft day</div><h3 style="margin:2px 0 6px">The ${S().season + 1} draft is on</h3><p style="margin:0 0 10px">Scouts have you as the #${v.proj ? v.proj.rank : '?'} prospect on the board.</p><button class="btn primary" data-act="carNav" data-v="draft">Go to draft day</button></section>`);
   if (c.re) out.push(`<section class="panel" style="border-left:4px solid var(--accent)"><div class="lbl">Contract</div><h3 style="margin:2px 0 6px">${c.re.ok ? `The ${E(T(c.re.tid).name)} want you back` : `The ${E(T(c.re.tid).name)} are moving on`}</h3><p style="margin:0 0 10px">${c.re.ok ? `Their offer: ${c.re.yrs} years at ${money(c.re.sal)} a year. Or test free agency and see what other teams will pay.` : 'Your contract is up and they will not re-sign you. Free agency opens next.'}</p><div class="row">${c.re.ok ? `<button class="btn primary" data-act="carResign" data-v="1">Re-sign</button>` : ''}<button class="btn" data-act="carResign" data-v="0">${c.re.ok ? 'Test free agency' : 'OK'}</button></div></section>`);
   if (c.ext) out.push(`<section class="panel" style="border-left:4px solid var(--accent)"><div class="lbl">Contract</div><h3 style="margin:2px 0 6px">Extension offer</h3><p style="margin:0 0 10px">The ${E(T(c.ext.tid).name)} offered ${c.ext.yrs} years at ${money(c.ext.sal)} a year. Take the security now, or bet on yourself and hit free agency after the season. The offer expires after week 10.</p><div class="row"><button class="btn primary" data-act="carExt" data-v="1">Sign the extension</button><button class="btn" data-act="carExt" data-v="0">Bet on yourself</button></div></section>`);
-  if (c.stage === 'fa' && v.fa) out.push(`<section class="panel" style="border-left:4px solid var(--accent)"><div class="lbl">Free agency</div><h3 style="margin:2px 0 8px">Offers on the table</h3><div class="tw"><table class="t"><thead><tr><th>Team</th><th>Role</th><th class="n">Per year</th><th class="n">Years</th><th></th></tr></thead><tbody>${v.fa.map((o, i) => `<tr><td>${carTeamChip(o.tid)}${o.contender ? ' <span class="pill">contender</span>' : ''}</td><td>${E(o.role)}</td><td class="n">${money(o.sal)}</td><td class="n">${o.yrs}</td><td><button class="btn sm primary" data-act="carFA" data-i="${i}">Sign</button></td></tr>`).join('')}</tbody></table></div><p class="muted" style="margin:8px 0 0;font-size:12.5px">Offers change as the market moves. Wait too long and the good ones go elsewhere.</p></section>`);
+  if (c.stage === 'fa' && v.fa) out.push(carFaRoomView(v));
   if (v.portal) out.push(`<section class="panel" style="border-left:4px solid var(--accent)"><div class="lbl">Transfer portal</div><h3 style="margin:2px 0 4px">Choose your new school</h3>
     <p class="muted" style="margin:0 0 10px;font-size:12.5px">${v.portal.length ? 'These schools want you. Where you would sit on their depth chart next season is based on your rating against the players they keep.' : 'No offers yet. They come in over the next few days.'}</p>
     ${v.portal.length ? `<div class="stack" style="gap:8px">${v.portal.map(o => `<div class="row" style="justify-content:space-between;gap:10px;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--line);border-radius:10px${o.chosen ? ';background:var(--markSoft)' : ''}"><div class="row" style="gap:10px">${cchip(o.t)}<div><b>${E(o.t.name)}</b><div class="muted" style="font-size:12.5px">Prestige ${o.pres}${o.rec ? ` · went ${o.rec.w}-${o.rec.l}` : ''}${o.coach != null ? ` · head coach ${o.coach}` : ''}</div></div></div>
@@ -21726,6 +21747,7 @@ function carRecruit(v) {
 // ---------- draft day ----------
 function carDraft(v) {
   const c = v.c, p = v.p, d = v.draft;
+  if (p && p.tid === -2 && S().phase === 'draft') { const hasC = p.comb && !p.comb.skip, tab = hasC && ui.carDrTab === 'comb' ? 'comb' : 'room'; return `<div class="pagehead"><div><h2>Draft day</h2><p>Your odds come from the rest of the draft played out 250 times, one pick at a time, off every team's own board.</p></div>${hasC ? seg('carDrTab', tab, [['room', 'Green room'], ['comb', p.comb.proDay ? 'Pro day' : 'Combine']]) : ''}</div>${tab === 'comb' ? combineRoomView(v) : greenRoomView(v)}`; }
   if (!p || p.tid !== -2) return `<section class="panel"><p class="muted" style="margin:0">${c.draft ? `You went in round ${c.draft.rd}, pick ${c.draft.pk}, to the ${E(T(c.draft.tid).city + ' ' + T(c.draft.tid).name)}.` : 'The draft is over.'}</p></section>`;
   return `<div class="pagehead"><div><h2>Draft day</h2><p>You're the #${v.proj ? v.proj.rank : '?'} prospect on the consensus board.${p.comb && !p.comb.skip ? ` ${p.comb.proDay ? 'Pro day' : 'Combine'}: ${p.comb.forty ? p.comb.forty.toFixed(2) + ' in the 40' : ''}${p.comb.bench ? `, ${p.comb.bench} bench reps` : ''}.` : ''}</p></div></div>
   <section class="panel"><div class="ph"><h3>${d ? `Pick ${d.idx + 1}: the ${E(T(d.on).city + ' ' + T(d.on).name)} are on the clock` : 'Waiting for the draft'}</h3></div>
@@ -21787,7 +21809,7 @@ function carNews(v) {
 function carRetired(v) {
   const c = v.c, h = v.hof, r = c.ret || {};
   const hofTxt = !h ? '' : h.in ? `<b class="W">Inducted into the Hall of Fame in ${h.s}${h.first ? ' on the first ballot' : ''} (${h.pct}% of the vote).</b>` : h.pending ? `You'll be on the Hall of Fame ballot in ${h.year}. ${h.score >= 55 ? 'Voters are already talking about you.' : 'It will be close.'}` : h.dropped ? `You fell off the Hall of Fame ballot (last vote ${h.pct}%).` : r.hs != null && r.hs < 34 ? 'Your career did not reach Hall of Fame consideration.' : '';
-  return `<section class="hero"><div><div class="lbl">${E(c.pos)} · retired${r.age ? ' at ' + r.age : ''}</div><h1>${E(c.fn + ' ' + c.ln)}</h1><div class="sub">${E(r.why || '')}</div></div></section>
+  return `${hofRoomView(v)}<section class="hero"><div><div class="lbl">${E(c.pos)} · retired${r.age ? ' at ' + r.age : ''}</div><h1>${E(c.fn + ' ' + c.ln)}</h1><div class="sub">${E(r.why || '')}</div></div></section>
   <section class="panel"><h3>Legacy</h3><p style="margin:0 0 10px">${hofTxt || 'Your playing days are over.'}</p>${h && h.pending ? '<button class="btn primary" data-act="carHof">Sim to the Hall of Fame vote</button>' : ''}</section>
   ${carCareer(v)}`;
 }
@@ -23365,6 +23387,122 @@ Object.assign(actions, {
   asstIdea: d => { const t = ASST_IDEAS()[+d.i]; if (t && !ui.asstBusy) asstRun(t); },
   asstTake: d => { const A = ui.asst; if (!A || ui.asstBusy) return; const last = A.log[A.log.length - 1], p = P(+d.id); const a = HM.gmAsk('what would it take?', { ...(last && last.q || {}), top: +d.id }); a.text = `What would it take to get ${p ? p.fn + ' ' + p.ln : 'him'}?`; A.log.push(a); asstScroll(); },
   asstClear: () => { ui.asst = { log: [] }; },
+});
+// ---------- career event rooms: the green room, the combine, your free agency, the Hall of Fame vote ----------
+const CAR_RANGES = [[0, 10, 'Top 10'], [10, 20, 'Picks 11-20'], [20, 32, 'Rest of round 1'], [32, 64, 'Round 2'], [64, 999, 'Round 3 or later']];
+
+// ---------- draft night: the green room ----------
+function greenRoomView(v) {
+  const s = S(), c = v.c, p = v.p, d = s.draft, look = warLook();
+  const O = HM.draftOddsFor(p.id), n = O ? O.sims : 1, from = O ? O.from : 0;
+  const ranges = O ? CAR_RANGES.map(([a, b, l]) => { let k = 0; for (let i = 0; i < O.at.length; i++) { const pk = from + i; if (pk >= a && pk < b) k += O.at[i]; } return [l, k / n, a, b]; }).filter(([, , a, b]) => b > from) : [];
+  const gone = O ? 1 - O.at.reduce((a, x) => a + x, 0) / n : 0;
+  const by = O ? Object.entries(O.by).map(([tid, k]) => ({ tid: +tid, v: k / n })).sort((a, b) => b.v - a.v).slice(0, 5) : [];
+  // the middle outcome across every simulated draft, so a spread-out late range doesn't show one lucky pick
+  const exp = O ? (() => { let k = 0; for (let i = 0; i < O.at.length; i++) { k += O.at[i]; if (k >= n / 2) return `${from + i + 1}`; } return O.end ? 'Undrafted' : `${O.target}+`; })() : null;
+  const top20 = O ? O.at.reduce((a, k, i) => a + (from + i < 20 ? k : 0), 0) / n : 0;
+  const recent = v.draft ? v.draft.recent.slice(0, 8).map(x => [`${x.idx + 1}`, `${E(T(x.tid).abbr)} · ${x.p ? `${E(x.p.pos)} ${E(x.p.fn + ' ' + x.p.ln)}${x.p.pos === p.pos ? ' <span class="w-hot">(your position)</span>' : ''}` : ''}`]) : [];
+  const onClock = d ? T(d.order[d.idx]) : null;
+  return `<div class="war war-${look}">
+  ${rmHead('Green room', [`${s.season + 1} draft`, `Consensus No. ${v.proj ? v.proj.rank : '?'}`], d ? `Pick ${d.idx + 1} on the clock` : 'Draft', onClock ? E(onClock.abbr) : '—', look)}
+  <div class="w-grid">
+    ${rmPanel('Where you go', `${n} simulated drafts`, ranges.map(([l, x]) => `<div class="w-odd"><div class="w-ol"><span>${l}</span><b>${rmPct(x)}</b></div>${rmBar(x)}</div>`).join('') + (gone > 0.005 ? `<div class="w-odd"><div class="w-ol"><span>${O.end ? 'Undrafted' : `Later than pick ${O.target}`}</span><b>${rmPct(gone)}</b></div>${rmBar(gone, true)}</div>` : '') + '<p class="w-mut" style="margin-top:6px">Updated after every pick.</p>')}
+    <section class="w-stage w-stage-flat">
+      <div class="w-holo"><div class="w-cl" style="text-align:center">You</div><div class="w-name">${E(c.fn + ' ' + c.ln)}</div><div class="w-sub">${p.pos} · ${E(p.col || '')} · ${plink(p)}</div></div>
+      ${rmTiles([[exp ? exp : '—', 'Projected pick'], [rmPct(top20), 'Top 20'], [by[0] ? E(T(by[0].tid).abbr) : '—', 'Most likely team'], [p.comb && !p.comb.skip ? p.comb.forty.toFixed(2) : '—', '40 time']])}
+      <div class="w-wide"><div class="w-btns"><button class="w-btn ghost" data-act="carDraft" data-v="one">Next pick</button><button class="w-btn go" data-act="carDraft" data-v="all">Sim to my name</button></div></div>
+    </section>
+    <div class="w-side">
+      ${rmPanel('Teams most likely to take you', '', by.length ? by.map(x => `<div class="w-odd"><div class="w-ol"><span>${chip(T(x.tid))} ${E(T(x.tid).city)}</span><b>${rmPct(x.v)}</b></div>${rmBar(x.v)}</div>`).join('') : '<p class="w-mut">Nobody in range yet.</p>')}
+      ${rmPanel('Picks so far', '', rmFeed(recent))}
+    </div>
+  </div>
+</div>`;
+}
+
+// ---------- the combine (or your pro day): drill by drill, against your position ----------
+function combineRoomView(v) {
+  const c = v.c, p = v.p, look = warLook(), pros = HM.prospects(), ax = warCombine(p, pros) || [];
+  const n = clamp(ui.cmbN ?? ax.length, 0, ax.length), shown = ax.slice(0, n), cur = shown[shown.length - 1];
+  const rows = ax.map((a, i) => i < n ? `<div class="w-odd"><div class="w-ol"><span>${E(a.l)}</span><b>${E(String(a.txt))} <span class="w-mut">${Math.round(a.f * 100)}th pct</span></b></div>${rmBar(a.f)}</div>` : `<div class="w-odd" style="opacity:.4"><div class="w-ol"><span>${E(a.l)}</span><b>—</b></div>${rmBar(0)}</div>`).join('');
+  const avg = shown.length ? shown.reduce((s, a) => s + a.f, 0) / shown.length : 0;
+  const read = !shown.length ? 'Waiting on your first drill.' : avg >= 0.75 ? 'Scouts are buzzing: you tested like a riser.' : avg >= 0.5 ? 'A solid workout. Nothing here hurts you.' : avg >= 0.3 ? 'Middling numbers. Your tape will have to carry you.' : 'A rough day. Some teams will drop you down their boards.';
+  return `<div class="war war-${look}">
+  ${rmHead(p.comb && p.comb.proDay ? 'Pro day' : 'Scouting combine', [`${p.pos} group`, `${pros.filter(q => q.pos === p.pos).length} prospects`], 'Drills done', `${n}/${ax.length}`, look)}
+  <div class="w-grid">
+    ${rmPanel('Your drills', `against every ${p.pos}`, rows || '<p class="w-mut">No numbers recorded.</p>')}
+    <section class="w-stage w-stage-flat">
+      <div class="w-holo"><div class="w-cl" style="text-align:center">${cur ? E(cur.l) : 'Up next'}</div><div class="w-name">${cur ? E(String(cur.txt)) : E(c.fn + ' ' + c.ln)}</div><div class="w-sub">${cur ? `${Math.round(cur.f * 100)}th percentile among ${p.pos}s` : `${p.pos} · ${E(p.col || '')}`}</div></div>
+      ${shown.length >= 3 ? warRadar(shown) : ''}
+      <div class="w-wide"><div class="w-btns">${n < ax.length ? `<button class="w-btn go" data-act="cmbNext">Next drill</button><button class="w-btn ghost" data-act="cmbAll">All results</button>` : `<button class="w-btn ghost" data-act="cmbRestart">Watch it again</button>`}</div></div>
+    </section>
+    <div class="w-side">
+      ${rmPanel('Consensus board', '', `<div class="w-big">No. ${v.proj ? v.proj.rank : '?'}</div><p class="w-mut">Where the media has you among every prospect.</p>`)}
+      ${rmPanel('Scouts in the stands', '', rmAi('', read))}
+    </div>
+  </div>
+</div>`;
+}
+
+// ---------- your free agency: the offers, side by side ----------
+function carFaRoomView(v) {
+  const c = v.c, p = v.p, look = warLook(), offers = v.fa || [];
+  const sel = offers[clamp(ui.cfaSel ?? 0, 0, Math.max(0, offers.length - 1))];
+  const rank = o => { const L = (T(o.tid).depth || {})[p.pos] || []; const mates = L.map(id => P(id)).filter(q => q && q.tid === o.tid && q.id !== p.id); return mates.filter(q => q.ovr > p.ovr).length + 1; };
+  const rows = offers.map((o, i) => `<button class="w-row${o === sel ? ' on' : ''}" data-act="cfaSel" data-v="${i}" style="grid-template-columns:auto minmax(0,1fr) 70px">${chip(T(o.tid))}<span class="w-nm">${E(T(o.tid).city)}<small>${E(o.role)}${o.contender ? ' · contender' : ''}</small></span><span class="w-g">${money(o.sal)}<small>×${o.yrs}</small></span></button>`).join('');
+  const best = offers.slice().sort((a, b) => b.sal - a.sal)[0], win = offers.find(o => o.contender);
+  const take = [];
+  if (best && offers.length > 1) take.push(`${E(T(best.tid).city)} pay the most (${money(best.sal)} a year).`);
+  if (win && win !== best) take.push(`${E(T(win.tid).city)} are the best shot at a ring.`);
+  if (sel && sel.role !== 'Starter') take.push(`With ${E(T(sel.tid).abbr)} you'd be ${sel.role === 'Backup' ? 'a backup' : 'fighting for a roster spot'}.`);
+  take.push('Offers change as the market moves. Wait too long and the good ones go elsewhere.');
+  return `<div class="war war-${look}">
+  ${rmHead('Your free agency', [`${E(c.fn + ' ' + c.ln)} · ${p.pos} · age ${p.age}`, `${offers.length} offer${offers.length === 1 ? '' : 's'}`], 'Market value', money(HM.marketValue(p)), look)}
+  <div class="w-grid">
+    ${rmPanel('Offers on the table', 'per year', rows || '<p class="w-mut">No offers yet.</p>')}
+    <section class="w-stage w-stage-flat">${sel ? `
+      <div class="w-holo"><div class="w-cl" style="text-align:center">${E(sel.role)}</div><div class="w-name">${E(T(sel.tid).city + ' ' + T(sel.tid).name)}</div><div class="w-sub">${crecPro(T(sel.tid).rec)}${sel.contender ? ' · contender' : ''}</div></div>
+      ${rmTiles([[money(sel.sal), 'Per year'], [sel.yrs, 'Years'], [money(sel.sal * sel.yrs), 'Total'], [`#${rank(sel)}`, `On their ${p.pos} chart`]])}
+      <div class="w-wide"><div class="w-btns"><button class="w-btn go" data-act="carFA" data-i="${offers.indexOf(sel)}">Sign with ${E(T(sel.tid).abbr)}</button></div></div>` : '<p class="w-mut">No offers yet.</p>'}
+    </section>
+    <div class="w-side">${rmPanel('Your agent', '', rmAi('', take.join(' ')))}</div>
+  </div>
+</div>`;
+}
+const crecPro = r => r ? `${r.w}-${r.l}${r.t ? '-' + r.t : ''} last season` : '';
+
+// ---------- the Hall of Fame vote ----------
+function hofRoomView(v) {
+  const s = S(), c = v.c, look = warLook(), years = Object.keys(s.hofBallots || {}).map(Number).filter(y => (s.hofBallots[y] || []).some(x => x.id === c.pid)).sort((a, b) => b - a);
+  if (!years.length) return '';
+  const y = years[0], ballot = s.hofBallots[y], me = ballot.find(x => x.id === c.pid), open = ui.hofOpen === y;
+  const rows = ballot.slice(0, 10).map(x => `<div class="w-odd${x.id === c.pid ? ' w-me' : ''}"><div class="w-ol"><span>${E(x.name)} <i>${x.pos}</i></span><b>${open ? x.pct + '%' : '—'}</b></div>${rmBar(open ? x.pct / 100 : 0, open && x.pct < 80)}</div>`).join('');
+  const r = c.ret || {}, car = r.car || {}, hon = r.hon || [];
+  const nHon = k => hon.filter(h => (h.t || '').includes(k)).length;
+  const peers = (s.hof || []).filter(x => x.pos === c.pos).slice(-4);
+  return `<div class="war war-${look}">
+  ${rmHead('Hall of Fame vote', [`Class of ${y}`, `${me.n === 1 ? 'First' : `Year ${me.n} on the`} ballot`], 'Needs', '80%', look)}
+  <div class="w-grid">
+    ${rmPanel('The ballot', `${ballot.length} candidates`, rows + '<p class="w-mut" style="margin-top:6px">80% of the vote to get in, at most five a year.</p>')}
+    <section class="w-stage"><div class="w-beam"></div><div class="w-pad"></div>
+      <div class="w-holo"><div class="w-cl" style="text-align:center">You</div><div class="w-name">${E(c.fn + ' ' + c.ln)}</div><div class="w-sub">${E(c.pos)} · retired ${r.s || ''}</div>
+      ${open ? `<div class="w-big ${me.in ? 'w-up' : 'w-hot'}" style="font-size:72px;margin-top:10px">${me.pct}%</div><div class="w-sub">${me.in ? 'You are in the Hall of Fame.' : me.drop ? 'You fell off the ballot.' : `Short of 80%. You stay on the ballot.`}</div>` : ''}</div>
+      ${rmTiles([[car.gp || 0, 'Games'], [nHon('Pro Bowl'), 'Pro Bowls'], [nHon('All-Pro'), 'All-Pro'], [hon.filter(h => /champ/i.test(h.t || '')).length, 'Titles']])}
+      <div class="w-wide"><div class="w-btns">${open ? '' : `<button class="w-btn go" data-act="hofReveal" data-v="${y}">Read the results</button>`}</div></div>
+    </section>
+    <div class="w-side">
+      ${rmPanel(`${E(c.pos)}s already in`, '', peers.length ? peers.map(x => `<div class="w-deck"><span>${E(x.name)}</span><span class="w-mut" style="margin-left:auto">${x.inducted || x.ind || ''}${x.pct ? ` · ${x.pct}%` : ''}</span></div>`).join('') : '<p class="w-mut">No one at your position yet.</p>')}
+    </div>
+  </div>
+</div>`;
+}
+
+Object.assign(actions, {
+  cmbNext: () => { const v = HM.carView(), ax = warCombine(v.p, HM.prospects()) || []; ui.cmbN = Math.min(ax.length, (ui.cmbN ?? 0) + 1); },
+  cmbAll: () => { ui.cmbN = 99; },
+  cmbRestart: () => { ui.cmbN = 0; },
+  cfaSel: d => { ui.cfaSel = +d.v; },
+  hofReveal: d => { ui.hofOpen = +d.v; },
 });
 // =====================================================================
 // LEAGUE EDITOR: a team designer with a live logo preview (pro and college), conference names,
