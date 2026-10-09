@@ -1071,6 +1071,32 @@ ul.dlog li.sep{background:none;text-align:center;font-weight:700}
 @keyframes wtick{to{transform:translateX(-100%)}}
 @media (prefers-reduced-motion:reduce){.war *,.war *:after{animation:none!important}.war .w-ticker{white-space:normal}.war .w-ticker div{padding-left:20px}}
 @media (max-width:1150px){.war .w-grid{grid-template-columns:1fr}.war .w-stage{min-height:500px}}
+/* event rooms: shared pieces on top of the war room's look */
+.war .w-stage-flat{min-height:0;padding-top:4px}
+.war .w-wide{width:100%;max-width:560px;margin:14px auto 0;position:relative;z-index:2}
+.war .w-grid2{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+.war .w-big{font:900 34px/1.1 var(--fd);text-shadow:var(--wts)}
+.war .w-up{color:var(--wok)}.war .w-hot{color:var(--whot)}
+.war .w-bar.hot i{background:linear-gradient(90deg,#FF9A5C,var(--whot))}
+.war .w-odds{display:flex;align-items:flex-end;justify-content:center;gap:22px;margin:16px 0 4px;position:relative;z-index:2}
+.war .w-odds>div{text-align:center}.war .w-odds b{display:block;font:900 54px/1 var(--fd);text-shadow:var(--wts)}
+.war .w-arrow{font:600 24px var(--fm);color:var(--wdim);padding-bottom:10px}
+.war .w-feed div{font-size:12.5px;padding:7px 0;border-bottom:1px solid rgba(var(--wr),.1);line-height:1.45}
+.war .w-feed div:last-child{border:0}.war .w-feed em{font:600 11px var(--fm);color:var(--wa);font-style:normal;margin-right:6px}
+.war .w-tbl{width:100%;border-collapse:collapse;font-size:12px}.war .w-tbl th{font:600 10px var(--fm);color:var(--wdim);text-align:left;padding:4px;text-transform:uppercase;letter-spacing:.06em}.war .w-tbl td{padding:5px 4px;border-top:1px solid rgba(var(--wr),.1)}
+.war .w-meter{position:relative;height:14px;border-radius:99px;background:linear-gradient(90deg,var(--wok),var(--wwarn) 55%,var(--whot));margin:10px 0 4px}
+.war .w-meter i{position:absolute;top:-4px;width:4px;height:22px;background:var(--wtx);border-radius:2px;box-shadow:0 0 8px rgba(0,0,0,.5)}
+.war-holo .w-meter{border-radius:0}
+.war.w-strip{padding:14px;margin-top:14px}
+.war .w-me{background:rgba(var(--wr),.13);border-radius:10px;padding-left:6px;padding-right:6px}
+.war-holo .w-me{border-radius:0;box-shadow:inset 3px 0 0 var(--wa)}
+.war .w-seed{font:900 22px/1 var(--fd);min-width:26px}
+.war .w-pop{animation:wpop .45s both}
+@keyframes wpop{from{opacity:0;transform:translateY(8px)}}
+.war .w-deck small{display:block;font:400 10px var(--fm);color:var(--wdim)}
+.war .w-deck .w-bar{flex:1;margin-left:8px}
+.war .w-btn[disabled]{opacity:.45;cursor:default}
+.war .mono{font-family:var(--fm)}
 </style>
 <div id="app"></div>
 <script>
@@ -9537,6 +9563,79 @@ function teamNeeds(tid) {
   }
   return out.sort((a, b) => b.gap - a.gap);
 }
+// ---------- pro event rooms: playoff odds, the free-agent market read, contract comparisons ----------
+// A team's overall rating with some players added or taken away, from its best healthy players at each spot. The
+// depth chart is skipped on both sides of a what-if, so the before and after are measured the same way.
+function ratingWith(tid, add = [], drop = []) {
+  const gone = new Set(drop), pool = roster(tid).filter(p => !gone.has(p.id) && !p.ps && available(p)).concat(add.map(id => S.players[id]).filter(Boolean));
+  const by = {}; for (const p of pool) (by[p.pos] || (by[p.pos] = [])).push(p);
+  const pick = (pos, n) => { const a = (by[pos] || []).slice().sort((x, y) => y.ovr - x.ovr).slice(0, n); while (a.length < n) a.push(dummy(pos)); return a; };
+  const o = a => a.reduce((s, p) => s + p.ovr, 0) / a.length, L = {}; for (const pos of POS_ORDER) L[pos] = pick(pos, LINEUP_N[pos]);
+  const off = 0.32 * L.QB[0].ovr + 0.22 * o(L.WR.slice(0, 3)) + 0.1 * L.RB[0].ovr + 0.07 * L.TE[0].ovr + 0.29 * o(L.OL);
+  const def = 0.34 * o(L.DL.slice(0, 4)) + 0.2 * o(L.LB) + 0.3 * o(L.CB.slice(0, 3)) + 0.16 * o(L.S);
+  return off * 0.5 + def * 0.44 + (L.K[0].ovr + L.P[0].ovr) / 2 * 0.06;
+}
+// the rest of the regular season played out many times from the betting lines: playoff, division and top-seed odds.
+// `bump` moves one team's rating (a trade you're thinking about). Its own generator, so it never touches the season.
+const ODDS_SIMS = 1500;
+const oddsCache = new Map();
+function playoffOdds(tid, bump = 0) {
+  if (S.phase !== 'regular' || !S.schedule) return null;
+  const key = `${S.season}:${S.week}:${tid}:${r1(bump)}:${PL_V}`;
+  if (oddsCache.has(key)) return oddsCache.get(key);
+  const R = {}; for (const t of S.teams) R[t.tid] = teamRatings(t).x.ovr + (t.tid === tid ? bump : 0);
+  const games = []; for (let w = Math.max(0, S.week - 1); w < S.schedule.length; w++) for (const m of S.schedule[w]) if (!m.gid) games.push([m.h, m.a, normCdf((LINE_K * (R[m.h] - R[m.a]) + LINE_HFA) / LINE_SD)]);
+  const T = S.teams, idx = {}; T.forEach((t, i) => { idx[t.tid] = i; });
+  const div = T.map(t => t.div), conf = T.map(t => t.conf), base = T.map(t => [t.rec.w + t.rec.t * 0.5, t.rec.dw + t.rec.dt * 0.5]);
+  const sameDiv = games.map(([h, a]) => div[idx[h]] === div[idx[a]]), rng = warRng(S.season * 977 + S.week * 31 + tid);
+  const me = idx[tid], hits = { po: 0, div: 0, bye: 0 }, nDiv = Math.max(...div) + 1;
+  const w = new Float64Array(T.length), dw = new Float64Array(T.length), tb = new Float64Array(T.length);
+  for (let s = 0; s < ODDS_SIMS; s++) {
+    for (let i = 0; i < T.length; i++) { w[i] = base[i][0]; dw[i] = base[i][1]; tb[i] = rng(); }
+    for (let g = 0; g < games.length; g++) { const [h, a, p] = games[g], win = rng() < p ? idx[h] : idx[a]; w[win]++; if (sameDiv[g]) dw[win]++; }
+    const better = (i, j) => w[i] - w[j] || dw[i] - dw[j] || tb[i] - tb[j];
+    const lead = []; for (let d = 0; d < nDiv; d++) { let b = -1; for (let i = 0; i < T.length; i++) if (div[i] === d && (b < 0 || better(i, b) > 0)) b = i; if (b >= 0) lead.push(b); }
+    const c = conf[me], leaders = lead.filter(i => conf[i] === c).sort((i, j) => better(j, i)), rest = [];
+    for (let i = 0; i < T.length; i++) if (conf[i] === c && !leaders.includes(i)) rest.push(i);
+    rest.sort((i, j) => better(j, i));
+    const seeds = leaders.concat(rest).slice(0, 7), at = seeds.indexOf(me);
+    if (at >= 0) hits.po++; if (leaders.includes(me)) hits.div++; if (at === 0) hits.bye++;
+  }
+  const out = { po: hits.po / ODDS_SIMS, div: hits.div / ODDS_SIMS, bye: hits.bye / ODDS_SIMS, left: games.length };
+  if (oddsCache.size > 24) oddsCache.clear();
+  oddsCache.set(key, out);
+  return out;
+}
+// what adding (and giving up) players does to your odds
+function tradeOdds(add = [], drop = []) {
+  const u = S.userTid, now = ratingWith(u), after = ratingWith(u, add, drop);
+  return { before: playoffOdds(u, 0), after: playoffOdds(u, after - now), dOvr: r1(after - now) };
+}
+// the market's read on a free agent: is he about to sign somewhere else?
+function faSignRead(p) {
+  if (!onMarket(p)) return { lvl: 0, text: 'Open market' };
+  const mk = p.mk, top = bestBid(p), coming = mk.suit.filter(s => s.day > S.faDay).length;
+  if (mk.final) return { lvl: 3, text: `Last call: signs with ${team(mk.final.tid).abbr} next unless you beat it` };
+  if (top && (top.sal >= mk.min * 0.97 || S.faDay >= 4)) return { lvl: 3, text: `Likely to sign with ${mk.uv ? team(top.tid).abbr : 'a rival'} by tomorrow` };
+  if (top) return { lvl: 2, text: `${mk.suit.filter(s => s.sal > 0).length} bid${mk.suit.filter(s => s.sal > 0).length > 1 ? 's' : ''} in; still shopping` };
+  if (coming) return { lvl: 1, text: `${coming} visit${coming > 1 ? 's' : ''} lined up` };
+  return { lvl: 0, text: 'No bids yet' };
+}
+// recent deals for players like him: same position, close in age and rating
+function contractComps(pid, n = 6) {
+  const p = S.players[pid]; if (!p) return [];
+  return allPlayers().filter(q => q.id !== p.id && q.tid >= 0 && q.pos === p.pos && !q.ps && q.contract && q.contract.rk == null && q.contract.sal > minSalary() * 1.5 && (q.contract.s == null || q.contract.s >= S.season - 3))
+    .map(q => ({ q, d: Math.abs(q.ovr - p.ovr) * 1.6 + Math.abs(q.age - p.age) }))
+    .sort((a, b) => a.d - b.d).slice(0, n)
+    .map(({ q }) => ({ id: q.id, tid: q.tid, age: q.age, ovr: q.ovr, sal: q.contract.sal, yrs: q.contract.yrs, gtd: q.contract.gtd || 0 }))
+    .sort((a, b) => b.sal - a.sal);
+}
+// how many more rejected offers before he walks
+function negPatience(pid, kind) {
+  const p = S.players[pid]; if (!p) return null;
+  const n = negotiation(pid, kind), used = p.neg && p.neg.key === negKey() ? p.neg.tries || 0 : 0;
+  return { used, max: n.maxTries, left: Math.max(0, n.maxTries - used), low: p.neg && p.neg.key === negKey() ? p.neg.low || 0 : 0 };
+}
 // =====================================================================
 // COLLEGE MODE: a separate game. You coach a school: recruit, redshirt, work the transfer portal,
 // spend NIL money, climb the polls and chase the 12-team playoff. Players who leave become a draft
@@ -14168,7 +14267,7 @@ return {
   ROLES, ROLE_NAME, coachOf, coachRat, staffBudget, staffSpend, hireCoach, fireCoach, userStaffGaps, trainerMult,
   userView, deepScout, scoutSd, scoutPointsFor,
   negotiation, scoreOffer, makeOffer, tagPrice, franchiseTag,
-  pruneOffers, acceptOffer, declineOffer, takeJob, teamRank, draftForecast, warNextPick, teamNeeds,
+  pruneOffers, acceptOffer, declineOffer, takeJob, teamRank, draftForecast, warNextPick, teamNeeds, ratingWith, playoffOdds, tradeOdds, faSignRead, contractComps, negPatience, ODDS_SIMS,
   careerRecords, franchiseLeaders, REC_KEYS, REC_LABEL, hofScore, hofOutlook, hofWatch, LEAD_KEYS, mainTeam,
   weekBegin, weekEnd, watchWeek, uniBgStep, weekRestStep, weekFlush, weekPending: () => !!(S && S.weekLazy), poBegin, poEnd, poPairs, coachStart, coachFinish, runGen, scoutingReport, setGamePlan, OFF_PLANS, DEF_PLANS, gamePlanFor,
   optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carSeasons, carGameLine, carHofStatus, carDraftProjection, carSocPost, carSocReply, carSocBlock, carSocMute, carSocIdeas, socCharPen, socAbout, carSocDelete, carSocMore, carSocPrompt, carSocLabelPrompt, carSocWrite, carSocQueue, carSocView, carSocSeen, socShowAt, socRead, socCtx, socCheck, SOC_MAX, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
@@ -15609,8 +15708,10 @@ function teamStatsTable() {
 function faView() {
   const s = S(), tid = s.userTid, room = HM.capRoom(tid), full = HM.active(tid).length >= HM.rosterMax(), psFull = HM.roster(tid).filter(p => p.ps).length >= HM.PS_MAX;
   let fas = HM.freeAgents(); if (ui.faPos !== 'ALL') fas = fas.filter(p => p.pos === ui.faPos);
+  const faTabs = s.phase === 'fa' ? seg('faTab', ui.faTab === 'list' ? 'list' : 'room', [['room', 'Command center'], ['list', 'Every free agent']]) : '';
+  if (s.phase === 'fa' && ui.faTab !== 'list') return `<div class="pagehead"><div><h2>Free agency</h2><p>The market, the bidding and your cap in one room. Day ${s.faDay} of 5: prices drop about 10% a day, and other teams sign players between days.</p></div>${faTabs}</div>${faRoomView()}`;
   const blurb = s.phase === 'fa' ? `Day ${s.faDay} of 5. Prices drop about 10% a day, and AI teams sign players between days.` : s.phase === 'regular' ? 'Unsigned players are available all season, mostly depth and injury replacements.' : 'Players sign at their asking price if you have the cap space and a roster spot.';
-  return `<div class="pagehead"><div><h2>Free agents</h2><p>${E(blurb)}</p></div>${seg('faPos', ui.faPos, posOpts)}</div>
+  return `<div class="pagehead"><div><h2>Free agents</h2><p>${E(blurb)}</p></div>${faTabs}${seg('faPos', ui.faPos, posOpts)}</div>
   <div class="row"><span class="pill">Cap space ${money(room)}</span>${['resign', 'fa', 'draft'].includes(s.phase) ? (() => { const dc = HM.draftCost(tid); return dc.n && s.phase !== 'draft' ? `<span class="pill ${room - dc.impact < 0 ? 'exp' : ''}" title="Your ${dc.n} draft picks cost about ${money(dc.total)} on the rookie scale. Only your top 51 cap hits count until cut-down day, so the real hit is smaller.">After your draft class: ${money(room - dc.impact)}</span>` : ''; })() : ''}<span class="pill">Active roster ${HM.active(tid).length}/${HM.rosterMax()}</span><span class="pill">Practice squad ${HM.roster(tid).filter(p => p.ps).length}/${HM.PS_MAX}</span></div>
   <p class="muted" style="margin:0;font-size:12.5px">Asking prices are a starting point. Every free agent has priorities (money, winning, a big market, low state income tax, a starting job). "Your pitch" shows how much your team's fit moves his price with you: a contender, a big market, a low-tax city or a starting job can win a player for less than a bigger offer elsewhere. Negotiate to trade years and guarantees for salary.</p>
   ${marketPanelFA()}
@@ -15644,7 +15745,7 @@ function tradeView() {
   const closed = s.phase === 'playoffs' || (s.phase === 'regular' && s.week > HM.TRADE_DEADLINE);
   const dlm = HM.dlMarket(), tab0 = ui.tradeTab || (dlm ? 'deadline' : 'build'), tab = tab0 === 'deadline' && !dlm ? 'build' : tab0;
   const tabSeg = seg('tradeTab', tab, [['build', 'Trade builder'], ...(dlm ? [['deadline', `Deadline · ${dlm.label}`]] : []), ['shop', 'Shop players'], ['finder', 'Trade finder'], ['market', 'On the market'], ['block', 'Your trade block']]);
-  if (tab !== 'build') return `<div class="pagehead"><div><h2>Trades</h2><p>Find players to target, shop your own around the league, see who other teams are shopping, and list your own players.</p></div>${tabSeg}</div>${tab === 'deadline' ? deadlinePanel(dlm) : tab === 'shop' ? shopPanel() : tab === 'finder' ? tradeFinderPanel() : tab === 'market' ? tradeMarketPanel() : tradeBlockPanel()}`;
+  if (tab !== 'build') return `<div class="pagehead"><div><h2>Trades</h2><p>Find players to target, shop your own around the league, see who other teams are shopping, and list your own players.</p></div>${tabSeg}</div>${tab === 'deadline' ? deadlineRoomView(dlm) + deadlinePanel(dlm) : tab === 'shop' ? shopPanel() : tab === 'finder' ? tradeFinderPanel() : tab === 'market' ? tradeMarketPanel() : tradeBlockPanel()}`;
   const msg = ui.tradeMsg ? `<div class="note ${ui.tradeMsg.ok ? 'ok' : 'err'}">${E(ui.tradeMsg.reason)}</div>` : '';
   return `<div class="pagehead"><div><h2>Trades</h2><p>Pick players and draft picks from both sides and propose. Teams value young, cheap, high-upside players and early picks, and want a little extra to say yes. A pick's value depends on where it's projected to land; future years are discounted. The deadline is after week ${HM.TRADE_DEADLINE}. During the draft you can trade picks to move up or down.</p></div>
     <label class="row"><span class="lbl">Trade with</span><select id="tradeTeam">${others.map(t => `<option value="${t.tid}" ${t.tid === o.tid ? 'selected' : ''}>${E(t.city + ' ' + t.name)} (${recStr(t.rec)})</option>`).join('')}</select></label></div>
@@ -17429,6 +17530,7 @@ function negModal() {
         <div class="muted" style="font-size:12px">Cap room for this deal: ${money(room)}. More guaranteed money lowers the salary he needs; players over 30 care about guarantees more.</div>
       </section>
     </div>
+    ${negRoomStrip(p, ng.kind)}
     ${marketPanel(p)}
     ${msg}
     <div class="row"><button class="btn primary" data-act="negSubmit" ${n.locked ? 'disabled' : ''}>Make offer</button><button class="btn" data-act="negAsk">Reset to his terms</button>${canTag ? `<button class="btn" data-act="tag" data-id="${p.id}">Franchise tag: ${money(HM.tagPrice(p))} × 1y</button>` : ''}${ng.kind === 'fa' && HM.psEligible(p) ? `<button class="btn" data-act="signPS" data-id="${p.id}">Practice squad instead (${money(HM.psSalary())})</button>` : ''}</div>
@@ -21816,6 +21918,115 @@ setInterval(() => {
   const left = Math.max(0, ck.len - Math.floor((Date.now() - ck.t0) / 1000));
   el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; el.classList.toggle('late', !left);
 }, 1000);
+// ---------- event rooms: shared pieces, then the pro rooms (free agency, the trade deadline, the negotiation table) ----------
+// Every room uses the war room's look (glass or hologram, one setting for all of them) and its .war styles.
+const rmPanel = (title, right, body, extra = '') => `<section class="w-panel"${extra}><h4><span>${title}</span><span>${right || ''}</span></h4>${body}</section>`;
+const rmTiles = a => `<div class="w-tiles">${a.map(([b, l]) => `<div class="w-tile"><b>${b}</b><span>${l}</span></div>`).join('')}</div>`;
+const rmBar = (v, hot) => `<div class="w-bar${hot ? ' hot' : ''}"><i style="width:${Math.round(clamp(v, 0, 1) * 100)}%"></i></div>`;
+const rmFeed = items => items.length ? `<div class="w-feed">${items.map(([e, t]) => `<div>${e ? `<em>${e}</em>` : ''}${t}</div>`).join('')}</div>` : '<p class="w-mut">Nothing yet.</p>';
+const rmLooks = look => `<div class="w-looks" role="group" aria-label="Look">${WAR_LOOKS.map(([k, l]) => `<button data-act="warLook" data-v="${k}" aria-pressed="${k === look}">${l}</button>`).join('')}</div>`;
+const rmHead = (title, pills, clockLbl, clockVal, look) => `<div class="w-head"><div class="w-title">${title}</div>${pills.map(x => `<span class="w-pill">${x}</span>`).join('')}${rmLooks(look)}<div class="w-clock"><span class="w-cl">${clockLbl}</span><b class="w-time">${clockVal}</b></div></div>`;
+const rmTicker = items => items.length ? `<div class="w-ticker"><div>${items.map(([e, t]) => `<span><em>${e}</em> ${t}</span>`).join('')}</div></div>` : '';
+const rmAi = (who, text) => `<div class="w-ai">${who ? `<span class="w-who">${who}</span>` : ''}${text}</div>`;
+const rmPct = v => `${Math.round(v * 100)}%`;
+const rmName = p => E(p.fn ? p.fn + ' ' + p.ln : p.ln);
+// news from the current phase, newest first
+const rmNews = (re, n = 6) => (S().news || []).filter(x => x.s === S().season && x.ph === HM.phaseLabel() && re.test(x.text)).slice(0, n);
+
+// ---------- free agency command center ----------
+function faRoomView() {
+  const s = S(), u = s.userTid, look = warLook(), room = HM.capRoom(u);
+  let mkt = HM.freeAgents().filter(p => HM.marketInfo(p)).sort((a, b) => b.ovr - a.ovr).slice(0, 18);
+  if (!mkt.length) mkt = HM.freeAgents().sort((a, b) => b.ovr - a.ovr).slice(0, 18);
+  if (!mkt.length) return `<div class="war war-${look}">${rmHead('Free agency', [`Day ${s.faDay} of 5`], 'Market', 'Empty', look)}<p class="w-mut">Every free agent has signed.</p></div>`;
+  const sel = ui.faSel != null && P(ui.faSel) && P(ui.faSel).tid === -1 ? P(ui.faSel) : mkt[0];
+  const mi = HM.marketInfo(sel), rd = HM.faSignRead(sel), ap = HM.faAppeal(sel, u), pc = Math.round(ap.d * 100);
+  const board = mkt.map(p => { const r = HM.faSignRead(p); return `<button class="w-row${p === sel ? ' on' : ''}" data-act="faSel" data-id="${p.id}" style="grid-template-columns:minmax(0,1fr) 40px 74px"><span class="w-nm">${rmName(p)}<small>age ${p.age} · ${rv(p.ovr)} OVR</small></span><span class="w-pos">${p.pos}</span><span class="w-g">${money(p.ask.sal)}<small class="${r.lvl >= 3 ? 'w-hot' : ''}">${r.lvl >= 3 ? 'about to sign' : r.lvl === 2 ? 'bids in' : r.lvl === 1 ? 'visiting' : 'quiet'}</small></span></button>`; }).join('');
+  const suit = mi ? mi.suitors.map(x => `<div class="w-deck">${chip(T(x.tid))}<span>${x.sal > 0 ? (x.exact ? `${money(x.sal)} × ${x.yrs}y, ${money(x.gtd)} guaranteed` : `about ${money(Math.round(x.sal))} a year`) : x.day > s.faDay ? `visit on day ${x.day}` : 'visited, no offer yet'}</span></div>`).join('') : '';
+  const visits = mi ? mi.visitsLeft : 0;
+  const acts = `${mi && !mi.visited ? `<button class="w-btn ghost" data-act="visitFA" data-id="${sel.id}"${visits ? '' : ' disabled'}>Bring him in (${visits} left today)</button>` : ''}<button class="w-btn" data-act="neg" data-kind="fa" data-id="${sel.id}">Negotiate</button><button class="w-btn ghost" data-act="sign" data-id="${sel.id}">Sign at his price</button>`;
+  const dc = HM.draftCost(u), after = dc.n ? room - dc.impact : null, pay = HM.payroll ? HM.payroll(u) : null;
+  const take = [];
+  take.push(`${E(sel.ln)} wants ${E(HM.faPrioText(sel).toLowerCase())}.`);
+  take.push(pc > 0 ? `Your team is a selling point: about <b>${pc}% off</b> his price with you.` : pc < 0 ? `He'd want about <b>${-pc}% more</b> to come here.` : 'He has no strong feelings about your team.');
+  if (rd.lvl >= 3) take.push(`<b>${E(rd.text)}.</b> If you want him, it's now.`);
+  else if (mi && mi.suitors.length && !mi.visited) take.push('A visit shows you the exact offers on the table and helps your pitch.');
+  if (sel.ask.sal > room) take.push(`His price is more than your ${money(room)} of cap space.`);
+  const feed = rmNews(/signed|visit|bidding|last call|free agency/i, 6).map(x => ['', E(x.text)]);
+  const tick = rmNews(/signed with|won the bidding|took less/i, 12).map(x => ['Signed', E(x.text)]);
+  return `<div class="war war-${look}">
+  ${rmHead('Free agency', [`${s.season + 1} league year`, `Day ${s.faDay} of 5`], 'Market day', `${s.faDay}/5`, look)}
+  <div class="w-grid">
+    ${rmPanel('The market', 'Ask · status', board + '<button class="w-btn ghost" style="margin-top:10px" data-act="seg" data-k="faTab" data-v="list">Every free agent</button>')}
+    <section class="w-stage w-stage-flat">
+      <div class="w-holo"><div class="w-name">${rmName(sel)}</div><div class="w-sub">${sel.pos} · age ${sel.age} · ${plink(sel)}</div></div>
+      ${rmTiles([[rv(sel.ovr), 'OVR'], [rv(sel.pot), 'POT'], [`${money(sel.ask.sal)}<small>×${sel.ask.yrs}</small>`, 'Asking'], [pc > 0 ? `−${pc}%` : pc < 0 ? `+${-pc}%` : '0%', 'Price with you']])}
+      <div class="w-wide">${rmPanel('The bidding', mi && mi.visited ? 'exact offers' : 'what you hear', `<p class="w-mut ${rd.lvl >= 3 ? 'w-hot' : ''}">${E(rd.text)}</p>${suit || '<p class="w-mut">No other teams in on him.</p>'}<div class="w-btns">${acts}</div>`)}</div>
+    </section>
+    <div class="w-side">
+      ${rmPanel('Cap space', `${s.season + 1}`, `<div class="w-big">${money(room)}</div>${pay != null ? rmBar(pay / s.cap) : ''}${after != null ? `<p class="w-mut" style="margin-top:6px">After your ${dc.n} draft picks: <b>${money(after)}</b></p>` : ''}`)}
+      ${rmPanel('Around the market', 'today', rmFeed(feed))}
+      ${rmPanel('Assistant GM', '', rmAi('Front office', take.join(' ')) + `<div class="w-btns"><button class="w-btn go" data-act="faDay">${s.faDay < 5 ? 'Next free-agency day' : 'Wrap up free agency'}</button></div>`)}
+    </div>
+  </div>
+  ${rmTicker(tick)}
+</div>`;
+}
+
+// ---------- trade deadline floor: the room on top of deadline week (the buyers, sellers and wire stay below it) ----------
+function deadlineRoomView(m) {
+  const s = S(), u = s.userTid, look = warLook(), rec = T(u).rec;
+  const needs = HM.teamNeeds(u).slice(0, 4).map(n => n.pos), pos = needs.includes(ui.dlPos) ? ui.dlPos : needs[0];
+  const tf = HM.tradeFinder({ pos, n: 12 }).rows;
+  const sel = ui.dlSel != null && P(ui.dlSel) && P(ui.dlSel).tid >= 0 && P(ui.dlSel).tid !== u ? P(ui.dlSel) : (tf[0] && tf[0].p);
+  const now = HM.playoffOdds(u), rowOf = sel ? tf.find(r => r.p.id === sel.id) : null, to = sel ? HM.tradeOdds([sel.id], []) : null;
+  const finder = tf.length ? tf.map(r => `<button class="w-row${r.p === sel ? ' on' : ''}" data-act="dlSel" data-id="${r.p.id}" style="grid-template-columns:auto minmax(0,1fr) 40px">${chip(T(r.tid))}<span class="w-nm">${rmName(r.p)}<small>${E(r.avail)}</small></span><span class="w-g">${rv(r.p.ovr)}<small>+${r.up}</small></span></button>`).join('') : '<p class="w-mut">Nobody in the league is an upgrade here.</p>';
+  const tabs = `<div class="w-looks" style="margin-bottom:8px">${needs.map(x => `<button data-act="seg" data-k="dlPos" data-v="${x}" aria-pressed="${x === pos}">${x}</button>`).join('')}</div>`;
+  const pk = id => { const q = (s.picks || []).find(x => x.id === id); return q ? E(HM.pickLabel(q, true)) : ''; }, pl = id => P(id) ? `${P(id).pos} ${E(P(id).ln)}` : '';
+  const offers = (s.offers || []).filter(o => o.draftIdx == null);
+  const phones = offers.length ? offers.map(o => `<div class="w-offer"><div class="w-oh">${chip(T(o.tid))}<span>${E(o.note || `${T(o.tid).city} called`)}</span></div><div class="w-om">They give ${[...o.give.map(pl), ...o.givePk.map(pk)].filter(Boolean).join(', ') || 'nothing'} · for ${[...o.get.map(pl), ...o.getPk.map(pk)].filter(Boolean).join(', ') || 'nothing'}</div><div class="w-btns"><button class="w-btn" data-act="offerAccept" data-id="${o.id}">Accept</button><button class="w-btn ghost" data-act="offerDecline" data-id="${o.id}">Decline</button></div></div>`).join('') : '<p class="w-mut">No calls right now.</p>';
+  // contenders still shopping at a position where you have a player they'd want
+  const mine = HM.active(u).filter(p => !p.ps), hot = m.buyers.filter(b => !b.met && mine.some(p => p.pos === b.pos && p.ovr >= 66)).sort((a, b) => b.desp - a.desp).slice(0, 5);
+  const buyers = hot.length ? hot.map(b => `<div class="w-deck">${chip(T(b.tid))}<span><b>${b.pos}</b> <span class="w-mut">· ${E(b.heat.toLowerCase())}, ${E(b.why)}</span></span></div>`).join('') : '<p class="w-mut">No contender is shopping at a position you could sell.</p>';
+  const tick = m.wire.filter(w => w.k === 'deal' || w.k === 'rumor').slice(0, 10).map(w => [w.k === 'deal' ? 'Deal' : 'Rumor', E(w.text)]);
+  const take = [];
+  if (now) take.push(`You're <b>${rmPct(now.po)}</b> to make the playoffs${now.div > 0.05 ? ` and ${rmPct(now.div)} to win the division` : ''}.`);
+  if (now && now.po < 0.15) take.push('This looks like a year to sell: buyers pay the most for players in the last year of a deal, and more each day their need goes unfilled.');
+  else if (to && to.after && to.before) { const d = to.after.po - to.before.po; take.push(d >= 0.03 ? `Adding ${E(sel.ln)} moves you to <b>${rmPct(to.after.po)}</b>, before counting what you give up.` : `${E(sel.ln)} barely moves your odds (${rmPct(to.after.po)}). Look for a bigger upgrade or keep your picks.`); }
+  return `<div class="war war-${look}">
+  ${rmHead('Deadline floor', [`Week ${s.week}`, `${rec.w}-${rec.l}${rec.t ? '-' + rec.t : ''}`, m.deals ? `${m.deals} deal${m.deals > 1 ? 's' : ''} done` : 'No deals yet'], 'Trade deadline', E(m.label), look)}
+  <div class="w-grid">
+    ${rmPanel('Trade finder', 'OVR · upgrade', tabs + finder)}
+    <section class="w-stage w-stage-flat">${sel ? `
+      <div class="w-holo"><div class="w-name">${rmName(sel)}</div><div class="w-sub">${sel.pos} · ${E(T(sel.tid).abbr)} · age ${sel.age} · ${plink(sel)}</div></div>
+      ${to && to.before && to.after ? `<div class="w-odds"><div><span class="w-cl">Playoff odds now</span><b>${rmPct(to.before.po)}</b></div><span class="w-arrow">→</span><div><span class="w-cl">With him</span><b class="${to.after.po > to.before.po + 0.005 ? 'w-up' : ''}">${rmPct(to.after.po)}</b></div></div><p class="w-mut" style="text-align:center">The rest of the season played ${HM.ODDS_SIMS.toLocaleString()} times, before counting what you'd give up</p>` : ''}
+      ${rmTiles([[rv(sel.ovr), 'OVR'], [`${money(sel.contract.sal)}<small>×${sel.contract.yrs}</small>`, 'Contract'], [rowOf ? `+${rowOf.up}` : '—', 'Over your starter'], [to ? (to.dOvr >= 0 ? '+' : '') + to.dOvr : '—', 'Team rating']])}
+      <div class="w-wide"><div class="w-btns"><button class="w-btn go" data-act="toTrade" data-id="${sel.id}">Build the trade</button>${m.day < 3 ? '<button class="w-btn ghost" data-act="dlNext">Next day</button>' : ''}</div></div>` : '<p class="w-mut">Pick a player from the trade finder.</p>'}
+    </section>
+    <div class="w-side">
+      ${now ? rmPanel('Your season', `${Math.max(1, (s.schedule || []).length - s.week + 1)} weeks left`, `<div class="w-odd"><div class="w-ol"><span>Playoffs</span><b>${rmPct(now.po)}</b></div>${rmBar(now.po)}</div><div class="w-odd"><div class="w-ol"><span>Win the division</span><b>${rmPct(now.div)}</b></div>${rmBar(now.div)}</div><div class="w-odd"><div class="w-ol"><span>Top seed</span><b>${rmPct(now.bye)}</b></div>${rmBar(now.bye)}</div>`) : ''}
+      ${rmPanel('The phones', offers.length ? String(offers.length) : '', phones)}
+      ${rmPanel('Buyers who could call you', '', buyers)}
+      ${rmPanel('Assistant GM', '', rmAi('Front office', take.join(' ')))}
+    </div>
+  </div>
+  ${rmTicker(tick)}
+</div>`;
+}
+
+// ---------- the negotiation table: comparable deals and the walk-away meter, inside the contract window ----------
+function negRoomStrip(p, kind) {
+  const look = warLook(), comps = HM.contractComps(p.id, 6), pt = HM.negPatience(p.id, kind);
+  const tbl = comps.length ? `<table class="w-tbl"><tr><th>Player</th><th>Age</th><th>OVR</th><th>Yrs</th><th>Per yr</th><th>Gtd</th></tr>${comps.map(c => { const q = P(c.id); return `<tr><td>${q ? plink(q) : ''} <span class="w-mut">${E(T(c.tid).abbr)}</span></td><td>${c.age}</td><td>${rv(c.ovr)}</td><td>${c.yrs}</td><td>${money(c.sal)}</td><td>${money(c.gtd)}</td></tr>`; }).join('')}</table>` : '<p class="w-mut">No recent deals at his position to compare.</p>';
+  const v = pt ? pt.used / Math.max(1, pt.max) : 0;
+  const meter = pt ? `<div class="w-meter"><i style="left:calc(${Math.round(v * 100)}% - 2px)"></i></div><div class="w-ol w-mut"><span>At the table</span><span>Walks away</span></div><p class="w-mut" style="margin-top:6px">${pt.left ? `${pt.left} rejected offer${pt.left > 1 ? 's' : ''} before he walks${pt.low ? `; ${pt.low} lowball${pt.low > 1 ? 's' : ''} already raised his price` : ''}.` : 'He has walked away for now.'}</p>` : '';
+  return `<div class="war war-${look} w-strip"><div class="w-grid w-grid2">${rmPanel('Comparable deals', `${p.pos}s like him`, tbl)}${rmPanel('Walk-away meter', '', meter)}</div></div>`;
+}
+
+Object.assign(actions, {
+  faSel: d => { ui.faSel = +d.id; },
+  dlSel: d => { ui.dlSel = +d.id; },
+});
 // =====================================================================
 // LEAGUE EDITOR: a team designer with a live logo preview (pro and college), conference names,
 // college player and recruit editing, league packs (share a custom league as a file) and
