@@ -872,6 +872,7 @@ select[data-focus]{max-width:210px}
 .stype{font-size:12px;animation:spulse 1.6s ease-in-out infinite}
 @keyframes spulse{50%{opacity:.45}}
 @media (max-width:900px){.sgrid{grid-template-columns:minmax(0,1fr)}.sthread{margin-left:0}.sreply.sub{margin-left:20px}}
+.story p{font-size:15px;line-height:1.6;margin:0 0 12px}.shead2{font-size:24px;line-height:1.2;margin:4px 0 6px}
 .acard{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--panel)}
 .amsg{background:var(--panel2);border-radius:12px;padding:10px 12px;font-size:13.5px}
 .amsg.me{align-self:flex-end;max-width:80%;background:var(--markSoft);font-weight:500}
@@ -14156,7 +14157,7 @@ function socStep() {
     if (post && !post.del) c.dec = socFalloutDec(post);
   }
   so.out = so.out.filter(x => { const p = so.posts.find(y => y.id === x.post); return p && !p.del; });
-  mxStep();
+  mxStep(); stStep();
   // trolls who have watched you win for years come around
   const s = carSeason();
   if (so.lastS !== s) { so.lastS = s; for (const t of so.trolls) if (!t.blocked && !t.turned && s - t.since >= 2 && c.fame >= 60 && rnd() < 0.25) t.turned = true; }
@@ -14608,6 +14609,7 @@ function mxPressFinish(pc) {
     if (walk) pc.fx.notes.push('Walking it back later in the presser took some of the sting out.');
   }
   const mx = mxS(); mx.pcs.unshift(pc); if (mx.pcs.length > 12) mx.pcs.length = 12;
+  stAfterPress();
   carLog(head ? `${pc.title}: "${head.t.length > 110 ? head.t.slice(0, 107) + '…' : head.t}"` : `${pc.title}: no comment.`, 'media');
 }
 function mxQuotePost(pc, a, walk, ctx) {
@@ -14875,6 +14877,224 @@ function carMxBadges(now) {
   let msgs = 0; for (const th of mx.dm) if (th.msgs.some(m => !m.me && m.at <= now && m.at > (th.seen || 0))) msgs++;
   return { press: mx.pc && !mx.pc.done ? 1 : 0, msgs };
 }
+// =====================================================================
+// CAREER STORIES: the media covers your career. Game stories after notable games, recruiting coverage and your
+// commitment, mock drafts and a draft-night verdict, columns and hot takes, honors, rankings, and the story when
+// something you posted, said or sent blows up. The game decides which stories run and every fact in them, and writes
+// the headlines; in the desktop app the AI model writes the paragraphs from those facts, checked like replies (only
+// real numbers, and any quote has to be something he really said). Each story is shared in the feed.
+// S.car.stm holds the stories.
+// =====================================================================
+
+function stMigrate() {
+  const c = S && S.car; if (!c || c.stV) return; c.stV = 1;
+  c.stm = { list: [], seq: 1, did: {}, seen: 0, last: {} };
+  // a career already under way starts caught up: no stories about old honors, old blowups or an old commitment
+  const p = carPlayer(), d = c.stm.did, hon = c.stage === 'pro' ? (p && p.hon || []) : (c.colHon || []);
+  d.hon = hon.filter(h => h.t !== 'MS').length; d.inc = c.soc ? c.soc.inc.length : 0;
+  if (c.draft) d.draft = `${c.draft.tid}|${c.draft.pk}`; if (p && p.commit != null) d.commit = p.commit;
+}
+function stS() { stMigrate(); return S.car.stm; }
+const ST_MAX = 60;
+// a quote the way a paper runs it: "I'll be better," he said.
+const stSaid = (q, tail) => { const t = String(q).trim(); return /[?!]$/.test(t) ? `"${t}" ${tail}.` : `"${t.replace(/\.+$/, '')}," ${tail}.`; };
+// the winner's score first
+const stScore = g => { const [a, b] = String(g.score).split('-').map(Number); return `${Math.max(a, b)}-${Math.min(a, b)}`; };
+const stOrd = n => { const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
+const ST_OUT = { 'high school': ['Prep Football Report', 'the local paper', 'Recruiting Wire'], college: ['{team} Insider', 'College Football Weekly', 'The Campus Daily', 'Gridiron Digest'], pro: ['The {team} Beat', 'National Football Daily', 'Gridiron Weekly', 'the local paper'] };
+// a writer: the beat reporter for news, a columnist for opinion
+function stWriter(ctx, kind) {
+  if (kind !== 'take' && kind !== 'rank' && kind !== 'mock') { const b = socBeat(ctx); return { name: b.name, h: b.h, out: b.out }; }
+  const st = stS(), k = `${kind}|${ctx.level}`; if (st.last[k]) return st.last[k];
+  const n = fakeName(), out = pick(ST_OUT[ctx.level] || ST_OUT.pro).replace('{team}', ctx.short || 'League');
+  return (st.last[k] = { name: `${n.fn} ${n.ln}`, h: `@${socTag(n.fn)}${socTag(n.ln)}`, out });
+}
+// his ratings in words, for scouting stories: best two and weakest
+function stTraits(p) {
+  if (!p || !POS[p.pos]) return null; const ks = POS[p.pos].attrs.slice().sort((a, b) => p.a[b] - p.a[a]);
+  return ks.length >= 3 ? { best: [ATTR[ks[0]].toLowerCase(), ATTR[ks[1]].toLowerCase()], worst: ATTR[ks[ks.length - 1]].toLowerCase() } : null;
+}
+// the quote he gave at the podium today, if the story is about the same thing
+function stQuote(kinds) {
+  const mx = S.car.mx, pc = mx && mx.pcs && mx.pcs[0], so = socS();
+  if (!pc || !pc.done || pc.n < so.n - 1 || !kinds.includes(pc.kind)) return null;
+  const a = pc.qs.map(q => q.a).filter(x => x && !x.nc).sort((x, y) => (y.lab.sev - x.lab.sev) || ((y.typed ? 1 : 0) - (x.typed ? 1 : 0)))[0];
+  return a ? a.t : null;
+}
+function stMake(kind, head, body, facts, x) {
+  const st = stS(), ctx = socCtx(), w = stWriter(ctx, kind), so = socS();
+  const a = { id: st.seq++, k: kind, s: ctx.season, wk: socWeek(), stage: S.car.stage, n: so.n, by: w.name, h: w.h, out: w.out, head, body, tpl: body.slice(), facts, quotes: (x && x.quotes) || [], ai: 0, at: Date.now() };
+  st.list.unshift(a); if (st.list.length > ST_MAX) st.list.length = ST_MAX;
+  // the writer shares it in the feed, and people react to the headline
+  const lab = { tgt: 'none', tone: 'neutral', sev: 0 }, sit = (x && x.sit) || 'neutral';
+  const post = { id: so.seq++, n: so.n, s: ctx.season, stage: S.car.stage, wk: a.wk, by: { k: 'beat', name: w.name, h: w.h, v: 1, out: w.out }, about: 'story', story: a.id, ev: '', x: {}, text: `New from ${w.out}: ${head}`, ai: 1, lab, sit, reach: 0, likes: 0, rts: 0, rep: [], at: Date.now(), fx: { fame: 0, trust: 0, notes: [] } };
+  post.reach = Math.round((25 + Math.pow(S.car.fame, 1.5) * 3) * (0.7 + rnd() * 0.6)); post.likes = Math.round(post.reach * (0.3 + rnd() * 0.4)); post.rts = Math.round(post.likes * 0.15);
+  const n = clamp(Math.round(2 + S.car.fame / 14 + rnd() * 3), 2, 10);
+  post.rep.push(...socReplies(post, ctx, Math.ceil(n * 0.6), 0)); post.rep.push(...socReplies(post, ctx, Math.floor(n * 0.4), 1));
+  so.posts.unshift(post); socTrim();
+  return a;
+}
+// the game line only goes to game stories: given it, the model works it into every story
+const stFact = (ctx, more, line) => `${socFacts(ctx, null, !!line)}${more ? `\n${more}` : ''}`;
+
+// ---------- the stories ----------
+function stGame(ctx, g) {
+  const c = S.car, big = /^A/.test(g.grade || ''), won = g.won, opp = g.oppShort, team = ctx.short || 'his team', q = stQuote(['big', 'bad', 'loss']);
+  const used = new Set(stS().list.slice(0, 8).map(a => a.head));
+  const heads = big ? (won ? [`${c.ln} leads ${team} past ${opp}`, `${c.ln} the story as ${team} beats ${opp}`, `${opp} had no answer for ${c.ln}`, `${c.ln} carries ${team} to win over ${opp}`, `Big day for ${c.ln} as ${team} handles ${opp}`, `${c.ln} does it again for ${team}`] : [`${c.ln} shines in ${team}'s loss to ${opp}`, `${c.ln}'s big day not enough against ${opp}`, `${opp} beats ${team} despite ${c.ln}`])
+    : [won ? `Rough day for ${c.ln} in win over ${opp}` : `Rough day for ${c.ln} as ${team} falls to ${opp}`, `${c.ln} struggles against ${opp}`, `${opp} holds ${c.ln} in check`];
+  const fresh = heads.filter(h => !used.has(h)), head = pick(fresh.length ? fresh : heads);
+  const body = [`${c.fn} ${c.ln} finished with ${g.line} as ${team} ${won ? 'beat' : 'fell to'} ${opp}, ${stScore(g)}.`, big ? `It was one of his best days of the season${ctx.role === 'starter' ? ', and another reminder of why he is the starter' : ''}.` : `It was a game he will want to forget, and the film session will not be fun.`, `${team} is ${ctx.rec}${ctx.next ? `, with ${ctx.next.opp} up next` : ''}.`];
+  if (q) body.push(stSaid(q, `${c.ln} said afterward`));
+  return stMake('game', head, body, stFact(ctx, `Story: ${big ? 'a big game by him' : 'a bad game by him'}. The game: ${team} ${won ? 'beat' : 'lost to'} ${g.opp}, ${stScore(g)}; his line: ${g.line}.${q ? ` His quote after the game: "${q}"` : ''}`), { sit: big ? 'win' : 'loss', quotes: q ? [q] : [] });
+}
+function stRecruit(ctx, p) {
+  const c = S.car, top = p.off.slice().sort((a, b) => (p.int[b] || 0) - (p.int[a] || 0)).slice(0, 3).map(t => COLLEGE.team(t).name);
+  if (top.length < 2) return null;
+  const head = pick([`Where will ${c.fn} ${c.ln} land?`, `${c.stars}-star ${c.pos} ${c.ln}: the schools to beat`, `Recruiting watch: ${c.ln}'s list takes shape`]);
+  const vis = (c.visits || []).filter(v => v.done).map(v => COLLEGE.team(v.tid).name);
+  const body = [`${c.fn} ${c.ln}, the ${c.stars}-star ${c.pos} from ${c.hs.team} High, is ranked No. ${p.rk} in his class with ${p.off.length} scholarship offers.`, `${top.slice(0, -1).join(', ')} and ${top[top.length - 1]} are seen as the schools to beat.`, vis.length ? `He has already taken official visits to ${vis.join(' and ')}.` : 'He has not taken an official visit yet.'];
+  return stMake('rec', head, body, stFact(ctx, `Story: recruiting update. Ranked No. ${p.rk} in the class, ${p.off.length} offers. Schools to beat: ${top.join(', ')}.${vis.length ? ` Official visits taken: ${vis.join(', ')}.` : ''}`), { sit: 'school' });
+}
+function stCommit(ctx, p) {
+  const c = S.car, sch = COLLEGE.team(p.commit).name, others = p.off.filter(t => t !== p.commit).sort((a, b) => (p.int[b] || 0) - (p.int[a] || 0)).slice(0, 2).map(t => COLLEGE.team(t).name), q = stQuote(['commit']);
+  const body = [`${c.fn} ${c.ln}, the No. ${p.rk} player in his class, has committed to ${sch}${others.length ? `, choosing it over ${others.join(' and ')}` : ''}.`, `The ${c.pos} gives ${sch} one of the headliners of its class.`];
+  if (q) body.push(stSaid(q, "he said"));
+  return stMake('commit', `${c.ln} commits to ${sch}`, body, stFact(ctx, `Story: he committed to ${sch}.${others.length ? ` Other finalists: ${others.join(', ')}.` : ''}${q ? ` His quote: "${q}"` : ''}`), { sit: 'school', quotes: q ? [q] : [] });
+}
+function stMock(ctx, p, pr0) {
+  const c = S.car, pr = pr0 || carDraftProjection(p), tr = stTraits(p); stS().did.proj = pr.rank;
+  const head = pr.rank <= 10 ? `Mock draft: ${c.ln} in the top 10` : pr.rank <= 32 ? `Mock draft: ${c.ln} a first-rounder` : pick([`Stock watch: ${c.ln} projects as ${pr.label}`, `Draft board: where ${c.ln} stands`]);
+  const body = [`Scouts project ${c.fn} ${c.ln} as ${pr.label}, the No. ${pr.rank} prospect on the board.`, tr ? `Teams like his ${tr.best[0]} and ${tr.best[1]}; the question is his ${tr.worst}.` : 'Teams are still sorting out where he fits.', socCharPen() ? 'His record on social media has come up in team interviews.' : `${ctx.hon && ctx.hon.length ? `His résumé includes ${ctx.hon.join(', ')}.` : 'A big finish could still move him up.'}`];
+  return stMake('mock', head, body, stFact(ctx, `Story: draft projection: ${pr.label}, No. ${pr.rank} prospect.${tr ? ` Best at: ${tr.best.join(' and ')}. Weakest at: ${tr.worst}.` : ''}${socCharPen() ? ' Teams have asked about his social media record.' : ''}`), { sit: 'hype' });
+}
+function stDraftNight(ctx, p) {
+  const c = S.car, d = c.draft, t = team(d.tid), proj = stS().did.proj, q = stQuote(['drafted']);
+  const verdict = !proj ? 'a fair pick' : d.pk >= proj + 12 ? 'a steal' : d.pk <= proj - 15 ? 'a reach' : 'about where he was projected';
+  const body = [`The ${t.city} ${t.name} took ${c.fn} ${c.ln} with the ${stOrd(d.pk)} pick, in round ${d.rd}.`, `The verdict: ${verdict}.${proj ? ` Most boards had him around No. ${proj}.` : ''}`];
+  if (q) body.push(stSaid(q, "he said on draft night"));
+  return stMake('draft', `${t.name} take ${c.ln} at No. ${d.pk}: ${verdict}`, body, stFact(ctx, `Story: the ${t.city} ${t.name} drafted him ${stOrd(d.pk)} overall, round ${d.rd}. Verdict: ${verdict}.${proj ? ` Projected around No. ${proj}.` : ''}${q ? ` His quote: "${q}"` : ''}`), { sit: 'hype', quotes: q ? [q] : [] });
+}
+// a column with an opinion, from his situation
+function stTake(ctx, p) {
+  const c = S.car, gl = c.glog.filter(g => g.s === ctx.season && g.grade !== 'DNP').slice(0, 4), good = gl.filter(g => /^[AB]/.test(g.grade)).length, bad = gl.filter(g => /^[DF]/.test(g.grade)).length;
+  let k = null;
+  if (ctx.role === 'backup' && good >= 2) k = 'start';
+  else if (ctx.role === 'starter' && bad >= 2) k = 'over';
+  else if (ctx.role === 'redshirting') k = 'patience';
+  else if (c.stage === 'pro' && p && p.contract && p.contract.yrs <= 1 && good >= 2) k = 'pay';
+  else if (ctx.role === 'starter' && good >= 3) k = 'best';
+  // each argument gets made once a season
+  const once = `take|${k}|${ctx.season}`; if (!k || stS().did[once]) return null; stS().did[once] = 1;
+  const T = {
+    start: [`It's time to start ${c.ln}`, `Every time ${c.fn} ${c.ln} gets on the field, he makes something happen.`, `${ctx.coach ? `${ctx.coach} has` : 'The staff has'} kept him behind the starter so far. That should change.`],
+    over: [`Is ${c.ln} overrated?`, `${c.fn} ${c.ln} came in with plenty of hype, and the last few weeks have not matched it.`, `${ctx.short || 'His team'} needs more from him, and the leash will only get shorter.`],
+    patience: [`The case for patience with ${c.ln}`, `${c.fn} ${c.ln} is sitting out this season to save a year of eligibility, and that is the right call.`, 'Redshirt years build players. Check back next fall.'],
+    pay: [`Pay ${c.ln}`, `${c.fn} ${c.ln} is in the last year of his contract and playing like he knows it.`, `${ctx.short || 'His team'} can pay him now or watch someone else do it.`],
+    best: [`${c.ln} is playing like one of the best ${c.pos}s around`, `${c.fn} ${c.ln} keeps stacking big games.`, `If he keeps this up, the awards conversation will have to include him.`],
+  }[k];
+  return stMake('take', T[0], T.slice(1), stFact(ctx, `Story: an opinion column arguing: ${T[0]}. Recent games this season: ${good} good, ${bad} poor.`), { sit: k === 'over' ? 'loss' : 'hype' });
+}
+function stHonor(ctx, h) {
+  const c = S.car, nice = { MVP: 'MVP', PB: 'the Pro Bowl', AP: 'All-Pro', OPOY: 'Offensive Player of the Year', DPOY: 'Defensive Player of the Year', ROY: 'Rookie of the Year', POTW: 'Player of the Week', CPOY: 'Comeback Player of the Year' }[h] || h;
+  return stMake('honor', `${c.ln} named ${nice}`, [`${c.fn} ${c.ln} has been named ${nice}.`, `It caps a stretch that has made him one of the names to know at ${c.pos}.`], stFact(ctx, `Story: he was named ${nice}.`), { sit: 'hype' });
+}
+function stScandal(ctx, inc) {
+  const c = S.car, so = socS(), post = so.posts.find(p => p.id === inc.pid), how = post && post.about === 'press' ? 'comments at a press conference' : post && post.about === 'leak' ? 'a private message that got out' : 'a social media post';
+  const tw = { coach: 'his coaches', team: 'his teammates', org: c.stage === 'col' ? 'the program' : 'the front office', fans: 'the fans', refs: 'the officials', media: 'the media', troll: 'a troll' }[inc.tgt] || 'everyone';
+  const notes = post && post.fx && post.fx.notes || [];
+  const body = [`${c.fn} ${c.ln} is facing criticism after ${how} aimed at ${tw}: "${inc.text}"`, notes.length ? notes.join(' ') : 'The team has not said whether there will be consequences.'];
+  const what = { 'comments at a press conference': 'press conference comments', 'a private message that got out': 'leaked DM', 'a social media post': 'social media post' }[how];
+  return stMake('scandal', `${c.ln} under fire after ${what}`, body, stFact(ctx, `Story: controversy over ${how} aimed at ${tw}. What he said: "${inc.text}"${notes.length ? ` Consequences: ${notes.join(' ')}` : ''}`), { sit: 'blast_' + (['coach', 'team', 'org', 'fans'].includes(inc.tgt) ? inc.tgt : 'team'), quotes: [inc.text] });
+}
+function stRank(ctx, p) {
+  const c = S.car, inCol = c.stage === 'col', pool = inCol ? Object.values(COLLEGE.S.players).filter(x => x && x.tid >= 0 && x.pos === p.pos) : allPlayers().filter(x => x.tid >= 0 && x.pos === p.pos && !x.ps);
+  const rank = pool.filter(x => x.ovr > p.ovr).length + 1; if (rank > 40) return null;
+  const where = inCol ? 'the country' : 'the league';
+  return stMake('rank', `Preseason rankings: ${c.ln} No. ${rank} among ${c.pos}s in ${where}`, [`${c.fn} ${c.ln} comes in at No. ${rank} on our list of the best ${c.pos}s in ${where}.`, rank <= 5 ? 'He is in the conversation for the best at the position.' : rank <= 15 ? 'He has a chance to climb this list by season\'s end.' : 'A big season could move him way up.'], stFact(ctx, `Story: preseason position rankings: No. ${rank} ${c.pos} in ${where}.`), { sit: 'hype' });
+}
+
+// once a step: the news decides what runs, one story at most
+function stStep() {
+  const c = S.car; if (!c || !c.socV) return; const st = stS(), so = socS(), p = carPlayer(), ctx = socCtx(), did = st.did, CS = carC();
+  // trouble first
+  const inc = so.inc[so.inc.length - 1]; if (inc && (did.inc || 0) < so.inc.length) { did.inc = so.inc.length; if (stScandal(ctx, inc)) return; }
+  if (c.draft && did.draft !== `${c.draft.tid}|${c.draft.pk}` && c.stage === 'pro') { did.draft = `${c.draft.tid}|${c.draft.pk}`; if (stDraftNight(ctx, p)) return; }
+  if (c.stage === 'hs' && p && p.commit != null && did.commit !== p.commit) { did.commit = p.commit; if (stCommit(ctx, p)) return; }
+  // a notable game; one held for a press conference he never answered runs the next day
+  if (did.gq && did.gq.n < so.n) { const x = did.gq; did.gq = null; if (stGame(ctx, x.g)) return; }
+  const g = ctx.last, gk = g && g.fresh && g.played ? `${ctx.season}|${g.opp}|${g.score}` : null;
+  if (gk && gk !== did.game && (/^A/.test(g.grade || '') || (/^[DF]/.test(g.grade || '') && ctx.role === 'starter')) && (c.stage !== 'hs' || /^A/.test(g.grade))) {
+    did.game = gk; const gap = so.n - (did.gs || -99);
+    if (/^A\+/.test(g.grade) ? rnd() < 0.9 : gap >= 3 && rnd() < 0.5) {
+      did.gs = so.n; const pc = c.mx && c.mx.pc;
+      // a postgame press conference is open: the story waits for what he says there
+      if (pc && !pc.done && pc.n === so.n && ['big', 'bad', 'loss'].includes(pc.kind)) did.gq = { n: so.n, g: { ...g } };
+      else if (stGame(ctx, g)) return;
+    }
+  }
+  // honors
+  const hon = (c.stage === 'pro' ? (p && p.hon || []) : (c.colHon || [])).filter(h => h.t !== 'MS'); if (hon.length > (did.hon || 0)) { const h = hon[hon.length - 1]; did.hon = hon.length; if (h.t !== 'POTW' || rnd() < 0.5) { stHonor(ctx, h.t); return; } }
+  if (!p) return;
+  // the draft conversation: once declared, and through the pre-draft months
+  const declared = c.stage === 'draft' || (c.stage === 'col' && CS && CS.car && CS.car.declare === CS.season);
+  // before he declares, only a real prospect whose stock moved gets a story
+  const look = declared ? so.n - (did.mock || -99) >= 4 && rnd() < 0.5 : c.stage === 'col' && c.fame >= 45 && CS.phase === 'season' && CS.week >= 8 && so.n - (did.mock || -99) >= 6;
+  if (look) { did.mock = so.n; const pr = carDraftProjection(p); if ((declared || (pr.rank <= 100 && Math.abs(pr.rank - (did.proj || 999)) >= 5)) && stMock(ctx, p, pr)) return; }
+  // preseason rankings
+  const wk1 = c.stage === 'col' ? CS && CS.phase === 'season' && CS.week <= 2 : c.stage === 'pro' && S.phase === 'regular' && S.week <= 2;
+  if (wk1 && did.rank !== ctx.season) { did.rank = ctx.season; if (stRank(ctx, p)) return; }
+  if (c.stage === 'hs' && p.commit == null && CS && CS.phase === 'season' && so.n - (did.rec || -99) >= 3 && rnd() < 0.4) { did.rec = so.n; if (stRecruit(ctx, p)) return; }
+  const inSeason = c.stage === 'col' ? CS && CS.phase === 'season' : c.stage === 'pro' && S.phase === 'regular';
+  if (inSeason && so.n - (did.take || -99) >= 4 && rnd() < 0.3) { did.take = so.n; stTake(ctx, p); }
+}
+
+// ---------- the AI model writes the paragraphs ----------
+const ST_SYS = 'You write short sports news stories for a football video game, like a newspaper or sports website. Plain, readable sentences with normal capitalization. Use only the facts given: never invent stats, scores, injuries, quotes, people or events, and never add details the facts do not give (how his role changed, what happened during the game, who was hurt). Only use numbers that appear in the facts. If you quote him, use only his exact quote from the facts. Never mention fame, grades, ratings or anything about the video game itself. No em dashes, no hashtags.';
+function carStoryPrompt(id) {
+  const a = stS().list.find(x => x.id === +id); if (!a || a.ai) return null;
+  const user = `Facts:\n${a.facts}\n\nHeadline: ${a.head}\nOutlet: ${a.out}\n\nWrite the story under that headline in ${a.tpl.length} short paragraphs (one to three sentences each). Cover the same ground as this draft, in your own words:\n${a.tpl.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\nAnswer with JSON: {"body": ["paragraph 1", ...]} with exactly ${a.tpl.length} paragraphs.`;
+  return { system: ST_SYS, user, ids: [a.id], schema: { type: 'object', properties: { body: { type: 'array', items: { type: 'string', maxLength: 500 }, minItems: a.tpl.length, maxItems: a.tpl.length } }, required: ['body'] }, maxTokens: 110 * a.tpl.length + 40, temperature: 0.6 };
+}
+// a paragraph is kept only if its numbers are in the facts and anything in quotation marks is something he really said
+function stCheck(text, a) {
+  let t = String(text == null ? '' : text).replace(/\s+/g, ' ').trim().replace(/\s*[—–]\s*/g, ', ').replace(/#(\w)/g, '$1');
+  if (t.length < 8 || t.length > 420) return null;
+  // a newspaper writes in sentences: no all-lowercase paragraphs
+  if (!/^["“]?[A-Z0-9]/.test(t) || (t.match(/[.!?] [a-z]/g) || []).length) return null;
+  if (/\b(fame|grades?|graded|rating|ratings|overall|video game|as an ai|language model)\b|\d+\s*\/\s*100\b|[{}[\]<]/i.test(t)) return null;
+  if (SOC_SLUR.some(re => re.test(t)) || SOC_THREAT.some(re => re.test(t)) || SOC_FAMILY.test(t)) return null;
+  const nums = new Set(String(a.facts + ' ' + a.head + ' ' + a.tpl.join(' ')).match(/\d+(\.\d+)?/g) || []);
+  for (const m of t.matchAll(/\d+(\.\d+)?/g)) if (!nums.has(m[0])) return null;
+  for (const m of t.matchAll(/["“]([^"”]{4,})["”]/g)) if (!a.quotes.some(q => q.includes(m[1].trim().replace(/[,.]$/, '')))) return null;
+  return t;
+}
+function carStoryWrite(id, body) {
+  const a = stS().list.find(x => x.id === +id); if (!a || a.ai) return 0;
+  const L = Array.isArray(body) && body.length === a.tpl.length ? body.map(t => stCheck(t, a)) : null;
+  if (L && L.every(Boolean)) { a.body = L; a.ai = 1; return 1; }
+  a.ai = -1; return 0;
+}
+// the writer's queue: the newest stories first; one the player has already seen in the game's words stays as it is
+function carStoryQueue() { const old = Date.now() - 30000; return stS().list.filter(a => !a.ai && a.at >= old).map(a => a.id); }
+// the postgame press conference is over: the game story runs with his quote
+function stAfterPress() {
+  const c = S.car; if (!c || !c.stV) return; const did = stS().did; if (!did.gq) return;
+  const x = did.gq; did.gq = null; stGame(socCtx(), x.g);
+}
+// a story of a given kind right now, for checks
+function stForce(kind) {
+  const c = S.car, p = carPlayer(), ctx = socCtx();
+  if (kind === 'game' && ctx.last) return stGame(ctx, { ...ctx.last, played: true, grade: 'A', line: ctx.last.played ? ctx.last.line : '5 catches, 80 yds, 1 TD' });
+  if (kind === 'rec' && p && c.stage === 'hs') return stRecruit(ctx, p);
+  if (kind === 'mock' && p) return stMock(ctx, p);
+  if (kind === 'scandal' && c.soc.inc.length) return stScandal(ctx, c.soc.inc[c.soc.inc.length - 1]);
+  if (kind === 'rank' && p) return stRank(ctx, p);
+  if (kind === 'take' && p) return stTake(ctx, p);
+  return null;
+}
+function carStoryView() { const c = S.car; if (!c) return null; const st = stS(); return { list: st.list, seen: st.seen }; }
+function carStorySeen(t) { stS().seen = t || Date.now(); }
 // ---------- stats helpers ----------
 function careerTotals(p) { const t = {}; for (const s in p.stats) for (const k in p.stats[s]) if (k !== 'tid') { if (['rl', 'rcl', 'fgl', 'pl'].includes(k)) t[k] = Math.max(t[k] || 0, p.stats[s][k]); else inc(t, k, p.stats[s][k]); } return t; }
 
@@ -14923,7 +15143,7 @@ function load(json) { const d = typeof json === 'string' ? JSON.parse(json) : js
   for (const k of ['potw', 'recaps']) if (!S[k]) S[k] = {};
   if (!S.hofBallots) S.hofBallots = {};
   upgradeRatings();
-  fixCollegeRookies(); fixGuarantees(); fieldDefault(); socMigrate(); mxMigrate();
+  fixCollegeRookies(); fixGuarantees(); fieldDefault(); socMigrate(); mxMigrate(); stMigrate();
   initH2H(); S.set = { ...SET_DEFAULT, ...(S.set || {}) };
   for (const p of allPlayers()) if (p.disc == null) p.disc = rollDisc(p.pers);
   for (const c of [...Object.values(S.coaches || {}), ...Object.values(S.coachArc || {})]) if (c.mentors && c.role && ['SC', 'TR', 'HC'].includes(c.role) && !(c.stops || []).some(x => ['OC', 'DC', 'ST'].includes(x.role))) c.mentors = [];
@@ -14973,7 +15193,7 @@ return {
   pruneOffers, acceptOffer, declineOffer, takeJob, teamRank, draftForecast, warNextPick, teamNeeds, ratingWith, playoffOdds, tradeOdds, faSignRead, contractComps, negPatience, ODDS_SIMS,
   careerRecords, franchiseLeaders, REC_KEYS, REC_LABEL, hofScore, hofOutlook, hofWatch, LEAD_KEYS, mainTeam,
   weekBegin, weekEnd, watchWeek, uniBgStep, weekRestStep, weekFlush, weekPending: () => !!(S && S.weekLazy), poBegin, poEnd, poPairs, coachStart, coachFinish, runGen, scoutingReport, setGamePlan, OFF_PLANS, DEF_PLANS, gamePlanFor,
-  optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carWatchable, carWatchStart, carWatchFinish, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carSeasons, carGameLine, carHofStatus, carDraftProjection, carSocPost, carSocReply, carSocBlock, carSocMute, carSocIdeas, socCharPen, socAbout, carSocDelete, carSocMore, carSocPrompt, carSocLabelPrompt, carSocWrite, carSocQueue, carSocView, gmAsk, gmAskPrompt, gmPitchPrompt, gmPitchCheck, asstParse, carSocSeen, socShowAt, socRead, socCtx, socCheck, SOC_MAX, carPcView, carPcAnswer, carDmView, carDmSend, carDmAct, carDmBlock, carDmSeen, carDmQueue, carDmPrompt, carDmWrite, carMxBadges, mxPressMake, mxDmStart, mxStep, mxAgMul, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
+  optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carWatchable, carWatchStart, carWatchFinish, carStoryPrompt, carStoryWrite, carStoryQueue, carStoryView, carStorySeen, stForce, stStep, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carSeasons, carGameLine, carHofStatus, carDraftProjection, carSocPost, carSocReply, carSocBlock, carSocMute, carSocIdeas, socCharPen, socAbout, carSocDelete, carSocMore, carSocPrompt, carSocLabelPrompt, carSocWrite, carSocQueue, carSocView, gmAsk, gmAskPrompt, gmPitchPrompt, gmPitchCheck, asstParse, carSocSeen, socShowAt, socRead, socCtx, socCheck, SOC_MAX, carPcView, carPcAnswer, carDmView, carDmSend, carDmAct, carDmBlock, carDmSeen, carDmQueue, carDmPrompt, carDmWrite, carMxBadges, mxPressMake, mxDmStart, mxStep, mxAgMul, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
   injStatus, injuryReport, toggleRest, gameKey, pkgFor, setPackage, marketComps, positionMarket, hotSeat, hotSeatHeat,
   PROTECT_N, defaultProtect, ACHIEVEMENTS, RULES_DEFAULT, PROPOSALS, castVote, expandLeague: (n, pr) => { const r = expandLeague(n, pr); topUpProspects(); return r; }, MILESTONES, MS_NAME, stadiumTag, tradeDeadline,
   TRAITS, traitsKnown, POS_MOVES, positionPreview, changePosition, AGENT_STYLES, agentOf, capHit, voidCapHit, toggleBlock, shopPlayer, tradeAsk, mockDraft, visitProspect, VISITS_PER_YEAR,
@@ -21348,7 +21568,7 @@ const CV = () => HM.carView();
 const carInCol = () => { const c = S() && S().car; return !!c && (c.stage === 'hs' || c.stage === 'col'); };
 const carRv = x => (carInCol() ? rcv(x) : rv(x));
 const CAR_STAGE = { hs: 'High school senior', col: 'College', draft: 'Draft prospect', pro: 'Pro', fa: 'Free agent', ret: 'Retired' };
-const CAR_NAV = () => { const c = S().car; return [['home', 'Home'], ['me', 'Profile'], ['feed', 'Feed'], ['press', 'Press'], ['msgs', 'Messages'], ...(!['hs', 'ret'].includes(c.stage) ? [['skills', 'Skills']] : []), ...(c.stage === 'hs' ? [['recruit', 'Recruiting']] : []), ...(c.stage === 'draft' ? [['draft', 'Draft day']] : []), ['games', 'Game log'], ['team', 'Team'], ['career', 'Career'], ['news', 'Timeline']]; };
+const CAR_NAV = () => { const c = S().car; return [['home', 'Home'], ['me', 'Profile'], ['feed', 'Feed'], ['press', 'Press'], ['msgs', 'Messages'], ['media', 'Media'], ...(!['hs', 'ret'].includes(c.stage) ? [['skills', 'Skills']] : []), ...(c.stage === 'hs' ? [['recruit', 'Recruiting']] : []), ...(c.stage === 'draft' ? [['draft', 'Draft day']] : []), ['games', 'Game log'], ['team', 'Team'], ['career', 'Career'], ['news', 'Timeline']]; };
 // the league around you, read-only: the college world while you're in high school or college, the pros after the draft
 const CAR_LEAGUE = () => carInCol()
   ? [['lfront', 'Front page'], ['lpolls', 'Rankings'], ['lstand', 'Standings'], ['lsched', 'Scores'], ['lpo', 'Playoff'], ['stats', 'Leaders'], ['lawards', 'Awards'], ['lhist', 'History'], ['lrivals', 'Rivalries']]
@@ -21386,7 +21606,7 @@ function careerStart(saved, modeSeg) {
 function careerRender() {
   guideMark();
   const v = CV(), c = v.c, p = v.p, nav = CAR_NAV(); let view = ui.carView || 'home';
-  const views = { home: carHome, feed: carFeed, press: carPress, msgs: carMsgs, skills: carSkills, recruit: carRecruit, draft: carDraft, games: carGames, team: carTeam, career: carCareer, news: carNews, watch: carWatchView, me: carProfile };
+  const views = { home: carHome, feed: carFeed, press: carPress, msgs: carMsgs, media: carStories, skills: carSkills, recruit: carRecruit, draft: carDraft, games: carGames, team: carTeam, career: carCareer, news: carNews, watch: carWatchView, me: carProfile };
   // league screens are borrowed from the GM and coach games and shown read-only (see 97r-career-league.js)
   for (const k in CAR_RO) views[k] = () => { try { return `<div class="carro">${CAR_RO[k]()}</div>`; } catch (e) { console.error(e); return '<div class="note">That screen is not available right now.</div>'; } };
   if (!views[view] || (!nav.some(x => x[0] === view) && !CAR_LEAGUE().some(x => x[0] === view) && view !== 'pl' && view !== 'tm' && view !== 'watch')) ui.carView = view = 'home';
@@ -21399,7 +21619,7 @@ function careerRender() {
   const top = shellTop({ mode: 'career', sub: 'Career', team: `${p && typeof faceOf === 'function' ? faceOf(p, 30) : ''}<b>${E(c.fn + ' ' + c.ln)}</b> <span class="muted tb-pos">${E(c.pos)} · ${E(CAR_STAGE[c.stage])}</span>`, acts,
     meta: [`<span>${v.season} · <strong>${E(v.phase)}</strong></span>`, tm ? `<span>${inCol ? cchip(tm) : chip(tm)} <strong>${E(tm.name)}</strong> <span class="num">${inCol ? crec(tm.rec) : recStr(tm.rec)}</span></span>` : '', p ? `<span>OVR <strong class="num">${carRv(p.ovr)}</strong></span>` : ''] });
   return `${top}
-  <div class="shell">${navGroups([{ t: null, items: nav }, { t: 'League', items: CAR_LEAGUE() }], view, 'carNav', k => (k === 'home' && b ? '<span class="badge">!</span>' : k === 'feed' && view !== 'feed' && socUnread() ? `<span class="badge">${Math.min(99, socUnread())}</span>` : k === 'press' && mxBadges().press ? '<span class="badge">!</span>' : k === 'msgs' && view !== 'msgs' && mxBadges().msgs ? `<span class="badge">${mxBadges().msgs}</span>` : k === 'skills' && v.skills && !v.skills.auto && v.skills.attrs.some(x => !x.max && x.cost <= v.skills.sp) ? `<span class="badge">${Math.floor(v.skills.sp)}</span>` : ''), '<button data-act="carTitle">Title screen</button>')}
+  <div class="shell">${navGroups([{ t: null, items: nav }, { t: 'League', items: CAR_LEAGUE() }], view, 'carNav', k => (k === 'home' && b ? '<span class="badge">!</span>' : k === 'feed' && view !== 'feed' && socUnread() ? `<span class="badge">${Math.min(99, socUnread())}</span>` : k === 'press' && mxBadges().press ? '<span class="badge">!</span>' : k === 'msgs' && view !== 'msgs' && mxBadges().msgs ? `<span class="badge">${mxBadges().msgs}</span>` : k === 'media' && view !== 'media' && stUnread() ? `<span class="badge">${stUnread()}</span>` : k === 'skills' && v.skills && !v.skills.auto && v.skills.attrs.some(x => !x.max && x.cost <= v.skills.sp) ? `<span class="badge">${Math.floor(v.skills.sp)}</span>` : ''), '<button data-act="carTitle">Title screen</button>')}
   <main class="main">${ui.saveErr ? `<div class="note err">${E(ui.saveErr)}</div>` : ''}${ui.carMsg ? `<div class="note ok">${E(ui.carMsg)}</div>` : ''}${guideHint() || pageTip('career:' + view)}${b && view !== 'home' ? `<div class="note err row" style="justify-content:space-between"><span>${E(b.text)}</span><button class="btn sm" data-act="carNav" data-v="home">Decide</button></div>` : ''}${(views[view] || carHome)(v)}</main></div>${modal}`;
 }
 function nextLabel(v) {
@@ -21631,6 +21851,21 @@ async function socWriter() {
         const r = await DESKTOP.ai.generate({ ...dr, timeout: 30000 }), t = r && r.ok && r.json && typeof r.json.text === 'string' ? r.json.text : null;
         if (!t) socAiFail(); else SOC_AI.fails = 0;
         if (S() && S().car) { HM.carDmWrite(dq[0].th, dq[0].id, t); socSaveSoon(); }
+      } catch (e) { socAiFail(); }
+      finally { SOC_AI.busy = false; }
+      setTimeout(socWriter, 50); return;
+    }
+  }
+  // then a story someone is about to read
+  const sq = S().car.stm ? HM.carStoryQueue() : [];
+  if (sq.length) {
+    const sr = HM.carStoryPrompt(sq[0]);
+    if (sr) {
+      SOC_AI.busy = true;
+      try {
+        const r = await DESKTOP.ai.generate({ ...sr, timeout: 45000 }), b = r && r.ok && r.json && Array.isArray(r.json.body) ? r.json.body : null;
+        if (!b) socAiFail(); else SOC_AI.fails = 0;
+        if (S() && S().car) { HM.carStoryWrite(sq[0], b); socSaveSoon(); }
       } catch (e) { socAiFail(); }
       finally { SOC_AI.busy = false; }
       setTimeout(socWriter, 50); return;
@@ -21888,6 +22123,31 @@ Object.assign(actions, {
     socLabel(text, `${th.who.name} (${th.who.sub}) in a private message${last ? `, who wrote "${last.text}"` : ''}`).then(lab => { ui.mxBusy = false; const e = HM.carDmSend(+d.t, text, lab); if (e === 'leak') toast(`${th.who.h || th.who.name} posted a screenshot of your message.`); else if (e) toast(e); else { ui.dmDraft = ''; socWriter(); } if (e === 'leak') ui.dmDraft = ''; persist(); render(); setTimeout(() => { const el = document.getElementById('dmMsgs'); if (el) el.scrollTop = el.scrollHeight; }, 0); });
   },
 });
+// =====================================================================
+// CAREER MEDIA: the stories written about you (98-y-career-stories.js picks them and their facts; in the desktop app
+// the AI model writes the paragraphs).
+// =====================================================================
+NAV_ICO.media = '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>';
+const ST_KIND = { game: 'Game story', rec: 'Recruiting', commit: 'Recruiting', mock: 'Draft', draft: 'Draft', take: 'Column', honor: 'Honors', scandal: 'News', rank: 'Rankings' };
+// a story shows once the AI has written it, or once it's clearly late (in the game's words)
+const stShown = (a, now) => a.ai !== 0 || !socAiOn() || now - a.at > 30000;
+function stUnread() {
+  const c = S() && S().car; if (!c || !c.stm) return 0; const seen = c.stm.seen || 0, now = Date.now();
+  return c.stm.list.filter(a => a.at > seen && stShown(a, now)).length;
+}
+function carStories(v) {
+  socAiInit();
+  const sv = HM.carStoryView(), now = Date.now(), L = sv.list.filter(a => stShown(a, now));
+  const open = L.find(a => a.id === ui.stOpen) || L[0];
+  HM.carStorySeen(now);
+  const art = open ? `<article class="panel story"><div class="lbl">${E(ST_KIND[open.k] || 'News')} · ${E(open.out)}</div><h2 class="shead2">${E(open.head)}</h2><div class="muted" style="font-size:12.5px;margin-bottom:10px">By ${E(open.by)} · ${E(open.wk || '')} ${open.s}</div>${open.body.map(t => `<p>${E(t)}</p>`).join('')}</article>`
+    : '<section class="panel"><p class="muted" style="margin:0">No stories yet. Reporters and columnists write about big games, recruiting, the draft, honors and anything that blows up.</p></section>';
+  const pending = sv.list.length - L.length;
+  return `<div class="pagehead"><div><h2>Media</h2><p>What the papers, sites and columnists are writing about you. They cover big games, your recruitment, the draft, honors and controversies, and every story gets shared in your feed.</p></div></div>
+  <div class="grid2 dmgrid"><div class="stack" style="gap:14px"><section class="panel" style="padding:6px"><div class="dmlist">${pending ? `<div class="muted stype" style="font-size:12px;padding:6px 10px">A new story is being written…</div>` : ''}${L.map(a => `<button class="dmrow${open && a.id === open.id ? ' on' : ''}" data-act="stOpen" data-id="${a.id}" style="grid-template-columns:minmax(0,1fr) auto"><span style="min-width:0"><span class="muted" style="font-size:11.5px">${E(ST_KIND[a.k] || 'News')} · ${E(a.out)} · ${E(a.wk || '')} ${a.s}</span><div style="font-weight:600;line-height:1.3">${E(a.head)}</div></span><span></span></button>`).join('') || '<p class="muted" style="margin:8px;font-size:12.5px">Nothing yet.</p>'}</div></section></div>
+  <div class="stack" style="gap:14px">${art}</div></div>`;
+}
+Object.assign(actions, { stOpen: d => { ui.stOpen = +d.id; window.scrollTo(0, 0); } });
 // =====================================================================
 // PROGRESSION REPORT: opens by itself when a new season starts (pro) or after the offseason (college), showing how
 // your team changed from last season's final roster: overall and rank, each position group and why it moved, who
