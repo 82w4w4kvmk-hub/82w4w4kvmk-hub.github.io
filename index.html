@@ -15328,7 +15328,10 @@ async function doSave() {
     ui.saveErr = `Autosave failed: browser storage is full (${Math.round(storageUse() / STORAGE_CAP * 100)}% used). Delete an old save slot on the League & saves page, or export a save code to keep your progress.`; render();
   }
 }
-async function loadSlot(id) { const code = SLOTS.get(id); if (!code) throw new Error('missing'); const d = JSON.parse(await unpackSave(code)); if (d.mode === 'college') { HM.college.load(d); ui.mode = 'college'; ui.cView = 'home'; } else { HM.load(d); ui.mode = d.car ? 'career' : d.uni && d.uni.fg === 'college' ? 'college' : null; ui.cView = 'home'; ui.carView = 'home'; } slotId = id; try { lsSet(CUR_KEY, id); } catch (e) {} }
+function openSave(d) { if (d.mode === 'college') { HM.college.load(d); ui.mode = 'college'; ui.cView = 'home'; } else { HM.load(d); ui.mode = d.car ? 'career' : d.uni && d.uni.fg === 'college' ? 'college' : null; ui.cView = 'home'; ui.carView = 'home'; } }
+async function loadSlot(id) { const code = SLOTS.get(id); if (!code) throw new Error('missing'); openSave(JSON.parse(await unpackSave(code))); slotId = id; try { lsSet(CUR_KEY, id); } catch (e) {} }
+// tests/ui.test.py and tests/shot.py open a saved game (a repro save or a test checkpoint) without going through a slot
+window.HMtest = { load: j => { openSave(typeof j === 'string' ? JSON.parse(j) : j); slotId = newSlotId(); ui.view = 'dashboard'; ui.modal = null; render(); } };
 async function migrateOld() { const old = lsGet(KEY); if (!old || readIdx().length) return; try { HM.load(old); slotId = newSlotId(); await doSave(); lsDel(KEY); } catch (e) {} }
 const fmtDate = ms => { const d = new Date(ms); return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); };
 
