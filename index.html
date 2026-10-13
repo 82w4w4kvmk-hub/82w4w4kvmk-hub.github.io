@@ -3498,14 +3498,14 @@ function* gameGen(ht, at, opt = {}) {
       const rusher = def[R.by] || def[0], two = R.by2 != null && def[R.by2] && def[R.by2] !== rusher ? def[R.by2] : null, loss = Math.min(Math.max(1, -R.y), st.yl);
       inc(ql, 'sk'); inc(ql, 'sky', loss); const rl = sl(rusher, d); inc(rl, 'sck', two ? 0.5 : 1); inc(rl, 'tkl'); inc(rl, 'prs'); if (R.prs === R.by) trkPrs(rl, R.prsT);
       if (two) { const r2 = sl(two, d); inc(r2, 'sck', 0.5); inc(r2, 'prs'); } { const bl = sl(olBlame(), o); inc(bl, 'sa'); inc(bl, 'pra'); } g.ts[d].sk++; g.ts[d].prs++; g.ts[o].py -= loss;
-      injure(qb, o, 0.003);
+      injure(qb, o, 0.0075);
       if (rnd() < 0.09) { const spot = st.yl - loss; note('fum', `${nm(qb)} strip-sacked by ${nm(rusher)}, fumble recovered by the defense`, -loss); const ev = tick(6, 0); turnover('Fumble', 100 - spot, `${nm(qb)} strip-sacked by ${nm(rusher)}`, rnd() < 0.06); return ev; }
       note('sack', `${nm(qb)} sacked by ${nm(rusher)}${two ? ' and ' + nm(two) : ''} for a loss of ${loss}`, -loss, nm(rusher));
       return result(-loss, 6, hurry ? 14 : 30, `${nm(qb)} sacked by ${nm(rusher)}${two ? ' and ' + nm(two) : ''}`, was3, false);
     }
     if (R.k === 'scramble') {
       let yds = clamp(R.td ? dist : R.y, -5, dist); if (st.yl + yds <= 0) yds = 1 - st.yl; lastRole = 5;
-      inc(ql, 'ra'); inc(ql, 'ry', yds); ql.rl = Math.max(ql.rl || 0, yds); g.ts[o].ra++; g.ts[o].ry += yds; injure(qb, o, 0.002); miss(ql);
+      inc(ql, 'ra'); inc(ql, 'ry', yds); ql.rl = Math.max(ql.rl || 0, yds); g.ts[o].ra++; g.ts[o].ry += yds; injure(qb, o, 0.005); miss(ql);
       if (yds >= dist) { inc(ql, 'rtd'); note('run', `${nm(qb)} scrambles ${yds} yards for a touchdown`, yds); return result(yds, 6, 0, `${nm(qb)} ${yds}-yd TD scramble`, was3, false); }
       if (R.tk != null && def[R.tk]) inc(sl(def[R.tk], d), 'tkl');
       if (rnd() < 0.006 * WE.fum * fumMult(qb)) { inc(ql, 'fum'); note('fum', `${nm(qb)} scrambles and fumbles`, yds); const ev = tick(6, 0); turnover('Fumble', 100 - (st.yl + yds), `${nm(qb)} fumbled on a scramble`, false); return ev; }
@@ -3514,7 +3514,7 @@ function* gameGen(ht, at, opt = {}) {
     }
     // a throw: the target (none on a throwaway), the attempt, the expected completion (from the depth and the window)
     const rec = R.tgt != null ? off[R.tgt] : null, rl = rec ? sl(rec, o) : null, air = R.air ?? 0;
-    inc(ql, 'pa'); g.ts[o].pa++; injure(qb, o, 0.0003); if (pressured) inc(ql, 'upa');
+    inc(ql, 'pa'); g.ts[o].pa++; injure(qb, o, 0.00075); if (pressured) inc(ql, 'upa');
     const cvD = rec && R.cv != null ? def[R.cv] : null, cvl = cvD ? sl(cvD, d) : {}; if (cvD) { inc(cvl, 'ctg'); EPX.cov = cvD; }
     if (rec) { inc(rl, 'tg'); EPX.rec = rec; const xcp = xcpFit(air, R.sep, pressured); inc(ql, 'xa'); inc(ql, 'xcp', Math.round(xcp * 1000)); trkThrow(ql, rl, cvD ? cvl : null, air, R.sep, xcp, R.tt); } else trkThrow(ql, null, null, air, null, 0, R.tt);
     if (R.k === 'comp') {
