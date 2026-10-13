@@ -12237,16 +12237,16 @@ function schemeMods(t) {
   const o = schOf(t, 'o'), d = schOf(t, 'd'), m = { share: 0, qbRun: 0, sack: 1, big: 0, to: 0, oppShare: 0, e: 0, dTD: 0, dTO: 0 };
   if (o) { m.share += o[2].share || 0; m.qbRun += o[2].qbRun || 0; }
   if (d) { m.sack *= d[2].sack || 1; m.big += d[2].big || 0; m.to += d[2].to || 0; m.oppShare += d[2].oppShare || 0; }
-  if (isMe(t.tid) && CS.plan) {
-    const P = CS.plan;
-    m.share += { run: -0.1, pass: 0.1 }[P.off] || 0; if (P.off === 'ctrl') { m.dTO -= 0.02; m.dTD -= 0.01; } if (P.off === 'aggr') { m.dTD += 0.02; m.dTO += 0.02; }
-    if (P.def === 'blitz') { m.sack *= 1.5; m.big += 0.015; m.to += 0.015; }
+  if ((isMe(t.tid) || ccOn(t.tid)) && CS.plan) {
+    const P = CS.plan, mo = isMe(t.tid) || ccOn(t.tid, 'o'), md = isMe(t.tid) || ccOn(t.tid, 'd');
+    if (mo) { m.share += { run: -0.1, pass: 0.1 }[P.off] || 0; if (P.off === 'ctrl') { m.dTO -= 0.02; m.dTD -= 0.01; } if (P.off === 'aggr') { m.dTD += 0.02; m.dTO += 0.02; } }
+    if (md && P.def === 'blitz') { m.sack *= 1.5; m.big += 0.015; m.to += 0.015; }
   }
   return m;
 }
 // the defensive plan against this opponent's tendencies: guessing right takes points away, guessing wrong gives them up
 function planMatch(defT, offT) {
-  if (!isMe(defT.tid) || !CS.plan || (CS.plan.def !== 'run' && CS.plan.def !== 'pass')) return 0;
+  if (!(isMe(defT.tid) || ccOn(defT.tid, 'd')) || !CS.plan || (CS.plan.def !== 'run' && CS.plan.def !== 'pass')) return 0;
   const o = schOf(offT, 'o'), lean = (o ? o[2].share || 0 : 0);
   if (CS.plan.def === 'run') return lean <= -0.02 ? -0.4 : lean >= 0.05 ? 0.25 : -0.1;
   return lean >= 0.05 ? -0.4 : lean <= -0.05 ? 0.25 : -0.1;
@@ -12258,13 +12258,14 @@ function coordSeasonEnd() {
   const offR = rankBy(t => t.rec.pf / Math.max(1, t.rec.w + t.rec.l)), defR = rankBy(t => -t.rec.pa / Math.max(1, t.rec.w + t.rec.l)), n = CS.teams.length;
   for (const t of CS.teams) for (const [k, R] of [['oc', offR], ['dc', defR]]) {
     const c = t[k]; if (!c) continue;
+    if (c.me) { c.yrs++; c.age++; const per = (k === 'oc' ? t.rec.pf : t.rec.pa) / Math.max(1, t.rec.w + t.rec.l); c.last = { s: CS.season, rank: R[t.tid] + 1, n, ppg: r1(per), w: t.rec.w, l: t.rec.l }; c.rat = clamp(Math.round(c.rat + (0.5 - R[t.tid] / n) * 4 + Math.max(0, (c.pot || c.rat) - c.rat) * 0.15 + gauss(0, 1)), 25, 95); continue; }
     c.yrs++; c.age++; c.rat = clamp(Math.round(c.rat + (0.5 - R[t.tid] / n) * 3 + gauss(0, 1.2) - (c.age > 62 ? 1.5 : 0)), 25, 95);
     if (c.age >= 67 || rnd() < 0.02) { if (isMe(t.tid)) cnews(`Your ${k === 'oc' ? 'offensive' : 'defensive'} coordinator ${c.fn} ${c.ln} retired. Hire a replacement on your job page.`, true); t[k] = null; }
   }
   // bigger programs poach good coordinators from smaller ones
   for (const t of CS.teams.slice().sort((a, b) => b.pres - a.pres)) for (const k of ['oc', 'dc']) {
-    if (isMe(t.tid) || (t[k] && t[k].rat >= 62 && rnd() > 0.15)) continue;
-    const from = CS.teams.filter(x => x.tid !== t.tid && x[k] && x[k].rat >= (t[k] ? t[k].rat + 5 : 55) && x.pres <= t.pres - 8).sort((a, b) => b[k].rat - a[k].rat)[0];
+    if (isMe(t.tid) || (t[k] && t[k].me) || (t[k] && t[k].rat >= 62 && rnd() > 0.15)) continue;
+    const from = CS.teams.filter(x => x.tid !== t.tid && x[k] && !x[k].me && x[k].rat >= (t[k] ? t[k].rat + 5 : 55) && x.pres <= t.pres - 8).sort((a, b) => b[k].rat - a[k].rat)[0];
     if (!from || rnd() > 0.55) { if (!t[k]) t[k] = genCoord(k === 'oc' ? 'o' : 'd', t); continue; }
     const c = from[k]; from[k] = null; t[k] = { ...c, yrs: 1, since: CS.season + 1, prev: from.tid };
     if (isMe(from.tid)) cnews(`${t.name} hired away your ${k === 'oc' ? 'offensive' : 'defensive'} coordinator ${c.fn} ${c.ln}. Hire a replacement on your job page.`, true);
@@ -12275,7 +12276,7 @@ function coordSeasonEnd() {
 // a head-coaching opening can be filled by promoting someone else's coordinator
 function promoteCoord(t) {
   const pool = [];
-  for (const x of CS.teams) for (const k of ['oc', 'dc']) { const c = x[k]; if (c && x.tid !== t.tid && c.rat >= 62 && c.age <= 60) pool.push({ x, k, c, v: c.rat + x.pres * 0.1 + gauss(0, 3) }); }
+  for (const x of CS.teams) for (const k of ['oc', 'dc']) { const c = x[k]; if (c && !c.me && x.tid !== t.tid && c.rat >= 62 && c.age <= 60) pool.push({ x, k, c, v: c.rat + x.pres * 0.1 + gauss(0, 3) }); }
   const best = pool.sort((a, b) => b.v - a.v)[0]; if (!best || rnd() > 0.6) return null;
   best.x[best.k] = null; if (isMe(best.x.tid)) cnews(`${t.name} hired your ${best.k === 'oc' ? 'offensive' : 'defensive'} coordinator ${best.c.fn} ${best.c.ln} as its head coach. Hire a replacement on your job page.`, true);
   else if (!best.x.oc || !best.x.dc) { if (!isMe(best.x.tid)) best.x[best.k] = genCoord(best.k === 'oc' ? 'o' : 'd', best.x); }
@@ -12288,7 +12289,7 @@ function coordCands(side) {
   CS.cands = CS.cands && CS.cands.s === CS.season && CS.cands.wk === CS.week ? CS.cands : { s: CS.season, wk: CS.week };
   const out = [];
   for (let i = 0; i < 5; i++) { const c = genCoord(side, t, gauss(40 + t.pres * 0.3 + (i - 2) * 5, 5)); c.free = true; out.push(c); }
-  if (CS.phase !== 'season') for (const x of CS.teams.filter(x => x.tid !== t.tid && x[key] && x.pres <= t.pres - 5).sort((a, b) => b[key].rat - a[key].rat).slice(0, 3)) out.push({ ...x[key], from: x.tid });
+  if (CS.phase !== 'season') for (const x of CS.teams.filter(x => x.tid !== t.tid && x[key] && !x[key].me && x.pres <= t.pres - 5).sort((a, b) => b[key].rat - a[key].rat).slice(0, 3)) out.push({ ...x[key], from: x.tid });
   for (const c of out) c.need = clamp(Math.round(c.rat * 1.1 - 30), 10, 95); // the prestige it takes to get him
   return (CS.cands[side] = out.sort((a, b) => b.rat - a.rat));
 }
@@ -12310,10 +12311,10 @@ function setPlan(side, v) { CS.plan = CS.plan || { off: 'bal', def: 'bal' }; if 
 // film study: scout this week's opponent (costs recruiting hours), a small edge in the game
 function filmStudy() {
   if (CS.phase !== 'season') return 'Film study is for game weeks.';
-  const u = CS.userTid, m = (CS.sched[CS.week - 1] || []).find(x => x.h === u || x.a === u); if (!m) return 'You have a bye this week.';
+  const cc = ccOn(CS.cc && CS.cc.tid), u = cc ? CS.cc.tid : CS.userTid, m = (CS.sched[CS.week - 1] || []).find(x => x.h === u || x.a === u); if (!m) return 'You have a bye this week.';
   if (CS.film && CS.film.s === CS.season && CS.film.wk === CS.week) return 'You already broke down their film.';
-  if (CS.recPts < 6) return 'Film study takes 6 of your weekly hours, and you have fewer left.';
-  CS.recPts -= 6; CS.film = { s: CS.season, wk: CS.week, opp: m.h === u ? m.a : m.h }; return null;
+  if (!cc && CS.recPts < 6) return 'Film study takes 6 of your weekly hours, and you have fewer left.';
+  if (!cc) CS.recPts -= 6; CS.film = { s: CS.season, wk: CS.week, opp: m.h === u ? m.a : m.h }; return null;
 }
 function scoutReport(opp) {
   const t = cteam(opp), L = colDepth(t), o = schOf(t, 'o'), d = schOf(t, 'd'), pw = colPower(t);
@@ -12321,7 +12322,43 @@ function scoutReport(opp) {
   const lean = o ? o[2].share || 0 : 0;
   return { tid: opp, off: o ? o[0] : '—', def: d ? d[0] : '—', lean: lean >= 0.05 ? 'pass' : lean <= -0.05 ? 'run' : 'balanced', oc: t.oc, dc: t.dc, best, pw, tip: lean >= 0.05 ? 'They throw it a lot: "Stop the pass" should pay off.' : lean <= -0.05 ? 'They run it a lot: "Stop the run" should pay off.' : 'They are balanced: guessing wrong on defense will cost you.' };
 }
-const filmOn = (tid, opp) => !!(CS.film && CS.film.s === CS.season && CS.film.wk === CS.week && isMe(tid) && CS.film.opp === opp);
+const filmOn = (tid, opp) => !!(CS.film && CS.film.s === CS.season && CS.film.wk === CS.week && (isMe(tid) || ccOn(tid)) && CS.film.opp === opp);
+// ---------- a career player who went into coaching: he runs one side of the ball for someone else's program ----------
+// CS.cc = { tid, side, s } while he holds the job. The school isn't his (CS.bg), so only his side's scheme, the weekly
+// plan for that side and film study are his; the head coach and the AI handle everything else.
+const ccOn = (tid, side) => !!(CS.cc && CS.bg && CS.cc.tid === tid && (!side || CS.cc.side === side));
+function ccCoach() { const c = CS.cc; if (!c) return null; const t = cteam(c.tid), x = t && t[c.side === 'o' ? 'oc' : 'dc']; return x && x.me ? x : null; }
+// the unit's national rank so far: points per game for an offense, points allowed for a defense
+function ccRank(tid, side) {
+  const per = t => (side === 'o' ? t.rec.pf : t.rec.pa) / Math.max(1, t.rec.w + t.rec.l), L = CS.teams.slice().sort((a, b) => (side === 'o' ? per(b) - per(a) : per(a) - per(b)));
+  return { rank: L.findIndex(t => t.tid === tid) + 1, n: L.length, ppg: r1(per(cteam(tid))), gp: cteam(tid).rec.w + cteam(tid).rec.l };
+}
+// schools that would hire him: the weaker their coordinator is for a program their size, the likelier; a bigger name
+// reaches bigger programs (reach is the highest prestige that will call), and the schools he played for take a look
+function ccOpenings(side, rat, reach, alma, not) {
+  ensureCoords(); const k = side === 'o' ? 'oc' : 'dc', skip = new Set(not || []);
+  const L = CS.teams.filter(t => t[k] && !t[k].me && !skip.has(t.tid) && t.pres <= reach).map(t => ({ tid: t.tid, v: t.pres * 0.35 - t[k].rat * 0.6 + ((alma || []).includes(t.tid) ? 10 : 0) + gauss(0, 5) }));
+  return L.sort((a, b) => b.v - a.v).slice(0, 3).map(x => x.tid);
+}
+function ccJob(tid, side, o) {
+  ensureCoords(); if (CS.cc) ccLeave();
+  const t = cteam(tid), k = side === 'o' ? 'oc' : 'dc', old = t[k];
+  t[k] = { fn: o.fn, ln: o.ln, side, sch: o.sch, rat: o.rat, pot: o.pot, age: o.age, yrs: 1, since: CS.season, me: true };
+  CS.cc = { tid, side, s: CS.season }; CS.plan = { off: 'bal', def: 'bal' }; CS.film = null;
+  cnews(`${t.name} hired former ${o.pos} ${o.fn} ${o.ln} as ${side === 'o' ? 'offensive' : 'defensive'} coordinator${old ? `, replacing ${old.fn} ${old.ln}` : ''}.`, true);
+  return null;
+}
+// he leaves the job (a better one, or fired): the school hires someone new
+function ccLeave() {
+  const c = CS.cc; if (!c) return null; const t = cteam(c.tid), k = c.side === 'o' ? 'oc' : 'dc', me = t[k] && t[k].me ? t[k] : null;
+  if (me) t[k] = genCoord(c.side, t); CS.cc = null; return me;
+}
+function ccScheme(sch) {
+  const me = ccCoach(); if (!me) return 'You are not coordinating anywhere.';
+  if (!(me.side === 'o' ? OFF_SCH : DEF_SCH)[sch]) return 'Unknown scheme.';
+  if (['ccg', 'playoff'].includes(CS.phase) || (CS.phase === 'season' && CS.week > 1)) return 'You can change your scheme in the offseason.';
+  me.sch = sch; return null;
+}
 // ---------- program history: record books, retired numbers, the college Hall of Fame, coaching lineages ----------
 const RB_KEYS = [['py', 'Passing yards'], ['ptd', 'Passing TD'], ['ry', 'Rushing yards'], ['rtd', 'Rushing TD'], ['rcy', 'Receiving yards'], ['rec', 'Receptions'], ['rctd', 'Receiving TD'], ['tkl', 'Tackles'], ['sck', 'Sacks'], ['dint', 'Interceptions'], ['fgm', 'Field goals']];
 function rbInit() { if (!CS.rb) CS.rb = { sg: {}, ss: {}, car: {}, nat: { sg: {}, ss: {}, car: {} }, ret: {}, alum: [], hof: [], ch: {}, hofC: [], chPend: [], ssDone: 0 }; return CS.rb; }
@@ -12801,7 +12838,7 @@ return {
   newCollege, setUser: setUserC, save: () => JSON.stringify(CS), load: j => { const d = typeof j === 'string' ? JSON.parse(j) : j; if (!d || d.mode !== 'college') throw new Error('Not a college save.'); CS = d; RC = null; CNAMES = null; LIVE = null; PRE = null; persAll(); if (CS.teams.some(t => t.chem == null)) chemAll(); fxUpgrade(); return CS; },
   news: cnews, flipOdds, signingBoard, cfpRankOf, PRIOS, REC_ACTS, BOARD_MAX, recView, recEst, boardOf, boardOpen, homeWeeks, scheduleVisit, stageOf, gradeLetter, setAutoRec: on => { CS.auto = !!on; }, get autoLog() { return CS.autoLog || null; }, get autoTot() { return CS.autoTot && CS.autoTot.s === CS.season ? CS.autoTot : null; }, get autoRec() { return CS.auto !== false; }, poGameName, projectedClass, isMe, RIV, rivalryTable, rivalsOf: rivalsOfC, coachInfo, acceptJob, declineJobs, seatLabel, genCoach: genCoachC, coachChange, TRAIN, setTraining, trainOf, springGame, POS_MOVES: COL_POS_MOVES, posChangePreview, changePos, POS_AWARDS, AA_SLOTS,
   weekBgStep, liveStart, liveState, playTxt: colPlayTxt, liveCall, live4th, liveSim, liveFinish, liveAbandon, liveIce, livePat, liveKick, liveHalf, liveTimeout, liveTempo, liveAuto, userNext, OFF_C, DEF_C, CALL_TIPS, ROUTE_NM: C_ROUTE_NM, COVS: C_COVS, colGame, gameStep: cStep, gameInit: colGameInit, get live() { return LIVE; }, awardsOf: s => (CS.awards || {})[s] || null, confSize,
-  programInfo, recordBook, RB_KEYS, OFF_SCH, DEF_SCH, schemeFit, fitWord, hireCoord, fireCoord, coordCands, setPlan, filmStudy, scoutReport, get plan() { return CS.plan || { off: 'bal', def: 'bal' }; }, get film() { return CS.film && CS.film.s === CS.season && CS.film.wk === CS.week ? CS.film : null; }, setDepth: (pos, ids) => { CS.udepth = CS.udepth || {}; if (ids) CS.udepth[pos] = ids.slice(); else delete CS.udepth[pos]; return null; },
+  programInfo, recordBook, RB_KEYS, OFF_SCH, DEF_SCH, schemeFit, fitWord, hireCoord, fireCoord, coordCands, setPlan, filmStudy, scoutReport, ccOn, ccCoach, ccRank, ccOpenings, ccJob, ccLeave, ccScheme, get cc() { return CS.cc || null; }, get plan() { return CS.plan || { off: 'bal', def: 'bal' }; }, get film() { return CS.film && CS.film.s === CS.season && CS.film.wk === CS.week ? CS.film : null; }, setDepth: (pos, ids) => { CS.udepth = CS.udepth || {}; if (ids) CS.udepth[pos] = ids.slice(); else delete CS.udepth[pos]; return null; },
   setFict: () => null, editTeam: editTeamC, renameConf: renameConfC, editPlayer: editPlayerC, packC, applyPackC, rosterCsv: rosterCsvC, importRoster: importRosterC, get edited() { return !!(CS && CS.edited); }, reviews: () => (CS && CS.reviews) || {}, lbl, rivName, rivTrophy, get fict() { return !!(CS && CS.fict); }, carRecruit, gradeVal, recFit, colDepth, COL_START, cplayer: id => CS.players[id], cplayers: () => cplayers(), heisList: () => (CS.hw && CS.hw.list) || [], get front() { return CS.front || null; }, adv: season => ((CS.adv || {})[season ?? CS.season]) || {}, advSeasons: () => Object.keys(CS.adv || {}).map(Number).sort((a, b) => b - a), get asks() { return (CS.asks || []).filter(x => x.s === CS.season); }, answerDemand, nilWant, PERS_C, PERS_TIP, chemWord, teamChem: tid => cteam(tid).chem ?? 60, get fronts() { return CS.fronts || []; },
   playWeek, playCCG, playPlayoffRound, holdSigningDay, portalDay, portalOffer, retainPlayer, talkStay, portalPlayers, portalLog, scholarships, recFitToday, portalAsk, progRep: () => CS.progRep || null, progSeen: () => { if (CS.progRep) CS.progRep.seen = true; }, recHours: tid => recHours(tid ?? CS.userTid), portalOffers: () => (CS.portal ? { ...CS.portal.offers } : {}), portalChance, nextSeason, simToEnd,
   team: cteam, roster: croster, recruits, commitsOf, classNeeds, recAction, nilLeft, nilUsed, colPower, rankOf, confStandings, clsOf, setRedshirt, phaseLabel: colPhase, poPairs: () => (CS.po && CS.phase === 'playoff' ? poPairsC() : []),
@@ -13069,7 +13106,7 @@ const carOn = () => !!(S && S.car);
 function carFame(d) { const c = S.car; c.fame = clamp(r1(c.fame + (d > 0 ? d * Math.max(0.08, 1 - c.fame / 105) : d)), 0, 100); }
 const carC = () => (typeof COLLEGE !== 'undefined' ? COLLEGE.S : null);
 function carLog(text, k) { const c = S.car; (c.log || (c.log = [])).unshift({ s: carSeason(), stage: c.stage, text, k: k || '' }); if (c.log.length > 400) c.log.length = 400; }
-const carSeason = () => (S.car && (S.car.stage === 'hs' || S.car.stage === 'col') && carC() ? carC().season : S.season);
+const carSeason = () => (S.car && (S.car.stage === 'hs' || S.car.stage === 'col' || S.car.stage === 'coach') && carC() ? carC().season : S.season);
 // the player object in whichever world he's in right now
 function carPlayer() {
   const c = S.car; if (!c) return null;
@@ -13120,6 +13157,7 @@ function carBlocker() {
 function carNext() {
   const c = S.car; if (!c) return 'No career in progress.';
   const b = carBlocker(); if (b) return b.text;
+  if (c.stage === 'coach') return carCoachNext();
   if (c.stage === 'ret') return 'Your playing days are over.';
   if (c.stage === 'col' && COLLEGE.liveState()) { const r = carWatchFinish(); return r.err || null; } // a game you started watching: it counts as played, then the rest of the week
   const p = carPlayer(), boost = carBoost(p);
@@ -13135,7 +13173,9 @@ function carNext() {
 // a pro week or playoff round). College games are staged first and watched before the rest of the week is played;
 // pro weeks are played and the game is replayed from its log.
 function carWatchable() {
-  const c = S.car; if (!c || carBlocker()) return null; const p = carPlayer(); if (!p || p.tid == null || p.tid < 0) return null;
+  const c = S.car; if (!c || carBlocker()) return null;
+  if (c.stage === 'coach') { const tid = carCoachTid(), CS = carC(); if (tid == null || COLLEGE.liveState()) return null; return ['season', 'ccg', 'playoff'].includes(CS.phase) && COLLEGE.userNext(tid) ? 'col' : null; }
+  const p = carPlayer(); if (!p || p.tid == null || p.tid < 0) return null;
   if (c.stage === 'col') { const CS = carC(); if (COLLEGE.liveState()) return null; /* (being watched: playing on finishes it) */ return ['season', 'ccg', 'playoff'].includes(CS.phase) && COLLEGE.userNext(p.tid) ? 'col' : null; }
   if (c.stage === 'pro') { if (S.phase === 'regular' && inCamp()) return null; if (S.phase === 'regular') return (S.schedule[S.week - 1] || []).some(m => m.h === p.tid || m.a === p.tid) ? 'pro' : null; if (S.phase === 'playoffs') return S.po && S.po.alive && S.po.alive.some(a => a.includes(p.tid)) ? 'pro' : null; }
   return null;
@@ -13144,8 +13184,8 @@ function carWatchStart() {
   const c = S.car; if (!c) return { err: 'No career in progress.' }; const b = carBlocker(); if (b) return { err: b.text };
   { const cur = COLLEGE.liveState(); if (cur) return { gid: cur.gid }; } // (already staged: watch it again from the start)
   if (carWatchable() !== 'col') return { err: 'No game to watch right now.' };
-  const p = carPlayer(), boost = carBoost(p); let st = null;
-  try { st = COLLEGE.liveStart(p.tid); if (st) st = COLLEGE.liveSim(); } finally { carUnboost(p, boost); }
+  const p = carPlayer(), boost = carBoost(p), tid = c.stage === 'coach' ? carCoachTid() : p.tid; let st = null;
+  try { st = COLLEGE.liveStart(tid); if (st) st = COLLEGE.liveSim(); } finally { carUnboost(p, boost); }
   return st ? { gid: st.gid } : { err: 'No game to watch right now.' };
 }
 function carWatchFinish() {
@@ -13190,6 +13230,7 @@ function carAfterStep() {
     if (c.stage === 'pro' && S.phase === 'regular' && p.tid >= 0) { c.money.sal = r1((c.money.sal || 0) + p.contract.sal / 18); if (mxAgFee()) c.money.fee = (c.money.fee || 0) + p.contract.sal / 18 * mxAgFee(); }
     if (c.stage === 'col' && inSeason) c.money.nil = r1((c.money.nil || 0) + (p.nil || 0) / 14 + c.fame * 0.00008);
   }
+  if (c.stage === 'coach') carCoachStep();
   socStep();
   if (c.stage === 'hs' || c.stage === 'col' || c.stage === 'pro') carMaybeEvent();
   carDecisions();
@@ -13603,6 +13644,7 @@ function carRetire() {
   if (c.stage === 'hs' || c.stage === 'col') return 'Finish your college career first.';
   if (p) { carSnapPro(); const car = careerTotals(p); c.ret = { s: S.season, age: p.age, car, hs: hofScore(p, car), hon: (p.hon || []).slice(), pos: p.pos, why: (() => { const n = Object.keys(p.stats).length; return n ? `Walked away after ${n} pro season${n > 1 ? 's' : ''} and ${car.gp || 0} games.` : 'Walked away before playing a regular-season snap in the pros.'; })() }; retirePlayer(p); }
   c.stage = 'ret'; carLog(`Retired at ${c.ret && c.ret.age ? c.ret.age : 'the end of the season'}.`, 'ret');
+  if (!carCanCoach()) { const L = carCoachOffers(); if (L.length) carLog(`${L.map(o => COLLEGE.team(o.tid).name).join(', ')} called about joining ${L.length === 1 ? 'its' : 'their'} staff as ${carCoachSide(c) === 'o' ? 'offensive' : 'defensive'} coordinator.`, 'coach'); }
   return null;
 }
 // the five-year wait for the Hall of Fame vote, played out
@@ -13639,7 +13681,7 @@ function carSetFocus(f, tf) { const c = S.car; if (!CAR_FOCUS[f]) return 'Unknow
 // ---------- everything the career screens need ----------
 function carView() {
   const c = S.car; if (!c) return null;
-  const CS = carC(), p = carPlayer(), inCol = c.stage === 'hs' || c.stage === 'col';
+  const CS = carC(), p = carPlayer(), inCol = c.stage === 'hs' || c.stage === 'col' || c.stage === 'coach';
   const v = { c, p, stage: c.stage, blocker: carBlocker(), season: carSeason(), phase: inCol ? COLLEGE.phaseLabel() : phaseLabel() };
   if (p && inCol && p.tid >= 0) {
     const r = COLLEGE.roster(p.tid).filter(x => x.pos === p.pos && !(x.inj > 0) && !x.rs).sort((a, b) => (b.ovr + (b.cb || 0)) - (a.ovr + (a.cb || 0)));
@@ -13665,7 +13707,9 @@ function carView() {
     return { t, tid, spot, start, starts: spot <= start, n: mates.length + 1, pres: t.pres, rec: t.hist && t.hist.length ? t.hist[t.hist.length - 1] : null, coach: t.coach ? t.coach.rat : null, chosen: CS.car.pick === tid };
   }).sort((a, b) => (b.starts - a.starts) || b.pres - a.pres);
   v.skills = carSkillView();
-  v.hof = c.stage === 'ret' ? carHofStatus() : null;
+  v.hof = c.stage === 'ret' || c.stage === 'coach' ? carHofStatus() : null;
+  v.coach = carCoachView();
+  if (c.stage === 'coach' && carCoachTid() != null) v.team = COLLEGE.team(carCoachTid());
   return v;
 }
 // season-by-season rows for the whole career
@@ -13690,7 +13734,7 @@ function carSim(max) {
   while (n < (max || 30)) {
     const b = carBlocker(); if (b) { stop = b.text; break; }
     const e = carNext(); if (e) { stop = e; break; } n++;
-    if (c.stage !== st0) { stop = 'A new chapter: ' + ({ col: 'college', draft: 'the draft', pro: 'the pros', fa: 'free agency', ret: 'retirement' }[c.stage] || c.stage) + '.'; break; }
+    if (c.stage !== st0) { stop = 'A new chapter: ' + ({ col: 'college', draft: 'the draft', pro: 'the pros', fa: 'free agency', ret: 'retirement', coach: 'coaching' }[c.stage] || c.stage) + '.'; break; }
     if (carSeason() !== s0) { stop = 'A new season.'; break; }
     const b2 = carBlocker(); if (b2) { stop = b2.text; break; }
   }
@@ -13698,6 +13742,114 @@ function carSim(max) {
 }
 
 function carRenameText(fix) { const c = S && S.car; if (!c) return; for (const x of c.log || []) x.text = fix(x.text); for (const r of c.colRows || []) if (r.team) r.team = fix(r.team); for (const h of c.colHon || []) h.t = fix(h.t); }
+// =====================================================================
+// CAREER: AFTER PLAYING, COACHING. A retired career player can go into coaching, as a college coordinator first:
+// offense for quarterbacks, backs, receivers, tight ends and linemen, defense for everyone else. He brings the scheme
+// he played in, runs his side's weekly plan and film study, and his unit's national rank decides his next job.
+// Offers come right after he retires (the Hall of Fame vote plays out in the background while he coaches).
+// S.car.coach = { side, sch, rat, pot, age, tid (null between jobs), hist, jobs, lastS }; the job itself is the
+// coordinator slot on the school (me: true) and COLLEGE.cc.
+// =====================================================================
+const CC_OFF = ['QB', 'RB', 'WR', 'TE', 'OL'];
+// the scheme a former player brings: the football he played
+const CC_SCH = { QB: { pocket: 'pro', dual: 'spread', gun: 'air' }, RB: { speed: 'spread', power: 'power', recv: 'air' }, WR: { deep: 'air', route: 'air', poss: 'pro' }, TE: { recv: 'pro', block: 'power', hybrid: 'pro' }, OL: { pass: 'pro', road: 'power', tech: 'pro' },
+  DL: { speed: 'blitz', run: 'd43', power: 'd34' }, LB: { rush: 'd34', cover: 'nickel', thump: 'd43' }, CB: { man: 'blitz', zone: 'nickel', hawk: 'nickel' }, S: { center: 'nickel', box: 'd43', hybrid: 'nickel' } };
+const ccOrd = n => n + ((n % 100 > 10 && n % 100 < 14) ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+const carCoachSide = c => (CC_OFF.includes(c.pos) ? 'o' : 'd');
+const carCoachTid = () => { const k = S.car && S.car.coach; return k && k.tid != null ? k.tid : null; };
+function carCanCoach() {
+  const c = S.car; if (!c) return 'No career in progress.';
+  if (c.pos === 'K' || c.pos === 'P') return 'Kickers and punters don\'t go into coordinating.';
+  if (c.stage !== 'ret' && c.stage !== 'coach') return 'Retire first.';
+  return null;
+}
+// what he starts out as: football smarts from the position, the personality, how long and how well he played.
+// Raw, like any first-year coordinator, with room to grow.
+function carCoachStart(c) {
+  const r = c.ret || {}, gp = (r.car && r.car.gp) || 0, hon = (r.hon || []).length;
+  const rat = clamp(Math.round(gauss(50, 3) + (c.pos === 'QB' ? 4 : ['OL', 'LB', 'S'].includes(c.pos) ? 2 : 0) + ({ leader: 4, grinder: 2, diva: -3 }[c.pers] || 0) + Math.min(gp, 200) / 40 + Math.min(hon, 8) * 0.4), 40, 66);
+  return { rat, pot: clamp(Math.round(rat + Math.max(8, gauss(18, 5))), rat + 8, 92) };
+}
+// coordinator jobs on offer. Retired or between jobs: up to three schools each season, bigger ones for a bigger name.
+// In a job: only after the season, only bigger programs, and only when his unit ranked well (see carCoachStep).
+function carCoachOffers() {
+  const c = S.car, CS = carC(); if (!CS || carCanCoach()) return [];
+  if (c.ccOff && c.ccOff.s === CS.season) return c.ccOff.list;
+  if (carCoachTid() != null) return [];
+  return carCoachMakeOffers(null);
+}
+function carCoachMakeOffers(fromTid) {
+  const c = S.car, CS = carC(), k = c.coach, side = k ? k.side : carCoachSide(c);
+  const rat = k ? k.rat : (c.ccStart || (c.ccStart = carCoachStart(c))).rat, last = k && k.hist.length ? k.hist[k.hist.length - 1] : null;
+  const reach = clamp(Math.round(40 + c.fame * 0.45 + (k ? (rat - 50) * 1.2 : 0) + (last ? (0.5 - last.rank / last.n) * 30 : 0)), 35, 99);
+  const alma = (c.colTeams || []).map(x => x.tid), floor = fromTid != null ? COLLEGE.team(fromTid).pres + 5 : 0;
+  const tids = COLLEGE.ccOpenings(side, rat, reach, alma, fromTid != null ? [fromTid] : []).filter(tid => COLLEGE.team(tid).pres >= floor);
+  c.ccOff = { s: CS.season, list: tids.map(tid => ({ tid, side, alma: alma.includes(tid) || undefined })) };
+  return c.ccOff.list;
+}
+// take a coordinator job: off the retired list (or out of his old job) and onto a staff
+function carTakeCoachJob(i) {
+  const c = S.car, CS = carC(), e = carCanCoach(); if (e) return e;
+  const o = carCoachOffers()[+i]; if (!o) return 'That offer is gone.';
+  if (carCoachTid() != null && ['season', 'ccg', 'playoff'].includes(CS.phase)) return 'Coaches change jobs after the season.';
+  if (!c.coach) {
+    const st = c.ccStart || carCoachStart(c), r = c.ret || {};
+    c.coach = { v: 1, side: o.side, sch: (CC_SCH[c.pos] || {})[c.arch] || (o.side === 'o' ? 'pro' : 'd43'), rat: st.rat, pot: st.pot, age: (r.age || 33) + Math.max(0, CS.season - (r.s || CS.season)), tid: null, hist: [], jobs: [] };
+  }
+  const k = c.coach, from = k.tid;
+  if (from != null) { const me = COLLEGE.ccLeave(); if (me) { k.rat = me.rat; k.age = me.age; k.sch = me.sch; } }
+  COLLEGE.ccJob(o.tid, k.side, { fn: c.fn, ln: c.ln, pos: c.pos, sch: k.sch, rat: k.rat, pot: k.pot, age: k.age });
+  k.tid = o.tid; k.jobs.push({ tid: o.tid, s: CS.season, side: k.side });
+  c.stage = 'coach'; c.ccOff = null; S.uni.fg = 'college';
+  const t = COLLEGE.team(o.tid), role = k.side === 'o' ? 'offensive coordinator' : 'defensive coordinator';
+  carLog(from != null ? `Left ${COLLEGE.team(from).name} to become ${role} at ${t.name}.` : `Went into coaching: hired as ${role} at ${t.name}${o.alma ? ', where you played' : ''}.`, 'move');
+  return null;
+}
+function carCoachNext() {
+  if (COLLEGE.liveState()) { const r = carWatchFinish(); return r.err || null; } // a game you started watching: it counts as played
+  const moved = carColStep(); carAfterStep();
+  return moved ? null : 'Nothing left to play right now.';
+}
+// after each step: keep the record in step with the job, and at the end of a season, the review and what comes next
+function carCoachStep() {
+  const c = S.car, k = c.coach, CS = carC(); if (!k) return;
+  if (c.ccOff && c.ccOff.s !== CS.season) c.ccOff = null; // last offseason's offers are gone
+  const me = COLLEGE.ccCoach(); if (!me || k.tid == null) return;
+  k.rat = me.rat; k.age = me.age; k.sch = me.sch;
+  const L = me.last; if (!L || L.s === k.lastS) return;
+  k.lastS = L.s; const t = COLLEGE.team(k.tid), off = k.side === 'o';
+  k.hist.push({ s: L.s, tid: k.tid, side: k.side, rank: L.rank, n: L.n, ppg: L.ppg, w: L.w, l: L.l, rat: k.rat });
+  carLog(`${t.name} went ${L.w}-${L.l}. Your ${off ? 'offense' : 'defense'} ranked ${ccOrd(L.rank)} of ${L.n} in ${off ? 'scoring' : 'scoring defense'} (${L.ppg} points a game${off ? '' : ' allowed'}).`, 'coach');
+  const top = L.rank <= L.n * 0.1, good = L.rank <= L.n * 0.35, bad = L.rank > L.n * 0.8;
+  carFame(top ? 3 : good ? 1 : bad ? -2 : 0);
+  // two bad years in a row and the head coach makes a change
+  const prev = k.hist.length >= 2 ? k.hist[k.hist.length - 2] : null;
+  if (bad && prev && prev.tid === k.tid && prev.rank > prev.n * 0.75) {
+    COLLEGE.ccLeave(); k.tid = null; c.ccOff = null;
+    carLog(`${t.name} fired you after two bad years. Other programs may still call.`, 'move');
+    COLLEGE.news(`${t.name} fired ${off ? 'offensive' : 'defensive'} coordinator ${c.fn} ${c.ln}.`, true);
+    carCoachMakeOffers(null); return;
+  }
+  // a good year gets bigger programs on the phone
+  if (good && rnd() < (top ? 0.9 : 0.55)) { const list = carCoachMakeOffers(k.tid); if (list.length) carLog(`${list.map(o => COLLEGE.team(o.tid).name).join(', ')} want${list.length === 1 ? 's' : ''} to talk to you about running ${list.length === 1 ? 'its' : 'their'} ${off ? 'offense' : 'defense'}.`, 'coach'); }
+  else c.ccOff = { s: CS.season, list: [] };
+}
+function carCoachScheme(sch) { const k = S.car && S.car.coach; const e = COLLEGE.ccScheme(sch); if (!e && k) k.sch = sch; return e; }
+// everything the coaching screens need
+function carCoachView() {
+  const c = S.car, CS = carC(); if (!c || (c.stage !== 'ret' && c.stage !== 'coach')) return null;
+  const why = carCanCoach(), k = c.coach || null, v = { why, k, side: k ? k.side : carCoachSide(c) };
+  if (why) return v;
+  v.schemes = v.side === 'o' ? COLLEGE.OFF_SCH : COLLEGE.DEF_SCH;
+  v.sch = k ? k.sch : (CC_SCH[c.pos] || {})[c.arch] || (v.side === 'o' ? 'pro' : 'd43');
+  v.start = k || c.ccStart || (c.ccStart = carCoachStart(c));
+  v.offers = carCoachOffers().map(o => { const t = COLLEGE.team(o.tid), cur = t[o.side === 'o' ? 'oc' : 'dc']; return { ...o, t, rank: COLLEGE.rankOf(o.tid), cur: cur ? { name: `${cur.fn} ${cur.ln}`, rat: cur.rat } : null, last: t.hist && t.hist.length ? t.hist[t.hist.length - 1] : null }; });
+  if (k && k.tid != null) {
+    const t = COLLEGE.team(k.tid), me = COLLEGE.ccCoach(), nx = ['season', 'ccg', 'playoff'].includes(CS.phase) ? COLLEGE.userNext(k.tid) : null, opp = nx ? (nx.h === k.tid ? nx.a : nx.h) : null;
+    v.job = { t, me, unit: COLLEGE.ccRank(k.tid, k.side), hc: t.coach || null, plan: COLLEGE.plan, film: COLLEGE.film, next: nx, opp, scout: opp != null ? COLLEGE.scoutReport(opp) : null, canSch: !['ccg', 'playoff'].includes(CS.phase) && !(CS.phase === 'season' && CS.week > 1) };
+  }
+  return v;
+}
 // =====================================================================
 // CAREER SOCIAL FEED: the player posts whatever he wants, and replies trickle in over the next few days.
 // The game reads each post (who it is aimed at, how far out of line it is) and decides what happens:
@@ -13759,7 +13911,7 @@ function socCtx() {
   const o = { me: `${c.fn} ${c.ln}`, fn: c.fn, ln: c.ln, pos: c.pos, stage: c.stage, fame: Math.round(c.fame), trust: Math.round(c.trust), season: carSeason(), names: [] };
   if (c.stage === 'hs') { o.team = `${c.hs.team} High`; o.short = c.hs.team; o.rec = `${c.hs.w}-${c.hs.l}`; o.level = 'high school'; }
   else if (t) { o.team = inCol ? t.name : `${t.city} ${t.name}`; o.short = t.name; o.rec = inCol ? `${t.rec.w}-${t.rec.l}` : `${t.rec.w}-${t.rec.l}${t.rec.t ? '-' + t.rec.t : ''}`; o.level = inCol ? 'college' : 'pro'; o.tid = t.tid; }
-  else { o.team = null; o.short = null; o.rec = null; o.level = c.stage === 'ret' ? 'retired' : c.stage === 'draft' ? 'draft prospect' : 'free agent'; }
+  else { o.team = null; o.short = null; o.rec = null; o.level = c.stage === 'coach' ? (c.coach && c.coach.tid != null ? `${c.coach.side === 'o' ? 'offensive' : 'defensive'} coordinator at ${COLLEGE.team(c.coach.tid).name}` : 'a retired player looking for a coaching job') : c.stage === 'ret' ? 'retired' : c.stage === 'draft' ? 'draft prospect' : 'free agent'; }
   // the coach, the depth chart, the teammates the replies can name
   if (t && inCol && t.coach) o.coach = `${t.coach.fn} ${t.coach.ln}`;
   if (t && !inCol) { const hc = coachOf(t.tid, 'HC'); if (hc) o.coach = `${hc.fn} ${hc.ln}`; }
@@ -15214,7 +15366,7 @@ return {
   pruneOffers, acceptOffer, declineOffer, takeJob, teamRank, draftForecast, draftOddsFor, warNextPick, teamNeeds, ratingWith, playoffOdds, tradeOdds, faSignRead, contractComps, negPatience, ODDS_SIMS,
   careerRecords, franchiseLeaders, REC_KEYS, REC_LABEL, hofScore, hofOutlook, hofWatch, LEAD_KEYS, mainTeam,
   weekBegin, weekEnd, watchWeek, uniBgStep, weekRestStep, weekFlush, weekPending: () => !!(S && S.weekLazy), poBegin, poEnd, poPairs, coachStart, coachFinish, runGen, scoutingReport, setGamePlan, OFF_PLANS, DEF_PLANS, gamePlanFor,
-  optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carWatchable, carWatchStart, carWatchFinish, carStoryPrompt, carStoryWrite, carStoryQueue, carStoryView, carStorySeen, stForce, stStep, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carSeasons, carGameLine, carHofStatus, carDraftProjection, carSocPost, carSocReply, carSocBlock, carSocMute, carSocIdeas, socCharPen, socAbout, carSocDelete, carSocMore, carSocPrompt, carSocLabelPrompt, carSocWrite, carSocQueue, carSocView, gmAsk, gmAskPrompt, gmPitchPrompt, gmPitchCheck, asstParse, carSocSeen, socShowAt, socRead, socCtx, socCheck, SOC_MAX, carPcView, carPcAnswer, carDmView, carDmSend, carDmAct, carDmBlock, carDmSeen, carDmQueue, carDmPrompt, carDmWrite, carMxBadges, mxPressMake, mxDmStart, mxStep, mxAgMul, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
+  optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carWatchable, carWatchStart, carWatchFinish, carStoryPrompt, carStoryWrite, carStoryQueue, carStoryView, carStorySeen, stForce, stStep, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carCoachView, carTakeCoachJob, carCoachScheme, carCanCoach, CC_SCH, carSeasons, carGameLine, carHofStatus, carDraftProjection, carSocPost, carSocReply, carSocBlock, carSocMute, carSocIdeas, socCharPen, socAbout, carSocDelete, carSocMore, carSocPrompt, carSocLabelPrompt, carSocWrite, carSocQueue, carSocView, gmAsk, gmAskPrompt, gmPitchPrompt, gmPitchCheck, asstParse, carSocSeen, socShowAt, socRead, socCtx, socCheck, SOC_MAX, carPcView, carPcAnswer, carDmView, carDmSend, carDmAct, carDmBlock, carDmSeen, carDmQueue, carDmPrompt, carDmWrite, carMxBadges, mxPressMake, mxDmStart, mxStep, mxAgMul, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
   injStatus, injuryReport, toggleRest, gameKey, pkgFor, setPackage, marketComps, positionMarket, hotSeat, hotSeatHeat,
   PROTECT_N, defaultProtect, ACHIEVEMENTS, RULES_DEFAULT, PROPOSALS, castVote, expandLeague: (n, pr) => { const r = expandLeague(n, pr); topUpProspects(); return r; }, MILESTONES, MS_NAME, stadiumTag, tradeDeadline,
   TRAITS, traitsKnown, POS_MOVES, positionPreview, changePosition, AGENT_STYLES, agentOf, capHit, voidCapHit, toggleBlock, shopPlayer, tradeAsk, mockDraft, visitProspect, VISITS_PER_YEAR,
@@ -21589,10 +21741,10 @@ Object.assign(actions, {
 // PLAYER CAREER screens: one athlete, high school to the Hall of Fame vote
 // =====================================================================
 const CV = () => HM.carView();
-const carInCol = () => { const c = S() && S().car; return !!c && (c.stage === 'hs' || c.stage === 'col'); };
+const carInCol = () => { const c = S() && S().car; return !!c && (c.stage === 'hs' || c.stage === 'col' || c.stage === 'coach'); };
 const carRv = x => (carInCol() ? rcv(x) : rv(x));
-const CAR_STAGE = { hs: 'High school senior', col: 'College', draft: 'Draft prospect', pro: 'Pro', fa: 'Free agent', ret: 'Retired' };
-const CAR_NAV = () => { const c = S().car; return [['home', 'Home'], ['me', 'Profile'], ['feed', 'Feed'], ['press', 'Press'], ['msgs', 'Messages'], ['media', 'Media'], ...(!['hs', 'ret'].includes(c.stage) ? [['skills', 'Skills']] : []), ...(c.stage === 'hs' ? [['recruit', 'Recruiting']] : []), ...(c.stage === 'draft' ? [['draft', 'Draft day']] : []), ['games', 'Game log'], ['team', 'Team'], ['career', 'Career'], ['news', 'Timeline']]; };
+const CAR_STAGE = { hs: 'High school senior', col: 'College', draft: 'Draft prospect', pro: 'Pro', fa: 'Free agent', ret: 'Retired', coach: 'Coordinator' };
+const CAR_NAV = () => { const c = S().car; return [['home', 'Home'], ['me', 'Profile'], ['feed', 'Feed'], ['press', 'Press'], ['msgs', 'Messages'], ['media', 'Media'], ...(!['hs', 'ret', 'coach'].includes(c.stage) ? [['skills', 'Skills']] : []), ...((c.stage === 'ret' || c.stage === 'coach') && c.pos !== 'K' && c.pos !== 'P' ? [['coach', 'Coaching']] : []), ...(c.stage === 'hs' ? [['recruit', 'Recruiting']] : []), ...(c.stage === 'draft' ? [['draft', 'Draft day']] : []), ['games', 'Game log'], ['team', 'Team'], ['career', 'Career'], ['news', 'Timeline']]; };
 // the league around you, read-only: the college world while you're in high school or college, the pros after the draft
 const CAR_LEAGUE = () => carInCol()
   ? [['lfront', 'Front page'], ['lpolls', 'Rankings'], ['lstand', 'Standings'], ['lsched', 'Scores'], ['lpo', 'Playoff'], ['stats', 'Leaders'], ['lawards', 'Awards'], ['lhist', 'History'], ['lrivals', 'Rivalries']]
@@ -21630,7 +21782,7 @@ function careerStart(saved, modeSeg) {
 function careerRender() {
   guideMark();
   const v = CV(), c = v.c, p = v.p, nav = CAR_NAV(); let view = ui.carView || 'home';
-  const views = { home: carHome, feed: carFeed, press: carPress, msgs: carMsgs, media: carStories, skills: carSkills, recruit: carRecruit, draft: carDraft, games: carGames, team: carTeam, career: carCareer, news: carNews, watch: carWatchView, me: carProfile };
+  const views = { home: carHome, feed: carFeed, press: carPress, msgs: carMsgs, media: carStories, skills: carSkills, recruit: carRecruit, draft: carDraft, games: carGames, team: carTeam, career: carCareer, news: carNews, watch: carWatchView, me: carProfile, coach: carCoachPage };
   // league screens are borrowed from the GM and coach games and shown read-only (see 97r-career-league.js)
   for (const k in CAR_RO) views[k] = () => { try { return `<div class="carro">${CAR_RO[k]()}</div>`; } catch (e) { console.error(e); return '<div class="note">That screen is not available right now.</div>'; } };
   if (!views[view] || (!nav.some(x => x[0] === view) && !CAR_LEAGUE().some(x => x[0] === view) && view !== 'pl' && view !== 'tm' && view !== 'watch')) ui.carView = view = 'home';
@@ -21648,7 +21800,7 @@ function careerRender() {
 }
 function nextLabel(v) {
   const c = v.c, CS = CSx();
-  if (c.stage === 'hs' || c.stage === 'col') return CS.phase === 'season' ? `Play week ${CS.week}` : CS.phase === 'offseason' ? 'Start next season' : 'Next';
+  if (c.stage === 'hs' || c.stage === 'col' || c.stage === 'coach') return CS.phase === 'season' ? `Play week ${CS.week}` : CS.phase === 'offseason' ? 'Start next season' : 'Next';
   if (S().phase === 'regular') return HM.inCamp() ? 'Finish camp' : `Play week ${S().week}`;
   if (S().phase === 'playoffs') return 'Play playoff game';
   if (S().phase === 'preseason') return 'Start the season';
@@ -21659,6 +21811,7 @@ function nextLabel(v) {
 function carHome(v) {
   const c = v.c, p = v.p, inCol = carInCol();
   if (c.stage === 'ret') return carRetired(v);
+  if (c.stage === 'coach') return carCoachHome(v);
   const attrs = p ? HM.POS[p.pos].attrs.map(k => { const val = carRv(p.a[k]); return `<div class="attr"><span>${E(HM.ATTR[k])}</span><div class="bar ${rTier(val, carInCol())}"><i style="width:${clamp((p.a[k] - 20) / 79 * 100, 2, 100)}%"></i></div><span class="num">${rtg(val, carInCol())}</span></div>`; }).join('') : '';
   const hero = `<section class="hero" style="--tc:${v.team ? v.team.color : 'var(--accent)'}">${p && typeof faceOf === 'function' ? faceOf(p, 72) : ''}<div><div class="lbl">${E(c.pos)} · ${E(c.archName)} · ${E(CAR_STAGE[c.stage])}</div><h1>${E(c.fn + ' ' + c.ln)}</h1><div class="sub">${p ? `Age ${p.age}` : ''}${inCol && p ? ` · ${p.stars ? '★'.repeat(p.stars) : ''} ${c.stage === 'col' ? E(HM.college.clsOf ? HM.college.clsOf(p) : '') : `#${p.rk} nationally`}` : ''}${v.team ? ` · ${E(inCol ? v.team.name : v.team.city + ' ' + v.team.name)}` : ''}${p && p.inj > 0 ? ` · <b class="L">Injured (${p.inj} wk)</b>` : ''}</div></div>
     <div class="rate">${p ? `<div><b>${carRv(p.ovr)}</b><span>Overall</span></div><div><b>${carRv(p.pot)}</b><span>Potential</span></div>` : ''}<div><b>${Math.round(c.fame)}</b><span>Fame</span></div>${c.stage !== 'hs' ? `<div><b>${Math.round(c.trust)}</b><span>Coach trust</span></div>` : ''}</div></section>`;
@@ -21799,7 +21952,7 @@ function carCareer(v) {
   const cases = Object.entries(count).filter(([k]) => !/\|(POTW|MS)$/.test(k)).sort((a, b) => b[1] - a[1]).map(([k, n]) => { const [lvl, t] = k.split('|'); return `<span class="pill" style="font-size:11.5px">${lvl === 'College' ? 'NCAA · ' : ''}${E(nice[t] || t)}${n > 1 ? ' ×' + n : ''}</span>`; }).join(' ');
   const m = c.money, earned = Math.round(((m.sal || 0) + (m.end || 0) + (m.nil || 0) - (m.fine || 0) - (m.fee || 0)) * 10) / 10;
   const canRetire = ['pro', 'fa'].includes(c.stage) && !['regular', 'playoffs'].includes(S().phase);
-  return `<div class="pagehead"><div><h2>Career</h2><p>${E(c.fn + ' ' + c.ln)} · ${E(c.pos)} · ${E(c.archName)}. Earned about $${earned}M so far${m.nil ? ` ($${Math.round(m.nil * 1000)}K in NIL)` : ''}${m.end ? `, $${m.end}M from endorsements` : ''}${m.fine ? `, minus $${m.fine}M in fines and lost game checks` : ''}${m.fee >= 0.05 ? `, minus $${Math.round(m.fee * 10) / 10}M in agent fees` : ''}.</p></div>${canRetire ? `<button class="btn" data-act="carRetire">${ui.confirm && ui.confirm.act === 'carRetire' ? 'Confirm: retire now' : 'Retire'}</button>` : ''}</div>
+  return `<div class="pagehead"><div><h2>Career</h2><p>${E(c.fn + ' ' + c.ln)} · ${E(c.pos)} · ${E(c.archName)}. Earned about $${earned}M so far${m.nil ? ` (${m.nil >= 1 ? `$${(Math.round(m.nil * 10) / 10).toFixed(1)}M` : `$${Math.round(m.nil * 1000)}K`} in NIL)` : ''}${m.end ? `, $${m.end}M from endorsements` : ''}${m.fine ? `, minus $${m.fine}M in fines and lost game checks` : ''}${m.fee >= 0.05 ? `, minus $${Math.round(m.fee * 10) / 10}M in agent fees` : ''}.</p></div>${canRetire ? `<button class="btn" data-act="carRetire">${ui.confirm && ui.confirm.act === 'carRetire' ? 'Confirm: retire now' : 'Retire'}</button>` : ''}</div>
   <section class="panel"><h3>Trophy case</h3>${cases || '<p class="muted" style="margin:0">Nothing yet. Keep going.</p>'}</section>
   <section class="panel"><h3>Season by season</h3><div class="tw"><table class="t"><thead><tr><th>Season</th><th>Level</th><th>Team</th><th class="n">GP</th>${cols.map(([l]) => `<th class="n">${E(l)}</th>`).join('')}<th>Honors</th></tr></thead><tbody>${rows.map(r => `<tr><td class="num">${r.s}</td><td>${E(r.lvl)}</td><td>${E(r.team)}</td><td class="num">${r.gp || 0}</td>${cols.map(([, k]) => `<td class="num">${Math.round(r.st[k] || 0).toLocaleString()}</td>`).join('')}<td style="font-size:12px">${E((r.hon || []).filter(h => h !== 'POTW' && h !== 'MS').map(h => nice[h] || h).join(', '))}</td></tr>`).join('')}
     ${['College', 'Pro'].filter(l => rows.some(r => r.lvl === l)).map(l => { const t = tot(l); return `<tr class="sub"><td colspan="3"><b>${l} total</b></td><td class="num">${rows.filter(r => r.lvl === l).reduce((a, r) => a + (r.gp || 0), 0)}</td>${cols.map(([, k]) => `<td class="num"><b>${Math.round(t[k] || 0).toLocaleString()}</b></td>`).join('')}<td></td></tr>`; }).join('')}</tbody></table></div></section>
@@ -21814,6 +21967,7 @@ function carRetired(v) {
   const hofTxt = !h ? '' : h.in ? `<b class="W">Inducted into the Hall of Fame in ${h.s}${h.first ? ' on the first ballot' : ''} (${h.pct}% of the vote).</b>` : h.pending ? `You'll be on the Hall of Fame ballot in ${h.year}. ${h.score >= 55 ? 'Voters are already talking about you.' : 'It will be close.'}` : h.dropped ? `You fell off the Hall of Fame ballot (last vote ${h.pct}%).` : r.hs != null && r.hs < 34 ? 'Your career did not reach Hall of Fame consideration.' : '';
   return `${hofRoomView(v)}<section class="hero"><div><div class="lbl">${E(c.pos)} · retired${r.age ? ' at ' + r.age : ''}</div><h1>${E(c.fn + ' ' + c.ln)}</h1><div class="sub">${E(r.why || '')}</div></div></section>
   <section class="panel"><h3>Legacy</h3><p style="margin:0 0 10px">${hofTxt || 'Your playing days are over.'}</p>${h && h.pending ? '<button class="btn primary" data-act="carHof">Sim to the Hall of Fame vote</button>' : ''}</section>
+  ${carCoachOffersPanel(v)}
   ${carCareer(v)}`;
 }
 
@@ -22173,6 +22327,63 @@ function carStories(v) {
   <div class="stack" style="gap:14px">${art}</div></div>`;
 }
 Object.assign(actions, { stOpen: d => { ui.stOpen = +d.id; window.scrollTo(0, 0); } });
+// ---------- career: coaching after your playing days ----------
+// A retired career player can take a college coordinator job (98-v2-career-coach.js). Home becomes the coordinator's
+// desk: his unit's rank, this week's opponent, the plan for his side and film study. The Coaching page has the offers,
+// the scheme and the season-by-season record.
+const ccSideWord = s => (s === 'o' ? 'offense' : 'defense');
+const ccRole = s => (s === 'o' ? 'Offensive coordinator' : 'Defensive coordinator');
+// the offers: from Home in retirement, and on the Coaching page
+function carCoachOffersPanel(v) {
+  const k = v.coach; if (!k || k.why) return '';
+  const inJob = k.k && k.k.tid != null;
+  if (!k.offers.length) return inJob ? '' : `<section class="panel"><h3>Coaching</h3><p class="muted" style="margin:0">No school has called about a coordinator job this offseason. More calls come after next season.</p></section>`;
+  const rows = k.offers.map((o, i) => `<tr><td>${cchip(o.t)} ${E(o.t.name)}${o.alma ? ' <span class="pill">your school</span>' : ''}</td><td class="num">${o.t.pres}</td><td>${o.last ? `${o.last.w}-${o.last.l}` : '—'}</td><td>${o.cur ? `${E(o.cur.name)} (${o.cur.rat})` : '<span class="muted">open</span>'}</td><td><button class="btn sm${i === 0 ? ' primary' : ''}" data-act="ccTake" data-i="${i}">Take the job</button></td></tr>`).join('');
+  const intro = inJob ? `Bigger programs want you to run their ${ccSideWord(k.side)}. A new job starts now; you bring your scheme with you.` : `You can go into coaching as a college ${ccRole(k.side).toLowerCase()}. You start raw (coaching ${k.start.rat}), with room to grow, and you bring the ${E(k.schemes[k.sch][0])} you played in. Your unit's national rank decides where you go next. The Hall of Fame vote goes on while you coach.`;
+  return `<section class="panel"><div class="ph"><h3>${inJob ? 'Job offers' : 'Go into coaching'}</h3><span class="muted" style="font-size:12.5px">${ccRole(k.side)}</span></div><p style="margin:0 0 10px;font-size:13px">${intro}</p>
+    <div class="tw"><table class="t" data-nosort><thead><tr><th>School</th><th class="n">Prestige</th><th>Last season</th><th>Coordinator now</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+}
+// the job: what this week needs from you
+function carCoachDesk(v) {
+  const k = v.coach, J = k.job, side = k.k.side, t = J.t, u = J.unit, P = J.plan || { off: 'bal', def: 'bal' }, cs = CSx();
+  const opts = side === 'o' ? OFF_PLANS : DEF_PLANS, key = side === 'o' ? 'off' : 'def', tip = PLAN_TIP[key][P[key]];
+  const pSeg = `<div class="seg" role="group">${opts.map(([val, l]) => `<button data-act="cPlanSet" data-k="${key}" data-v="${val}" aria-pressed="${P[key] === val}">${E(l)}</button>`).join('')}</div>`;
+  const opp = J.opp, rep = J.film && opp != null && J.film.opp === opp ? J.scout : null;
+  const film = opp == null ? `<p class="muted" style="margin:0">${cs.phase === 'season' ? 'Bye week: no opponent to study.' : 'Film study opens when the season is on.'}</p>`
+    : rep ? `<div class="stack" style="gap:6px;font-size:13px"><div><b>${E(CT(opp).name)}</b> run a <b>${E(rep.off)}</b> offense and a <b>${E(rep.def)}</b> defense. They lean <b>${rep.lean}</b>.</div><div>Players to watch: ${rep.best.map(x => `${E(x.pos)} ${E(x.name)} (${rcv(x.ovr)})`).join(', ')}.</div><div class="note ok" style="margin:0">${E(rep.tip)} The prep gives your ${ccSideWord(side)} a small edge this week.</div></div>`
+    : `<p style="margin:0 0 8px;font-size:13px">Break down ${E(CT(opp).name)}'s film for a small edge in the game.</p><button class="btn primary" data-act="cFilm">Study their film</button>`;
+  const hero = `<section class="hero" style="--tc:${t.color}"><div><div class="lbl">${ccRole(side)} · ${E(t.name)}</div><h1>${E(v.c.fn + ' ' + v.c.ln)}</h1><div class="sub">Former ${E(v.c.pos)} · age ${J.me ? J.me.age : ''} · head coach ${J.hc ? E(J.hc.fn + ' ' + J.hc.ln) : 'vacant'} · ${E(k.schemes[J.me ? J.me.sch : k.k.sch][0])}</div></div>
+    <div class="rate"><div><b>${J.me ? J.me.rat : k.k.rat}</b><span>Coaching</span></div><div><b>${u.gp ? ordC2(u.rank) : '—'}</b><span>${side === 'o' ? 'Scoring offense' : 'Scoring defense'}</span></div><div><b>${Math.round(v.c.fame)}</b><span>Fame</span></div></div></section>`;
+  return `${hero}${carNextUp(v)}${carCoachOffersPanel(v)}
+  <div class="grid2"><section class="panel"><h3>${opp != null ? `${J.next.name}: ${J.next.h === t.tid ? 'vs' : 'at'} ${cchip(CT(opp))} ${E(CT(opp).name)}` : 'Film study'}</h3>${film}</section>
+  <section class="panel stack" style="gap:10px"><h3 style="margin:0">Your ${ccSideWord(side)}</h3>
+    <div style="font-size:13px">${u.gp ? `${u.ppg} points a game${side === 'o' ? '' : ' allowed'}, ${ordC2(u.rank)} of ${u.n} in the country. ${E(t.name)} is ${crec(t.rec)}.` : 'No games yet this season.'}</div>
+    <div><div class="lbl" style="margin-bottom:4px">This week's plan</div>${pSeg}<div class="muted" style="font-size:12px;margin-top:4px">${E(tip)}</div></div></section></div>
+  <section class="panel"><div class="ph"><h3>Latest</h3><button class="btn sm" data-act="carNav" data-v="news">Timeline</button></div><div class="stack" style="gap:6px;font-size:13px">${v.c.log.slice(0, 6).map(x => `<div><span class="muted num" style="margin-right:6px">${x.s}</span>${LN(x.text)}</div>`).join('')}</div></section>`;
+}
+const ordC2 = n => n + ((n % 100 > 10 && n % 100 < 14) ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+// home while coaching: the desk, or the job hunt between jobs
+function carCoachHome(v) {
+  const k = v.coach;
+  if (k && k.job) return carCoachDesk(v);
+  return `<section class="hero"><div><div class="lbl">Between jobs</div><h1>${E(v.c.fn + ' ' + v.c.ln)}</h1><div class="sub">${ccRole(k ? k.side : 'o')} · coaching ${k && k.k ? k.k.rat : ''}</div></div></section>${carNextUp(v)}${carCoachOffersPanel(v)}`;
+}
+// the Coaching page: offers, the scheme, the record
+function carCoachPage(v) {
+  const k = v.coach; if (!k) return '<div class="note">Coaching opens when your playing days are over.</div>';
+  if (k.why) return `<div class="pagehead"><div><h2>Coaching</h2></div></div><div class="note">${E(k.why)}</div>`;
+  const K = k.k, sch = K ? (k.job && k.job.me ? k.job.me.sch : K.sch) : k.sch, canSch = k.job && k.job.canSch;
+  const schemes = Object.entries(k.schemes).map(([key, s]) => `<div class="row" style="gap:10px;align-items:flex-start"><button class="btn sm${key === sch ? ' primary' : ''}" data-act="ccSch" data-v="${key}" ${!canSch || key === sch ? 'disabled' : ''}>${key === sch ? 'Your scheme' : 'Switch'}</button><div style="font-size:13px"><b>${E(s[0])}</b>: ${E(s[1])}</div></div>`).join('');
+  const hist = K && K.hist.length ? `<section class="panel"><h3>Season by season</h3><div class="tw"><table class="t" data-nosort><thead><tr><th>Season</th><th>School</th><th>Job</th><th>Record</th><th class="n">Rank</th><th class="n">Points a game</th><th class="n">Coaching</th></tr></thead><tbody>${K.hist.slice().reverse().map(h => `<tr><td class="num">${h.s}</td><td>${cchip(CT(h.tid))} ${E(CT(h.tid).name)}</td><td>${h.side === 'o' ? 'OC' : 'DC'}</td><td>${h.w}-${h.l}</td><td class="num">${h.rank} of ${h.n}</td><td class="num">${h.ppg}</td><td class="num">${h.rat}</td></tr>`).join('')}</tbody></table></div></section>` : '';
+  return `<div class="pagehead"><div><h2>Coaching</h2><p>${K && K.tid != null ? `${ccRole(K.side)} at ${E(CT(K.tid).name)}.` : 'Your next coaching job.'} Your ${ccSideWord(k.side)}'s rank in scoring decides who calls next: a top-third unit gets bigger programs on the phone, and two bad years in a row can cost you the job.</p></div></div>
+  ${carCoachOffersPanel(v)}
+  <section class="panel stack" style="gap:8px"><h3 style="margin:0">Your scheme</h3><p class="muted" style="margin:0;font-size:12.5px">${canSch ? 'You can change it before the season starts.' : K && K.tid != null ? 'You can change it in the offseason.' : 'You bring it to your next job.'}</p>${schemes}</section>
+  ${hist}`;
+}
+Object.assign(actions, {
+  ccTake: d => { const e = HM.carTakeCoachJob(+d.i); if (e) { toast(e); return; } ui.carView = 'home'; toast(S().car.log[0].text); persist(); },
+  ccSch: d => { const e = HM.carCoachScheme(d.v); if (e) toast(e); persist(); },
+});
 // =====================================================================
 // PROGRESSION REPORT: opens by itself when a new season starts (pro) or after the offseason (college), showing how
 // your team changed from last season's final roster: overall and rank, each position group and why it moved, who
@@ -22508,6 +22719,7 @@ function carProfile(v) {
   const head = `<div class="pagehead"><div><h2>Profile</h2><p>${E(c.fn + ' ' + c.ln)}: ratings, stats and advanced numbers, as the ${inCol ? 'college world' : 'league'} sees you. Every season at every level is on the <button class="plink" data-act="carNav" data-v="career">Career</button> page; every game is in the <button class="plink" data-act="carNav" data-v="games">Game log</button>.</p></div></div>`;
   // every level side by side (the player page below covers the level you're at, with the advanced numbers)
   let all = ''; try { const h = carCareer(v), i = h.indexOf('<section class="panel"><h3>Season by season</h3>'); if (i >= 0) all = h.slice(i, h.indexOf('</section>', i) + 10).replace('<h3>Season by season</h3>', '<h3>Season by season, every level</h3>'); } catch (e) { /* the Career page has it */ }
+  if (!p && (c.stage === 'ret' || c.stage === 'coach')) return `${head}${all}`;
   if (!p || c.stage === 'hs' || (inCol && !(p.tid >= 0))) return `${head}<div class="note">Your profile fills in once you're on a college roster. Until then, your recruiting is on Home and Recruiting.</div>`;
   let inner = '';
   try { inner = inCol ? cPlayerModal(p) : playerModal(p); } catch (e) { console.error(e); return `${head}<div class="note">Your profile is not available right now.</div>`; }
