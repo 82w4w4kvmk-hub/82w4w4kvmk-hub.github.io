@@ -4122,7 +4122,7 @@ function faNextDay() {
   for (const p of freeAgents()) if (!onMarket(p)) p.ask.sal = Math.max(minSalary(), r1(p.ask.sal * 0.9));
   S.faDay++; S.faVis = { day: S.faDay, n: 3 };
   disputeTick();
-  promisesTick('day'); uniAfterPro();
+  promisesTick('day'); uniAfterPro(); vxSync();
 }
 // ---------- draft picks ----------
 // A pick: { id, y: draft year, rd, o: original team, own: current owner }. Teams hold picks for the next three drafts.
@@ -5090,6 +5090,7 @@ function acceptOffer(id) {
   for (const i of o.getPk) S.picks.find(p => p.id === i).own = o.tid;
   syncDraftOrder(); ensureDepth(team(o.tid), true); ensureDepth(team(S.userTid));
   S.offers = S.offers.filter(x => x.id !== id);
+  (S.accN || (S.accN = {}))[S.season] = (S.accN[S.season] || 0) + 1;
   news(msg, true);
   return null;
 }
@@ -5123,6 +5124,8 @@ function judgeSeason() {
   if (champ) d += 25;
   { const fans = t.fin ? t.fin.fans : 55; d += Math.round((fans - 55) * 0.12); }
   const fin = finSummary(t); if (fin.profit < 40 * (S.capScale || 1)) d -= 3; else if (fin.profit > 170 * (S.capScale || 1)) d += 2;
+  // a promise to the owner at the start of the season counts both ways
+  if (o.vow === S.season) d += d >= 0 ? 3 : -4;
   d *= ownerMoodMult(); if (o.pers === 'cheap') { if (fin.profit < 60 * (S.capScale || 1)) d -= 4; if (seasonPayroll(S.userTid) > S.cap * 0.97) d -= 2; }
   const before = o.mood; o.mood = clamp(Math.round(o.mood + d), 0, 100);
   verdict = d >= 10 ? 'thrilled with' : d >= 0 ? 'satisfied with' : d > -15 ? 'disappointed in' : 'furious about';
@@ -5329,6 +5332,7 @@ function weekEnd(userGame) {
   if (S.week > S.schedule.length) endRegularSeason();
   else if (S.week === tradeDeadline()) dlOpen();
   uniAfterPro();
+  vxSync();
   return userGame;
 }
 function runGen(gen) { let r = gen.next(); while (!r.done) r = gen.next(r.value.auto); return r.value; }
@@ -9695,6 +9699,271 @@ function negPatience(pid, kind) {
   return { used, max: n.maxTries, left: Math.max(0, n.maxTries - used), low: p.neg && p.neg.key === negKey() ? p.neg.low || 0 : 0 };
 }
 // =====================================================================
+// VOICES: the people who message a GM or a head coach. Rival GMs talk trades (every offer arrives as a message from
+// the GM who made it, and you can push for more, counter, take it or tell him what you think), the owner checks in
+// (the season's goal, a losing streak, his demands, the verdict), and in college you pitch recruits in their DMs
+// (98-college-8c-voices.js). The game decides every outcome; in the desktop app the AI model writes the other side's
+// words from the facts, checked like the career feed. These conversations draw on their own random numbers, never the
+// game's, so opening and reading them can't change a game or a draft.
+// =====================================================================
+
+// ---------- shared: threads, messages, reading what you type, checking what the model writes ----------
+function vxNew(seed) { return { seq: 1, th: [], did: {}, r: (seed >>> 0) || 1 }; }
+function vxRng(vx) { let a = vx.r >>> 0; a = (a + 0x6D2B79F5) >>> 0; vx.r = a; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
+const vxPick = (vx, L) => L[Math.floor(vxRng(vx) * L.length)];
+const VX_MAX = 40;
+function vxThread(vx, k, who, act) {
+  const th = { id: vx.seq++, k, who, msgs: [], act: act || null, res: null, last: Date.now(), seen: 0, end: false, mine: 0 };
+  vx.th.unshift(th); if (vx.th.length > VX_MAX) vx.th.length = VX_MAX; return th;
+}
+// a message from the other side: the game's words until the AI model writes it (p is what the message has to do)
+function vxMsg(vx, th, text, p, secs) {
+  const m = { id: vx.seq++, me: 0, text, p: p || '', ai: 0, at: Date.now() + Math.round((secs == null ? 1 + vxRng(vx) * 3 : secs) * 1000) };
+  th.msgs.push(m); th.last = m.at;
+  vx.th.splice(vx.th.indexOf(th), 1); vx.th.unshift(th);
+  return m;
+}
+function vxMine(vx, th, text) { const m = { id: vx.seq++, me: 1, text, at: Date.now(), ai: 1 }; th.msgs.push(m); th.last = m.at; th.seen = m.at; th.mine++; return m; }
+const vxFind = (vx, id) => vx.th.find(x => x.id === +id) || null;
+// the game's reading of a message you type: how it sounds, and what you're asking for
+const VX_INSULT = /\b(idiot|stupid|clown|moron|joke|laughable|insult(ing)?|ridiculous|garbage|trash|robbery|fleec\w*|rip(ping)? me off|pathetic|incompetent|loser|dumb)\b/i;
+const VX_NICE = /\b(thanks|thank you|appreciate|respect|pleasure|good talk|good to hear|love that|great)\b/i;
+// (a recruiting pitch talks about his family all the time, so there "your family" isn't an insult)
+function vxRead(text, o) {
+  const t = String(text || ''), slur = SOC_SLUR.some(r => r.test(t)), threat = SOC_THREAT.some(r => r.test(t)), cuss = SOC_CUSS.test(t), insult = VX_INSULT.test(t);
+  const fam = !(o && o.fam === false) && SOC_FAMILY.test(t);
+  const sev = slur || threat ? 3 : (cuss && insult) || fam ? 2 : cuss || insult ? 1 : 0;
+  const no = /\b(no deal|pass|no thanks|not interested|decline|hard pass|nah|not happening|no chance)\b/i.test(t);
+  return { sev, slur, threat, nice: !sev && VX_NICE.test(t), no, yes: !no && /\b(deal|accept(ed)?|done|let'?s do (it|this)|i'?m in|you got (it|a deal)|sounds good|works for me)\b/i.test(t), more: !no && /\b(more|add|throw in|sweeten|better|another pick|plus a|extra)\b/i.test(t) };
+}
+// what the model writes is kept only if it sticks to the facts it was given
+function vxCheck(text, facts, o) {
+  let t = String(text == null ? '' : text).replace(/\s+/g, ' ').trim().replace(/^["'“]+|["'”]+$/g, '').replace(/\s*[—–]\s*/g, ', ');
+  if (t.length < 4 || t.length > 320) return null;
+  if (/\b(rating|ratings|overall|ovr|video game|as an ai|language model|fame)\b|[{}[\]<#]/i.test(t)) return null;
+  if (SOC_SLUR.some(r => r.test(t)) || SOC_THREAT.some(r => r.test(t)) || (!(o && o.fam === false) && SOC_FAMILY.test(t))) return null;
+  const nums = new Set(String(facts).match(/\d+(\.\d+)?/g) || []);
+  for (const m of t.matchAll(/\d+(\.\d+)?/g)) if (!nums.has(m[0])) return null;
+  return t;
+}
+const VX_SYS = 'You write private messages for a football video game. Write the next message from the person described, in that person\'s own voice: one to three short sentences, plain words, no hashtags, no em dashes, no quotation marks around the message. Do exactly what the message has to do and keep every detail it names (players, picks, demands) exactly as given. Never invent players, picks, stats, injuries, money or what anyone said. Never mention ratings or that this is a game. No slurs, no threats.';
+function vxQueue(vx, max) {
+  const out = [], old = Date.now() - 25000;
+  for (const th of vx.th.slice(0, 12)) for (const m of th.msgs) if (!m.me && m.ai === 0 && m.at >= old) out.push({ th: th.id, id: m.id, at: m.at });
+  return out.sort((a, b) => a.at - b.at).slice(0, max || 8);
+}
+function vxPromptFor(vx, thId, msgId, facts, whoLine, meName) {
+  const th = vxFind(vx, thId); if (!th) return null; const m = th.msgs.find(x => x.id === +msgId); if (!m || m.me) return null;
+  const before = th.msgs.slice(0, th.msgs.indexOf(m)).slice(-6).map(x => `${x.me ? meName : th.who.name}: ${x.text}`);
+  const user = `Facts:\n${facts}\n\nYou are ${whoLine}.\n${before.length ? `The conversation so far:\n${before.join('\n')}\n\n` : ''}What this message has to do: ${m.p || 'continue the conversation'}\nThe game's own version, to improve on: ${m.text}\nWrite ${th.who.name}'s next message to ${meName}.\n\nAnswer with JSON: {"text": "the message"}`;
+  return { system: VX_SYS, user, ids: [m.id], schema: { type: 'object', properties: { text: { type: 'string', maxLength: 300 } }, required: ['text'] }, maxTokens: 110, temperature: 0.8 };
+}
+function vxWriteTo(vx, thId, msgId, text, facts, must, o) {
+  const th = vxFind(vx, thId); if (!th) return 0; const m = th.msgs.find(x => x.id === +msgId); if (!m || m.me || m.ai) return 0;
+  let t = typeof text === 'string' ? vxCheck(text, facts + ' ' + m.text, o) : null;
+  // a message that names a deal has to keep every name in it
+  if (t && must && must.some(w => !t.toLowerCase().includes(String(w).toLowerCase()))) t = null;
+  if (t) { m.text = t; m.ai = 1; return 1; } m.ai = -1; return 0;
+}
+function vxBadge(vx, now) { if (!vx) return 0; now = now || Date.now(); let n = 0; for (const th of vx.th) if (th.msgs.some(m => !m.me && m.at <= now && m.at > (th.seen || 0))) n++; return n; }
+
+// ---------- pro: rival GMs and the owner ----------
+function vxS() {
+  if (!S.voxV) { S.voxV = 1; S.vox = vxNew((S.season || 1) * 7919 + (S.userTid || 0) * 131 + 17); }
+  return S.vox;
+}
+const vxPieces = (pids, pks) => [...pids.map(id => S.players[id]).filter(Boolean).map(p => `${p.pos} ${p.fn} ${p.ln}`), ...pks.map(id => (S.picks || []).find(x => x.id === id)).filter(Boolean).map(pk => `${pk.own === S.userTid ? 'your' : 'our'} ${pickLabel(pk)} pick`)];
+const vxList = L => L.length <= 1 ? (L[0] || 'nothing') : L.slice(0, -1).join(', ') + ' and ' + L[L.length - 1];
+function vxGmWho(tid) { const g = rivalGm(tid), t = team(tid); return { name: g ? `${g.fn} ${g.ln}` : `${t.city} front office`, sub: `GM, ${t.city} ${t.name}`, tid }; }
+// a trade offer, in the voice of the GM who made it
+function vxOfferThread(o) {
+  const vx = vxS(), g = rivalGm(o.tid), who = vxGmWho(o.tid), get = vxPieces(o.get, o.getPk), give = vxPieces(o.give, o.givePk);
+  const tgt = o.get.length ? S.players[o.get[0]] : null, rel = g ? g.rel : 0, style = g ? g.style : 'balanced';
+  const hi = rel >= 10 ? 'Always good doing business with you. ' : rel <= -10 ? 'I know we haven\'t always seen eye to eye. ' : '';
+  const ask = o.draftIdx != null ? `We want to move up to your pick at ${o.draftIdx + 1}.` : tgt ? { winnow: `We're making a run and ${tgt.fn} ${tgt.ln} is the piece we want.`, develop: `I don't buy much, but ${tgt.fn} ${tgt.ln} fits what we're building.`, cheap: `I'll be straight with you about ${tgt.fn} ${tgt.ln}.`, trader: `Got a deal for you on ${tgt.fn} ${tgt.ln}.`, balanced: `Calling about ${tgt.fn} ${tgt.ln}.` }[style] || `Calling about ${tgt.fn} ${tgt.ln}.` : 'I have a deal for you.';
+  const th = vxThread(vx, 'gm', who, { kind: 'offer', opts: [['Accept', 'acc'], ['Can you do better?', 'more'], ['Counter', 'ctr'], ['Decline', 'no']] });
+  th.off = o.id; o.vx = th.id;
+  const close = o.draftIdx != null ? 'The clock is running.' : style === 'trader' ? 'Quick yes and we\'re done.' : style === 'cheap' ? 'That\'s a fair price.' : 'Let me know.';
+  const text = `${hi}${ask} We'd send ${vxList(give)} for ${vxList(get)}. ${close}`;
+  vxMsg(vx, th, text, `Offer him this trade exactly: your team sends ${vxList(give)}; you get ${vxList(get)}. ${o.block ? 'You saw the player on his trade block. ' : ''}Make the pitch in your style (${(GM_STYLES[style] || GM_STYLES.balanced)[1]}).`, 0.5);
+  th.must = [...o.give, ...o.get].map(id => S.players[id]).filter(Boolean).map(p => p.ln);
+  return th;
+}
+const vxOwnerWho = () => ({ name: S.owner.name, sub: `Owner, ${team(S.userTid).city} ${team(S.userTid).name}` });
+function vxOwnerThread() { const vx = vxS(), o = S.owner; return vx.th.find(x => x.k === 'owner' && x.who.name === o.name) || vxThread(vx, 'owner', vxOwnerWho()); }
+function vxOwnerSay(text, p, act) {
+  const vx = vxS(), th = vxOwnerThread();
+  if (th.act && !th.res) th.res = 'You never answered.';
+  th.act = act || null; th.res = null; th.end = false; th.mine = 0; vxMsg(vx, th, text, p); return th;
+}
+const vxDeals = () => (S.utrades || []).filter(x => x.s === S.season).length + ((S.accN || {})[S.season] || 0);
+function vxSkid() {
+  const u = S.userTid, L = [];
+  for (let w = S.week - 1; w >= 1 && L.length < 3; w--) { const m = (S.schedule[w - 1] || []).find(x => x.h === u || x.a === u); const g = m && m.gid && S.games[m.gid]; if (!g) continue; const me = g.home === u ? 0 : 1; L.push(g.score[me] < g.score[1 - me]); }
+  return L.length === 3 && L.every(Boolean);
+}
+// once a step: offers become conversations, the owner checks in, promises come due
+function vxSync() {
+  if (!S || S.userTid == null || S.car || S.mode === 'career') return;
+  const vx = vxS(), did = vx.did, o = S.owner, s = S.season;
+  for (const off of S.offers || []) if (!off.vx || !vxFind(vx, off.vx)) vxOfferThread(off);
+  for (const th of vx.th) if (th.k === 'gm' && th.off != null && th.act && th.act.kind === 'offer' && !th.res && !(S.offers || []).some(x => x.id === th.off)) { th.res = 'The offer is off the table.'; th.act = null; }
+  if (!o) return;
+  const pers = o.pers || 'patient';
+  if (o.goal && o.goal.s === s && !did['goal|' + s] && ['preseason', 'regular'].includes(S.phase)) {
+    did['goal|' + s] = 1; const g = { title: 'reach the conference championship game', playoffs: 'make the playoffs', winning: 'finish with a winning record', rebuild: 'win at least 5 games and develop our young talent' }[o.goal.type] || o.goal.text.replace(/^[A-Z]/, c => c.toLowerCase());
+    const text = { patient: `New season. I want us to ${g}. Take the long view, but I want to see progress.`, winnow: `This year: ${g}. I spend to win, and I expect to.`, cheap: `This year I want us to ${g}. And keep an eye on the budget.`, meddling: `This year I want us to ${g}. I'll be watching closely.` }[pers];
+    vxOwnerSay(text, `Tell your GM this season's goal: ${g}. In your style as an owner (${OWNER_PERS[pers][1]})`, { kind: 'goal', opts: [['You\'ll get it', 'vow'], ['We\'ll do our best', 'ok']] });
+  }
+  if (o.dir && o.dir.s === s && !o.dir.done && !did['dir|' + s]) {
+    did['dir|' + s] = 1;
+    vxOwnerSay(`I want this: ${o.dir.text.replace(/^[A-Z]/, c => c.toLowerCase())}. Don't make me ask twice.`, `Make a demand of your GM: ${o.dir.text}. Firm.`, { kind: 'dir', opts: [['Understood', 'ok'], ['Push back', 'push']] });
+  }
+  if (o.dir && o.dir.s === s && o.dir.done && o.dir.ok != null && !did['dirEnd|' + s]) {
+    did['dirEnd|' + s] = 1;
+    vxOwnerSay(o.dir.ok ? 'You did what I asked. I noticed.' : 'I asked you for one thing. Remember that.', o.dir.ok ? 'Your GM did what you demanded. Acknowledge it, briefly.' : 'Your GM ignored your demand. Let him know you are not happy, coldly.');
+  }
+  if (S.phase === 'regular' && S.week >= 4 && !did['skid|' + s] && vxSkid()) {
+    did['skid|' + s] = 1; const open = S.week <= tradeDeadline();
+    vxOwnerSay(pers === 'patient' ? 'Three losses in a row. I\'m not panicking, but I want to hear the plan.' : 'Three straight losses. What is going on down there?', `The team has lost three games in a row. Ask your GM what the plan is. ${pers === 'patient' ? 'Calm.' : 'Impatient.'}`, { kind: 'skid', opts: open ? [['Stay the course', 'stay'], ['I\'ll make a move', 'move']] : [['Stay the course', 'stay'], ['We\'ll turn it around', 'fix']] });
+  }
+  const mv = o.move;
+  if (mv && mv.s === s && !mv.done && (S.phase !== 'regular' || S.week > mv.by)) {
+    mv.done = true; const made = vxDeals() > mv.n0;
+    o.mood = clamp(o.mood + (made ? 3 : -5), 0, 100);
+    vxOwnerSay(made ? 'You said you\'d make a move and you made one. Good.' : 'You told me you\'d make a move. The deadline came and went.', made ? 'Your GM promised a trade and made one. Approve, briefly.' : 'Your GM promised to make a trade before the deadline and did not. Let him know you remember.');
+  }
+  const last = (o.log || [])[o.log ? o.log.length - 1 : 0];
+  if (last && !did['verdict|' + last.s] && last.s >= s - 1) {
+    did['verdict|' + last.s] = 1; const d = last.d;
+    const text = d >= 10 ? `${last.rec}. That's the kind of season I wanted. Let's do it again.` : d >= 0 ? `${last.rec}. Solid. I want more next year.` : d > -15 ? `${last.rec}. Not what we talked about. Next year has to be better.` : `${last.rec}. I'm furious, and you know why. You're on thin ice.`;
+    vxOwnerSay(o.vow === last.s ? text + (d >= 0 ? ' And you kept your word.' : ' You promised me.') : text, `Give your GM your verdict on the ${last.s} season (record ${last.rec}, goal: ${last.goal}). You are ${d >= 10 ? 'thrilled' : d >= 0 ? 'satisfied' : d > -15 ? 'disappointed' : 'furious'}.`);
+  }
+}
+// ---------- pro: what you do ----------
+// the most a GM adds when you push: a pick of his that isn't in the deal, worth a fraction of what he's getting
+function vxSweetener(o) {
+  const cap = Math.max(1.5, o.vOut * 0.2);
+  return picksOf(o.tid).filter(pk => !o.givePk.includes(pk.id) && pickValue(pk) <= cap && !(S.draft && S.draft.pid && S.draft.pid.indexOf(pk.id) > -1 && S.draft.pid.indexOf(pk.id) < S.draft.idx)).sort((a, b) => pickValue(b) - pickValue(a))[0] || null;
+}
+function vxAct(thId, v) {
+  const vx = vxS(), th = vxFind(vx, thId); if (!th || !th.act || th.res) return { msg: 'Nothing to answer.' };
+  const k = th.act.kind, o = S.owner;
+  if (k === 'offer') {
+    const off = (S.offers || []).find(x => x.id === th.off); if (!off) { th.res = 'The offer is off the table.'; th.act = null; return { msg: 'That offer is no longer on the table.' }; }
+    const g = rivalGm(off.tid);
+    if (v === 'acc') {
+      const e = acceptOffer(off.id); if (e) return { msg: e };
+      th.res = 'Deal done.'; th.act = null; bumpRel(off.tid, 1, 'smooth deals');
+      vxMsg(vx, th, vxPick(vx, ['Pleasure doing business.', 'Done. Good luck the rest of the way.', 'Glad we got that done.']), 'He accepted your trade offer. Thank him, briefly.');
+      return { ok: true };
+    }
+    if (v === 'more') {
+      if (th.more) return { msg: 'You already asked.' }; th.more = 1;
+      const style = g ? g.style : 'balanced', rich = off.vIn >= off.vOut * 1.2;
+      const ch = clamp((0.35 + ({ trader: 0.2, winnow: 0.1, cheap: -0.15, develop: -0.05 }[style] || 0) + (g ? g.rel : 0) * 0.01) * (rich ? 0.4 : 1), 0.05, 0.85);
+      const pk = vxSweetener(off);
+      th.act = { ...th.act, opts: th.act.opts.filter(x => x[1] !== 'more') };
+      if (pk && vxRng(vx) < ch) {
+        off.givePk.push(pk.id); off.vIn = r1(off.vIn + pickValue(pk)); const lb = pickLabel(pk);
+        vxMsg(vx, th, `Fine. I'll throw in our ${lb} pick. That's as far as I go.`, `He asked you to improve your offer. Agree to add your ${lb} pick, and say that is your final offer.`); th.must = [...(th.must || []), lb];
+        return { ok: true, more: true };
+      }
+      if (style !== 'trader' && vxRng(vx) < 0.25) bumpRel(off.tid, -1, 'pushing too hard');
+      vxMsg(vx, th, vxPick(vx, ['That\'s my best offer.', 'I\'m not adding anything. Take it or leave it.', 'That\'s already more than fair.']), 'He asked you to improve your offer. Refuse: this is your best offer.');
+      return { ok: true };
+    }
+    if (v === 'ctr') return { ui: 'counter', off };
+    if (v === 'no') {
+      declineOffer(off.id); th.res = 'You passed.'; th.act = null;
+      vxMsg(vx, th, (g && g.rel >= 10) ? 'No worries. We\'ll find something that works.' : vxPick(vx, ['Understood. Your loss.', 'OK. Offer\'s off the table.', 'Fair enough. Maybe next time.']), 'He turned down your trade offer. Answer in one short line.');
+      return { ok: true };
+    }
+  }
+  if (k === 'call') {
+    if (v === 'tb') { th.res = 'You opened it in the trade builder.'; th.act = null; return { ui: 'tb', call: th.call }; }
+    th.res = 'You passed.'; th.act = null; vxMsg(vx, th, 'Your call. You know where to find me.', 'He decided your price is too high. Answer in one short line.'); return { ok: true };
+  }
+  if (k === 'goal') {
+    if (v === 'vow') { o.vow = S.season; th.res = 'You promised the owner you\'d get it done. Hit the goal and he\'ll remember; miss it and he\'ll remember that too.'; vxMsg(vx, th, 'I\'ll hold you to that.', 'Your GM promised to reach the goal. Say you will hold him to it.'); }
+    else { th.res = 'You told him you\'d do your best.'; vxMsg(vx, th, 'That\'s all I ask. Mostly.', 'Your GM said he would do his best. Answer briefly, a little dry.'); }
+    th.act = null; return { ok: true };
+  }
+  if (k === 'skid') {
+    const pers = o.pers || 'patient';
+    if (v === 'stay') { const d = { patient: 2, winnow: -3, meddling: -1, cheap: 0 }[pers] || 0; o.mood = clamp(o.mood + d, 0, 100); th.res = `You told him you'd stay the course.${d ? ` Job security ${d > 0 ? '+' : ''}${d}.` : ''}`; vxMsg(vx, th, d > 0 ? 'Good. I trust the process.' : d < 0 ? 'Staying the course is how people get fired.' : 'Fine. Show me.', d > 0 ? 'Your GM wants to stay the course. Agree, calmly.' : d < 0 ? 'Your GM wants to stay the course. You do not like it. Say so.' : 'Your GM wants to stay the course. Tell him to prove it.'); }
+    else if (v === 'move') { o.move = { s: S.season, n0: vxDeals(), by: tradeDeadline(), done: false }; th.res = `You promised a move before the trade deadline (week ${tradeDeadline()}). Make a trade and he'll be pleased; don't, and job security drops.`; vxMsg(vx, th, 'Good. I\'ll be watching the wire.', 'Your GM promised to make a trade before the deadline. Say you will be watching.'); }
+    else { th.res = 'You told him you\'d turn it around.'; vxMsg(vx, th, 'Do it, then.', 'Your GM says he will turn it around. Short, skeptical.'); }
+    th.act = null; return { ok: true };
+  }
+  if (k === 'dir') {
+    const d = o.dir;
+    if (v === 'push' && d && !d.done) {
+      if (vxRng(vx) < (o.mood >= 60 ? 0.55 : 0.35)) { d.done = true; d.ok = null; d.drop = 1; th.res = 'He backed off. The demand is dropped.'; vxMsg(vx, th, 'Fine. Your call. It better work.', 'Your GM pushed back on your demand, and you agreed to drop it. Grudging.'); }
+      else { o.mood = clamp(o.mood - 4, 0, 100); th.res = 'He didn\'t like that. Job security -4, and the demand stands.'; vxMsg(vx, th, 'That wasn\'t a request.', 'Your GM pushed back on your demand. Refuse, coldly: it stands.'); }
+    } else { th.res = 'You said you understood.'; vxMsg(vx, th, 'Good.', 'Your GM accepted your demand. One word or a short line.'); }
+    th.act = null; return { ok: true };
+  }
+  return { msg: 'Pick an option.' };
+}
+// typing your own message: the game reads it, and it counts
+function vxSend(thId, text) {
+  const vx = vxS(), th = vxFind(vx, thId); if (!th) return { msg: 'That conversation is gone.' }; if (th.end) return { msg: 'He\'s done talking for now.' };
+  const t = String(text || '').replace(/\s+/g, ' ').trim(); if (!t) return { msg: 'Write something first.' }; if (t.length > 280) return { msg: 'Keep it under 280 characters.' };
+  const L = vxRead(t); vxMine(vx, th, t);
+  if (th.k === 'gm') {
+    const tid = th.who.tid, off = th.off != null ? (S.offers || []).find(x => x.id === th.off) : null, open = off && th.act && th.act.kind === 'offer' && !th.res;
+    if (L.sev) {
+      bumpRel(tid, L.sev >= 3 ? -6 : L.sev >= 2 ? -4 : -2, 'how you talk to him');
+      if (open && (L.sev >= 2 || vxRng(vx) < 0.5)) { declineOffer(off.id); th.res = 'He pulled the offer.'; th.act = null; }
+      th.end = true; vxMsg(vx, th, L.sev >= 2 ? 'We\'re done here.' : 'Watch the tone. I\'ll talk to you when you\'re ready to be professional.', 'He was rude to you. Answer coldly and end the conversation.' + (th.res ? ' You are pulling your offer.' : ''));
+      return { ok: true, note: th.res ? 'He pulled the offer.' : 'He didn\'t like that.' };
+    }
+    if (L.nice && !th.niced) { th.niced = 1; bumpRel(tid, 1, 'good conversations'); }
+    if (open && L.yes) return vxAct(th.id, 'acc');
+    if (open && L.more && !th.more) return vxAct(th.id, 'more');
+    if (open && L.no) return vxAct(th.id, 'no');
+    if (th.mine >= 3) th.end = true;
+    vxMsg(vx, th, open ? 'Let me know what you decide. The offer stands for now.' : vxPick(vx, ['Talk soon.', 'Appreciate it.', 'Good talking to you.']), open ? 'He sent you a message about your trade offer. Answer briefly and steer back to the offer.' : 'Answer him briefly, like a GM.');
+    return { ok: true };
+  }
+  if (th.k === 'owner') {
+    const o = S.owner;
+    if (L.sev) { const d = L.sev >= 3 ? -10 : L.sev >= 2 ? -6 : -3; o.mood = clamp(o.mood + d, 0, 100); th.end = true; vxMsg(vx, th, 'Watch yourself. I sign your checks.', 'Your GM was disrespectful to you. Put him in his place, coldly.'); return { ok: true, note: `The owner didn't like that. Job security ${d}.` }; }
+    if (th.mine >= 2) th.end = true;
+    vxMsg(vx, th, L.nice ? 'Appreciated.' : vxPick(vx, ['Noted.', 'We\'ll see.', 'Results, not words.']), 'Your GM sent you a message. Answer briefly, like an owner.');
+    return { ok: true };
+  }
+  return { msg: 'Nothing to say here.' };
+}
+// calling a GM about one of his players: what he'd want, in his own words
+function vxCall(pid) {
+  const p = S.players[pid]; if (!p || p.tid < 0 || p.tid === S.userTid) return { msg: 'Pick a player on another team.' };
+  const vx = vxS(), key = `call|${pid}|${S.season}|${S.phase}|${S.week || S.faDay || 0}`;
+  const old = vx.th.find(x => x.k === 'gm' && x.callKey === key); if (old) return { th: old.id };
+  const r = tradeAsk(pid), th = vxThread(vx, 'gm', vxGmWho(p.tid)); th.callKey = key; vx.did[key] = 1;
+  vxMine(vx, th, `What would it take to get ${p.fn} ${p.ln}?`);
+  if (!r.ok) { vxMsg(vx, th, r.msg, `You were asked about trading ${p.fn} ${p.ln}. Say no, for this reason: ${r.msg}`); th.end = true; return { th: th.id }; }
+  const give = vxPieces(r.give, r.givePk); th.call = { tid: r.tid, give: r.give, givePk: r.givePk, get: [pid] };
+  th.act = { kind: 'call', opts: [['Open it in the trade builder', 'tb'], ['Too rich for me', 'no']] };
+  vxMsg(vx, th, `For ${p.ln}? I'd need ${vxList(give)}.${r.starters ? ' I know that includes a starter. That\'s the price.' : ''}`, `You were asked what it would take to trade for your player ${p.fn} ${p.ln}. Name your price exactly: ${vxList(give)}.`);
+  th.must = [p.ln, ...r.give.map(id => S.players[id]).filter(Boolean).map(x => x.ln)];
+  return { th: th.id };
+}
+function vxView() { vxSync(); const vx = vxS(); return { threads: vx.th.slice().sort((a, b) => b.last - a.last) }; }
+function vxSeen(thId, t) { const th = vxFind(vxS(), thId); if (th) th.seen = t || Date.now(); }
+const vxWho = th => th.k === 'owner' ? `${th.who.name}, the owner of ${team(S.userTid).city} ${team(S.userTid).name}, writing to his general manager. Personality: ${(OWNER_PERS[S.owner.pers] || OWNER_PERS.patient)[1]}` : (() => { const g = rivalGm(th.who.tid); return `${th.who.name}, general manager of the ${team(th.who.tid).city} ${team(th.who.tid).name}, texting another GM. Style: ${g ? GM_STYLES[g.style][1] : 'balanced'} Your relationship with him: ${g ? relLabel(g.rel).toLowerCase() : 'neutral'}`; })();
+function vxFacts(th) {
+  const u = team(S.userTid), L = [`The other GM runs the ${u.city} ${u.name} (${u.rec.w}-${u.rec.l}). Season ${S.season}, ${phaseLabel()}.`];
+  if (th.k === 'gm') { const t = team(th.who.tid); L.push(`The ${t.city} ${t.name} are ${t.rec.w}-${t.rec.l}.`); }
+  if (th.k === 'owner' && S.owner.goal) L.push(`The owner's goal this season: ${S.owner.goal.text}.`);
+  return L.join(' ');
+}
+function vxPrompt(thId, msgId) { const vx = vxS(), th = vxFind(vx, thId); if (!th) return null; return vxPromptFor(vx, thId, msgId, vxFacts(th), vxWho(th), th.k === 'owner' ? 'his general manager' : 'the other GM'); }
+function vxWrite(thId, msgId, text) { const vx = vxS(), th = vxFind(vx, thId); if (!th) return 0; return vxWriteTo(vx, thId, msgId, text, vxFacts(th), th.must); }
+const vxQueuePro = max => (S && S.voxV ? vxQueue(S.vox, max) : []);
+const vxBadgePro = () => (S && S.voxV ? vxBadge(S.vox) : 0);
+// =====================================================================
 // GM ASSISTANT: ask in plain words ("find me a cheap startable corner") and get real players back.
 // The request becomes a search (position, budget, age, how good, trade or free agency): the game's own reader
 // handles it everywhere, and in the desktop app the AI model's reading of the words is merged in. The search runs on
@@ -9703,6 +9972,7 @@ function negPatience(pid, kind) {
 // =====================================================================
 
 const ASST_POS = { QB: /\b(qbs?\d?|quarterbacks?|signal ?callers?)\b/i, RB: /\b(rbs?\d?|running ?backs?|halfbacks?|tailbacks?|backs?)\b/i, WR: /\b(wrs?\d?|wide ?outs?|wide receivers?|receivers?|deep threats?|pass catchers?|playmakers?|slot)\b/i, TE: /\b(tes?\d?|tight ?ends?)\b/i, OL: /\b(ol|o-?line(men|man)?|offensive line(men|man)?|tackles?|guards?|centers?|lt|rt|linemen|protect (my|our|the) (qb|quarterback)|blind ?side|pass protect\w*)\b/i, DL: /\b(dl|d-?line(men|man)?|defensive line(men|man)?|edges?|edge rushers?|pass rushers?|dts?|defensive tackles?|defensive ends?|des?|nose ?tackles?|get after the (passer|quarterback|qb)|sacks?|pressure|run stuffers?)\b/i, LB: /\b(lbs?\d?|linebackers?|backers)\b/i, CB: /\b(cbs?\d?|corners?|cornerbacks?|db|dbs|nickel)\b/i, S: /\b(safet(y|ies)|ss|fs)\b/i, K: /\b(kickers?|k)\b/i, P: /\b(punters?)\b/i };
+const ASST_DRAFT = /\b(draft|drafting|prospects?|rookie class|draft class|college (kids?|players?)|mock|with (my|our) (first|second|third|next|top|\d+(st|nd|rd|th)?) (pick|selection)|at pick \d+|on the clock|best available|bpa)\b/i;
 const ASST_ROUND = { first: 1, '1st': 1, second: 2, '2nd': 2, third: 3, '3rd': 3, fourth: 4, '4th': 4, fifth: 5, '5th': 5, sixth: 6, '6th': 6, seventh: 7, '7th': 7 };
 // the game's own reading of a request; a follow-up ("younger", "cheaper") changes the last search instead of starting over
 function asstParse(text, prev) {
@@ -9716,7 +9986,7 @@ function asstParse(text, prev) {
   const ag = s.match(/(?:under|younger than|below)\s*(\d\d)\s*(?:years?)?(?: old)?\b/) || s.match(/\b(\d\d) or younger\b/); if (ag && +ag[1] >= 20 && +ag[1] <= 40) q.maxAge = +ag[1] - (/younger than|under|below/.test(ag[0]) ? 1 : 0);
   if (/\b(young|younger|youth|rising|up-and-coming|prospect)\b/.test(s) && !q.maxAge) q.young = 1;
   if (/\b(veteran|vet|proven|experienced|win-now)\b/.test(s)) q.vet = 1;
-  if (/\b(startable|starter|starting|start for us|start right away|plug and play|day one|day-one|instant)\b/.test(s)) q.need = 'start';
+  if (/\b(startable|starter|starting|start for us|(would|could|can) start|start right away|plug and play|day one|day-one|instant)\b/.test(s)) q.need = 'start';
   if (/\b(upgrade|better than|improve|star|stud|elite|pro bowl)\b/.test(s)) q.need = 'up';
   if (/\b(backup|depth|insurance|rotational|cover for)\b/.test(s)) q.need = 'depth';
   if (/\brookie (deal|contract|scale)\b/.test(s)) q.rookie = 1;
@@ -9726,6 +9996,7 @@ function asstParse(text, prev) {
   if (/\b(free agents?|free agency|sign|unsigned|on the street)\b/.test(s)) q.src = 'fa';
   if (/\b(trade|trade for|acquire|deal for|on the block|shopping|available)\b/.test(s)) q.src = q.src === 'fa' ? 'both' : 'trade';
   if (/\b(on the block|being shopped|shopping)\b/.test(s)) q.block = 1;
+  if (ASST_DRAFT.test(s) && !/\brookie (deal|contract|scale)\b/.test(s)) { q.draft = 1; const rn = s.match(/\bround ([1-7])\b/); if (rn) q.price = +rn[1]; if (/\b(my|our) (first|next|top) (pick|selection)\b/.test(s)) q.mine = 1; if (!/\byoung(er)?\b/.test(s)) delete q.young; if (/\b(biggest|top|greatest|main) needs?\b|\bneeds? (the )?most\b|\b(my|our) needs\b/.test(s)) q.needPos = 1; if (/\btrade up\b/.test(s)) q.up = 1; }
   if (/\b(not|outside|out of|no one from|nobody from)\b[^.]{0,20}\b(my |our )?division\b/.test(s)) q.noDiv = 1;
   const pk = s.match(/\b(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th|sixth|6th|seventh|7th)(?:[- ]round(?:er)?)?(?: pick)?\b/); if (pk && /\b(pick|round|rounder|for a|for an)\b/.test(s)) q.price = ASST_ROUND[pk[1]];
   if (/\bmid[- ]round\b/.test(s)) q.price = 4; if (/\blate[- ]round\b/.test(s)) q.price = 6;
@@ -9805,6 +10076,54 @@ function asstSearch(q) {
   }
   return { rows: out.sort((a, b) => b.sc - a.sc), closed, src };
 }
+// the draft: the class through your scouts' eyes (never the true ratings), with the media's projection and, on draft day,
+// the war room's odds that he lasts to your next pick
+function asstDraftSearch(q) {
+  const u = S.userTid, n = S.teams.length, all = prospects(), kp = (q.pos || []).some(x => x === 'K' || x === 'P');
+  const pool = all.filter(p => kp || (p.pos !== 'K' && p.pos !== 'P'));
+  if (!pool.length) return { rows: [], none: 'There is no draft class on the board yet.' };
+  const pr = projRanks(), need = {}; for (const x of teamNeeds(u)) need[x.pos] = x;
+  const live = S.phase === 'draft' && S.draft, next = live ? warNextPick(S.draft.idx) : -1, fc = live && next >= 0 ? draftForecast(next) : null;
+  if (live && next < 0) return { rows: [], none: 'You have no picks left in this draft.' };
+  const mine = live ? [] : picksOf(u).filter(pk => pk.y === S.season + 1).map(pk => (pk.rd - 1) * n + projSlot(pk)).sort((a, b) => a - b);
+  const L = lineup(team(u)), out = [], lo = q.loose || 0;
+  for (const p of pool) {
+    if (q.pos && q.pos.length && !q.pos.includes(p.pos)) continue;
+    const uv = userView(p), slot = (pr[p.id] ?? all.length) + 1, rd = Math.ceil(slot / n);
+    if (q.round && Math.abs(rd - q.round) > lo) continue;
+    const st = (L[p.pos] || []).slice(0, POS[p.pos].start), weakest = st.length < POS[p.pos].start ? 0 : Math.min(...st.map(x => x.ovr)), up = uv.ovr - weakest;
+    if (q.need === 'start' && up < -2 - lo * 3) continue;
+    if (q.need === 'up' && up < 2 - lo * 3) continue;
+    const ch = fc ? (fc[p.id] ?? 0) : null;
+    if (fc && ch < 0.03 && !q.round && lo < 2) continue;
+    // before the draft: nobody who'll be long gone by your first pick, unless you asked about a round or trading up
+    if (!fc && !q.round && !q.up && mine.length && slot < mine[0] - (q.mine ? 6 : 10) - lo * 8) continue;
+    const nd = need[p.pos], ndB = nd ? (nd.lvl === 'high' ? 6 : nd.lvl === 'med' ? 3 : 0) : 0;
+    let sc = uv.pot * 0.6 + uv.ovr * 0.4 + ndB + (q.young ? (23 - p.age) * 1.5 : 0) + (q.need === 'start' || q.need === 'up' ? up * 0.5 : 0);
+    if (fc) sc += ch * 14;
+    else if (mine.length && !q.round) { const at = mine.find(m => m >= slot - 6); if (at == null) sc -= 10; else if (at - slot > 40) sc -= (at - slot - 40) * 0.05; }
+    out.push({ pid: p.id, src: 'draft', pos: p.pos, ovr: uv.ovr, pot: uv.pot, slot, rd, ch, need: nd ? nd.lvl : 'low', up, weakest, wp: st.length ? st.reduce((a, b) => (a.ovr <= b.ovr ? a : b)).id : null, sc });
+  }
+  const rows = out.sort((a, b) => b.sc - a.sc).slice(0, 5);
+  for (const r of rows) { r.pitch = asstDraftPitch(r); r.facts = asstDraftFacts(r); delete r.sc; }
+  return { rows };
+}
+function asstDraftPitch(r) {
+  const p = S.players[r.pid], me = S.players[r.wp];
+  const a = r.weakest && r.up >= 0 ? `Your scouts think he could start over ${me ? me.ln : 'your weakest starter'} as a rookie.` : !r.weakest ? `You have a hole at ${p.pos}; he could fill it.` : r.pot - r.ovr >= 12 ? 'A project, but your scouts see a high ceiling.' : 'Depth now, with room to grow.';
+  const b = r.ch != null ? (r.ch >= 0.7 ? 'He should still be there at your pick.' : r.ch >= 0.3 ? `About a ${Math.round(r.ch * 100)}% chance he lasts to your pick.` : 'Likely gone before your pick unless you trade up.') : `Projected to go around pick ${r.slot}, in round ${r.rd}.`;
+  return `${a} ${b}${r.need === 'high' ? ` ${p.pos} is one of your biggest needs.` : ''}`;
+}
+// a prospect's facts: only what your scouts and the media think, never his true ratings
+function asstDraftFacts(r) {
+  const p = S.players[r.pid], me = S.players[r.wp];
+  const L = [`${p.fn} ${p.ln}, ${p.pos}, age ${p.age}, a draft prospect.`];
+  L.push(r.weakest && r.up >= 0 ? `Your scouts think he could start for you as a rookie${me ? `, over ${me.fn} ${me.ln}` : ''}.` : !r.weakest ? `You have a hole at ${p.pos}.` : r.pot - r.ovr >= 12 ? 'Your scouts see him as a project with a high ceiling.' : 'Your scouts see him as depth with room to grow.');
+  L.push(`The media projects him around pick ${r.slot}, in round ${r.rd}.`);
+  if (r.ch != null) L.push(r.ch >= 0.7 ? 'He should still be on the board at your next pick.' : r.ch >= 0.3 ? `About a ${Math.round(r.ch * 100)}% chance he lasts to your next pick.` : 'He will likely be gone before your next pick.');
+  if (r.need === 'high') L.push(`${p.pos} is one of your team's biggest needs.`); else if (r.need === 'low') L.push(`${p.pos} is not a big need for your team.`);
+  return L.join(' ');
+}
 // in plain words: what the search looked for
 function asstRead(q) {
   const L = [];
@@ -9819,6 +10138,7 @@ function asstRead(q) {
   if (q.block) L.push('on the block');
   if (q.noDiv) L.push('outside your division');
   if (q.price) L.push(`for about a round ${q.price} pick`);
+  if (q.draft) { if (q.round) L.push(`in round ${q.round}`); L.push('the draft class'); return L; }
   L.push(q.src === 'fa' ? 'free agents' : q.src === 'trade' ? 'trades' : 'trades and free agents');
   return L;
 }
@@ -9857,6 +10177,15 @@ function gmAsk(text, prev, modelQ) {
     return { text, q: prev, ask: { pid: t.id, ok: true, give: r.give, givePk: r.givePk, tid: r.tid, msg: `${team(r.tid).abbr} would do ${t.ln} for ${[...give, ...pk].join(', ') || 'what you have'}.${r.starters ? ' It includes a starter of yours.' : ''}` } };
   }
   if (!q.pos && !prev && !Object.keys(q).length) return { text, q, read: [], rows: [], none: 'Tell me a position or what you need, like "a cheap startable corner" or "a young pass rusher on a rookie deal".' };
+  // the draft: prospects on your scouts' board, and whether they'll last to your pick
+  if (q.draft) {
+    if (q.price) { if (!q.mine) q.round = q.price; delete q.price; } delete q.src;
+    if (q.needPos && !(q.pos && q.pos.length)) q.pos = teamNeeds(S.userTid).slice(0, 2).map(x => x.pos); delete q.cheap; delete q.maxSal; delete q.fit; delete q.block;
+    let dr = asstDraftSearch(q), dl = 0;
+    while (!dr.rows.length && !dr.none && dl < 2) { dl++; dr = asstDraftSearch({ ...q, loose: dl }); }
+    const top = dr.rows.slice(0, 5); q.top = null;
+    return { text, q, draft: true, read: asstRead(q), loose: top.length && dl ? 'Nobody fit all of that exactly. These are the closest, with a little give on the round or how ready he is.' : null, rows: top, none: top.length ? null : dr.none || 'Nobody in this class fits all of that. Loosen something: the round, the position or how ready he has to be.' };
+  }
   let res = asstSearch(q), loose = 0;
   // nobody fits exactly: bend the budget, the age and the bar a little and say so
   while (!res.rows.length && loose < 2 && !(res.closed && res.src === 'trade')) { loose++; res = asstSearch({ ...q, loose }); }
@@ -10430,7 +10759,7 @@ function recFitToday(r, tid) {
 }
 function recView(r) {
   const u = CS.userTid; if (!r.pr) rollPrios(r); if (!r.tl) rollTimeline(r);
-  const kn = r.kn || 0, prios = r.pr.map((k, i) => ({ k, label: PRIOS[k], known: i < kn, v: gradeVal(r, u, k), grade: gradeLetter(gradeVal(r, u, k)) }));
+  const kn = r.kn || 0, prios = r.pr.map((k, i) => ({ k, label: PRIOS[k], known: i < kn || (r.pk || []).includes(k), v: gradeVal(r, u, k), grade: gradeLetter(gradeVal(r, u, k)) }));
   const list = (r.list || r.off.filter(t => (r.int[t] || 0) > 0)).slice().sort((a, b) => (r.int[b] || 0) - (r.int[a] || 0)).slice(0, 10);
   const next = r.commit != null ? null : !r.list ? { k: 'top 8', wk: r.tl[0] } : r.list.length > 5 ? { k: 'top 5', wk: r.tl[1] } : r.list.length > 3 ? { k: 'top 3', wk: r.tl[2] } : { k: 'commitment', wk: r.tl[3] };
   return { stage: stageOf(r), prios, fit: Math.round(fitOf(r, u) * 100), fitGrade: gradeLetter(fitOf(r, u) * 100), int: r.int[u] || 0, stand: standing(r, u), list, onList: onList(r, u), onBoard: (CS.board || []).includes(r.id), next, cf: r.cf, visits: (r.ovs || []).map(v => ({ tid: v.tid, wk: v.wk, done: v.done, v: v.v })), scouted: !!r.scouted, acts: r.acts && r.acts.w === CS.week && r.acts.s === CS.season ? r.acts.d : [], hv: r.hv === CS.season };
@@ -12814,6 +13143,184 @@ function signingBoard() {
   const order = { wavering: 0, flip: 1, undecided: 2, committed: 3, signed: 4 };
   return rows.sort((a, b) => order[a.kind] - order[b.kind] || b.risk - a.risk || CS.players[b.id].stars - CS.players[a.id].stars);
 }
+// ---------- voices: pitching recruits in their DMs, and the assistant for recruiting and the portal ----------
+// A pitch sells one thing about your school. It lands when it's something he cares about and your school is strong
+// there, falls flat when he doesn't care, and backfires when he cares and you're weak (he's done his homework). A pitch
+// that lands, or backfires, tells you what he wants. Shared threads and the reader live in 97v-voices.js.
+function cvxS() { if (!CS.voxV) { CS.voxV = 1; CS.vox = vxNew((CS.season || 1) * 7907 + (CS.userTid || 0) * 113 + 29); } return CS.vox; }
+const PITCH_BTN = { time: 'Playing time', win: 'Winning', nil: 'NIL', home: 'Close to home', prestige: 'Prestige', staff: 'Our staff', academics: 'Academics' };
+const PITCH_LINE = { time: 'You can play right away here. The depth chart is wide open for a guy like you.', win: 'We win here, and we\'re going to win a lot more with you.', nil: 'Our collective takes care of its players. You\'ll be set up here.', home: 'Stay close to home. Your family can be at every game.', prestige: 'This is a program people know everywhere. Play here and the whole country watches.', staff: 'Our staff develops players. We\'ll get you ready for the next level.', academics: 'You\'ll leave here with a degree that opens doors for the rest of your life.' };
+const PITCH_WORDS = { time: /\b(play(ing)? time|start(er|ing|s)?|snaps|depth chart|play (early|right away|as a freshman)|day one|reps|wide open)\b/i, win: /\b(win(s|ning)?|champion(ship)?s?|titles?|playoffs?|contend\w*|bowls?|rings?)\b/i, nil: /\b(nil|money|paid|pay|collective|brand|bag|endorsements?)\b/i, home: /\b(home|family|close by|near|mom|dad|parents|hometown|backyard|local|in-state|in state)\b/i, prestige: /\b(tradition|prestige|blue ?bloods?|history|legacy|storied|exposure|tv|national stage|whole country)\b/i, staff: /\b(coach(es|ing)?|staff|develop(ment|s|ing)?|nfl|pros|next level|drafted|league)\b/i, academics: /\b(degree|academics?|education|class(es|room)?|major|graduat\w*|career after)\b/i };
+const PITCH_COST = 2;
+function recThread(r) {
+  const vx = cvxS(); let th = vx.th.find(x => x.k === 'rec' && x.who.rid === r.id);
+  if (!th) {
+    th = vxThread(vx, 'rec', { name: `${r.fn} ${r.ln}`, sub: `${r.stars}-star ${r.pos} recruit, ${r.reg}`, rid: r.id });
+    vxMsg(vx, th, `Hey Coach. What makes ${cteam(CS.userTid).name} the place for me?`, `You are a ${r.stars}-star recruit and this school is recruiting you. Ask the coach, casually, why you should pick his school.`, 0.3);
+  }
+  return th;
+}
+function recPitchErr(r) {
+  const u = CS.userTid;
+  if (!r || r.tid !== -2) return 'Not a recruit.'; if (r.signed) return 'He already signed.';
+  if (!(CS.board || []).includes(r.id) && r.commit !== u) return 'Add him to your board first.';
+  if (!onList(r, u)) return 'He cut you from his list.';
+  if (r.commit != null && r.commit !== u && CS.phase === 'season' && r.cf > 70) return `He is solidly committed to ${cteam(r.commit).name}.`;
+  return null;
+}
+function recDm(rid) { const r = CS.players[rid], e = recPitchErr(r); if (e) return { msg: e }; return { th: recThread(r).id }; }
+// how one selling point lands with him
+function pitchVal(r, k) {
+  const i = r.pr.indexOf(k), g = gradeVal(r, CS.userTid, k), base = [6, 4.5, 3][i] ?? 1.2;
+  const mult = g >= 75 ? 1.3 : g >= 60 ? 1 : g >= 45 ? 0.6 : i >= 0 ? -0.5 : 0.2;
+  return { k, i, g, v: base * mult, out: i < 0 ? 'miss' : mult >= 1 ? 'hit' : mult > 0 ? 'meh' : 'flop' };
+}
+function recPitch(rid, topic, text) {
+  const r = CS.players[rid], u = CS.userTid, e = recPitchErr(r); if (e) return { msg: e };
+  if (!r.pr) rollPrios(r);
+  const acts = r.acts && r.acts.w === CS.week && r.acts.s === CS.season ? r.acts : (r.acts = { s: CS.season, w: CS.week, d: [] });
+  if (acts.d.includes('pitch')) return { msg: 'You already pitched him this week.' };
+  if (CS.recPts < PITCH_COST) return { msg: `Not enough recruiting hours (${PITCH_COST} needed, ${CS.recPts} left).` };
+  const vx = cvxS(), th = recThread(r);
+  if (th.end && th.endW === `${CS.season}|${CS.week}`) return { msg: 'He isn\'t answering right now. Try again next week.' };
+  th.end = false;
+  let topics, L = null;
+  if (text != null) {
+    const t = String(text).replace(/\s+/g, ' ').trim(); if (!t) return { msg: 'Write something first.' }; if (t.length > 280) return { msg: 'Keep it under 280 characters.' };
+    L = vxRead(t, { fam: false }); topics = Object.keys(PITCH_WORDS).filter(k => PITCH_WORDS[k].test(t)); vxMine(vx, th, t);
+  } else { if (!PITCH_BTN[topic]) return { msg: 'Pick something to sell.' }; topics = [topic]; vxMine(vx, th, PITCH_LINE[topic]); }
+  CS.recPts -= PITCH_COST; acts.d.push('pitch');
+  const before = r.int[u] || 0;
+  if (L && L.sev) {
+    r.int[u] = clamp(before - (L.sev >= 2 ? 10 : 5), 0, 100); th.end = true; th.endW = `${CS.season}|${CS.week}`;
+    vxMsg(vx, th, 'Wow. OK, Coach.', 'The coach was rude or crude in his pitch to you. React, put off, in a few words.');
+    return { ok: true, out: 'rude', d: r.int[u] - before };
+  }
+  const best = topics.map(k => pitchVal(r, k)).sort((a, b) => b.v - a.v)[0] || { k: null, i: -1, v: L && L.nice ? 1.8 : 1.2, out: 'gen' };
+  const dil = topics.length >= 3 ? 0.7 : 1, amt = Math.abs(best.v) * dil;
+  r.int[u] = clamp(Math.round(before + Math.sign(best.v) * gainFor(r, u, amt) + (L && L.nice ? 0.5 : 0)), 0, 100);
+  if (r.commit === u) { r.touch = CS.week; r.cf = clamp((r.cf ?? 60) + (best.v > 2 ? 4 : best.v > 0 ? 2 : -3), 0, 100); }
+  if (best.k && best.i >= 0 && !(r.pk || []).includes(best.k)) (r.pk || (r.pk = [])).push(best.k);
+  const lbl = best.k ? PRIOS[best.k].toLowerCase() : '';
+  const R = {
+    hit: [vxPick(vx, ['That\'s exactly what I\'m looking for, Coach.', 'For real? That\'s a big deal for me.', 'Now we\'re talking. That matters to me a lot.']), `The coach sold you on ${lbl}. It is one of the things you care about most, and his school is strong there. React with real excitement.`],
+    meh: [vxPick(vx, ['I hear you. Other schools are telling me the same thing though.', 'OK, that\'s good to know. I\'m still looking around.']), `The coach sold you on ${lbl}. You care about it, but his school is only so-so there. Interested but not sold.`],
+    flop: [vxPick(vx, ['Respectfully Coach, I\'ve looked into that and I\'m not sold.', 'I mean, I did my research. That\'s not really a strength there.']), `The coach sold you on ${lbl}. You care about it a lot, but his school is weak there and you know it. Politely skeptical.`],
+    miss: [vxPick(vx, ['Cool. That\'s not really the big thing for me though.', 'Appreciate it. That\'s not what I\'m deciding on.']), `The coach sold you on ${lbl}, which is not one of the things you care about. Polite, a little flat. Don't say what you do care about.`],
+    gen: [vxPick(vx, ['Appreciate you reaching out, Coach.', 'Thanks Coach. I\'ll keep that in mind.']), 'The coach sent you a general recruiting message. Answer politely, briefly.'],
+  }[best.out];
+  if (topics.length >= 3 && best.out !== 'gen') R[0] = 'That\'s a lot, Coach. Everybody says they have everything.';
+  vxMsg(vx, th, R[0], R[1]);
+  return { ok: true, out: best.out, k: best.k, d: r.int[u] - before };
+}
+// on the way in: commits and decisions show up in the conversations you started
+function cvxSync() {
+  if (!CS || CS.userTid == null || !CS.voxV) return; const vx = CS.vox, u = CS.userTid;
+  for (const th of vx.th) {
+    if (th.k !== 'rec') continue; const r = CS.players[th.who.rid]; if (!r) continue;
+    if (r.commit === u && !th.com) { th.com = 1; vxMsg(vx, th, `I'm committed, Coach. Let's go to work.`, 'You just committed to this coach\'s school. Tell him, excited.'); }
+    else if (r.commit != null && r.commit !== u && !th.lost && th.msgs.length > 1) { th.lost = 1; const t = cteam(r.commit); vxMsg(vx, th, `Appreciate everything, Coach. I'm going to ${t.name}.`, `You committed to ${t.name}, another school. Let this coach down gently and thank him.`); th.must = [t.name]; }
+  }
+}
+function cvxView() { cvxS(); cvxSync(); return { threads: CS.vox.th.slice().sort((a, b) => b.last - a.last) }; }
+function cvxSeen(thId, t) { const th = vxFind(cvxS(), thId); if (th) th.seen = t || Date.now(); }
+function cvxFacts(th) {
+  const r = CS.players[th.who.rid], t = cteam(CS.userTid);
+  return r ? `You are ${r.fn} ${r.ln}, a ${r.stars}-star ${r.pos} recruit from the ${r.reg}. The coach texting you is the head coach at ${t.name} (${t.rec.w}-${t.rec.l} this season).` : '';
+}
+function cvxPrompt(thId, msgId) { const vx = cvxS(), th = vxFind(vx, thId); if (!th) return null; return vxPromptFor(vx, thId, msgId, cvxFacts(th), `${th.who.name}, a high school football recruit texting a college head coach who is recruiting him. A teenager texting: casual and polite`, 'Coach'); }
+function cvxWrite(thId, msgId, text) { const vx = cvxS(), th = vxFind(vx, thId); if (!th) return 0; return vxWriteTo(vx, thId, msgId, text, cvxFacts(th), th.must, { fam: false }); }
+const cvxQueue = max => (CS && CS.voxV ? vxQueue(CS.vox, max) : []);
+const cvxBadge = () => (CS && CS.voxV ? vxBadge(CS.vox) : 0);
+
+// ---------- the assistant: recruits and the transfer portal, in plain words ----------
+const COL_STARS = { five: 5, four: 4, three: 3, two: 2, one: 1 };
+function colAsk(text, prev, modelQ) {
+  if (!CS || CS.userTid == null) return { err: 'No program to work for.' };
+  const raw = String(text || '').trim(); if (!raw) return { err: 'Ask me something.' };
+  const s = raw.toLowerCase(), q = asstMerge(asstParse(raw.replace(/\b([1-5]|one|two|three|four|five)[- ]?stars?\b/gi, ' '), prev), modelQ, raw);
+  delete q.draft; delete q.price; delete q.maxSal; delete q.fit; delete q.block; delete q.rookie; delete q.noDiv; delete q.top;
+  const src = /\b(portal|transfers?|transferring)\b/.test(s) ? 'portal' : /\b(recruits?|high school|hs|commits?|class|signees?|prospects?)\b/.test(s) ? 'rec' : null;
+  q.src = src || (prev && prev.src) || (CS.phase === 'portal' ? 'portal' : 'rec');
+  const st = s.match(/\b([1-5])[- ]?stars?\b/) || s.match(/\b(five|four|three|two|one)[- ]?stars?\b/); if (st) q.stars = COL_STARS[st[1]] || +st[1];
+  if (/\b(interested|likes us|into us|warm|considering us|real shot|gettable|realistic)\b/.test(s)) q.warm = 1;
+  if (/\b(close to home|in-state|in state|local|our region|nearby|backyard)\b/.test(s)) q.home = 1;
+  if (/\b(flip|committed elsewhere|committed somewhere)\b/.test(s)) q.flip = 1;
+  if (q.src === 'portal' && CS.phase !== 'portal') return { text, q, read: colRead(q), rows: [], none: 'The transfer portal is closed. It opens after the season. Ask me about recruits instead.' };
+  let res = q.src === 'portal' ? colPortalSearch(q) : colRecSearch(q), loose = 0;
+  while (!res.length && loose < 2) { loose++; res = q.src === 'portal' ? colPortalSearch({ ...q, loose }) : colRecSearch({ ...q, loose }); }
+  const rows = res.slice(0, 5);
+  return { text, q, read: colRead(q), loose: rows.length && loose ? 'Nobody fit all of that exactly. These are the closest, with a little give.' : null, rows, none: rows.length ? null : 'Nobody fits all of that. Loosen something: the position, the stars or how ready he has to be.' };
+}
+function colRecSearch(q) {
+  const u = CS.userTid, me = cteam(u), lo = q.loose || 0, out = [], board = CS.board || [];
+  for (const r of recruits()) {
+    if (r.signed || r.commit === u || !onList(r, u)) continue;
+    if (r.commit != null && !(q.flip && (r.cf ?? 60) <= 70)) continue;
+    if (q.pos && q.pos.length && !q.pos.includes(r.pos)) continue;
+    if (!q.pos && (r.pos === 'K' || r.pos === 'P')) continue;
+    if (q.stars && Math.abs(r.stars - q.stars) > (lo ? 1 : 0)) continue;
+    const int = r.int[u] || 0; if (q.warm && int < 30 - lo * 10) continue;
+    if (q.home && r.reg !== me.reg && !(lo && (REG_ADJ[me.reg] || []).includes(r.reg))) continue;
+    if (q.cheap && r.nilAsk > 0.1 * (1 + lo)) continue;
+    const fit = recFitToday(r, u), starts = fit && fit.best <= fit.start;
+    if ((q.need === 'start' || q.need === 'up') && !starts && !(lo >= 2)) continue;
+    if (q.need === 'depth' && starts && !lo) continue;
+    const sc = r.stars * 12 + fitOf(r, u) * 20 + int * 0.25 + (fit && fit.sure ? 6 : starts ? 3 : 0) - (r.rk || 2500) / 500;
+    out.push({ pid: r.id, src: 'rec', pos: r.pos, stars: r.stars, est: recEst(r).text, fit: fit ? fit.text : '', fitCls: fit ? fit.cls : '', int, stage: stageOf(r), commit: r.commit, board: board.includes(r.id), nil: r.nilAsk, grade: gradeLetter(fitOf(r, u) * 100), sc });
+  }
+  const rows = out.sort((a, b) => b.sc - a.sc).slice(0, 5);
+  for (const x of rows) { x.pitch = colPitch(x); x.facts = colFacts(x); delete x.sc; }
+  return rows;
+}
+function colPortalSearch(q) {
+  const u = CS.userTid, lo = q.loose || 0, out = [], offers = (CS.portal && CS.portal.offers) || {};
+  for (const p of portalPlayers()) {
+    if (p.from === u) continue;
+    if (q.pos && q.pos.length && !q.pos.includes(p.pos)) continue;
+    if (!q.pos && (p.pos === 'K' || p.pos === 'P')) continue;
+    const stay = croster(u).filter(x => x.pos === p.pos && !gradOut(x)).sort((a, b) => b.ovr - a.ovr), start = COL_START[p.pos] || 1, rank = stay.filter(x => x.ovr > p.ovr).length + 1, bar = stay[start - 1];
+    if (q.need === 'start' && rank > start + lo) continue;
+    if (q.need === 'up' && !(rank <= start && p.ovr >= (bar ? bar.ovr : 0) + 3 - lo * 2)) continue;
+    if (q.need === 'depth' && rank <= start && !lo) continue;
+    if (q.young && p.elig < 2 - (lo ? 1 : 0)) continue;
+    const ask = portalAsk(p); if (q.cheap && ask > 0.3 * (1 + lo)) continue;
+    const sc = p.ovr + (rank <= start ? 6 : 0) + p.elig * 1.5 - ask * 3 + (q.young ? p.elig * 2 : 0);
+    out.push({ pid: p.id, src: 'portal', pos: p.pos, ovr: dispRC(p.ovr), cls: clsOf(p), elig: p.elig, from: p.from, ask, rank, start, bar: bar ? `${bar.fn} ${bar.ln}` : null, offered: offers[p.id] != null, sc });
+  }
+  const rows = out.sort((a, b) => b.sc - a.sc).slice(0, 5);
+  for (const x of rows) { x.pitch = colPitch(x); x.facts = colFacts(x); delete x.sc; }
+  return rows;
+}
+function colRead(q) {
+  const L = [q.pos && q.pos.length ? q.pos.join(' or ') : 'any position'];
+  if (q.stars) L.push(`${q.stars}-star`);
+  if (q.need === 'start') L.push('would start for you'); else if (q.need === 'up') L.push('a real upgrade'); else if (q.need === 'depth') L.push('depth');
+  if (q.young) L.push(q.src === 'portal' ? 'two or more years left' : 'young');
+  if (q.cheap) L.push(q.src === 'portal' ? 'a small NIL ask' : 'a small NIL ask');
+  if (q.warm) L.push('already interested in you'); if (q.home) L.push('from your region'); if (q.flip) L.push('committed elsewhere, but flippable');
+  L.push(q.src === 'portal' ? 'the transfer portal' : 'recruits');
+  return L;
+}
+function colPitch(x) {
+  if (x.src === 'portal') {
+    const a = x.rank <= x.start ? `Would start for you${x.bar && x.rank === x.start ? `, over ${x.bar.split(' ').pop()}` : ''}.` : `Would be number ${x.rank} at ${x.pos} for you.`;
+    return `${a} ${x.elig >= 2 ? `${x.elig} years left to play.` : 'One year left: a one-season fix.'} ${x.offered ? 'You already made him an offer.' : `He's asking about $${x.ask}M in NIL.`}`;
+  }
+  const a = x.fitCls === 'w' ? 'Your staff thinks he would start as a freshman.' : x.fitCls === 'maybe' ? 'Could start early if he comes in at the top of the staff\'s read.' : 'More of a development piece.';
+  const b = x.commit != null ? `Committed to ${cteam(x.commit).name}, but not locked in.` : x.int >= 40 ? 'He already likes you.' : x.int >= 20 ? 'He knows who you are.' : 'You would be starting from scratch with him.';
+  return `${a} ${b} Your school grades ${x.grade} on what he wants.`;
+}
+function colFacts(x) {
+  const p = CS.players[x.pid];
+  if (x.src === 'portal') return `${p.fn} ${p.ln}, ${p.pos}, a ${x.cls} in the transfer portal from ${cteam(x.from).name}. ${x.rank <= x.start ? 'He would start for you.' : `He would be number ${x.rank} at ${p.pos} on your depth chart.`} ${x.elig >= 2 ? `He has ${x.elig} years left to play.` : 'He has one year left to play.'} ${x.offered ? 'You already made him an offer.' : `He wants about $${x.ask}M in NIL.`}`;
+  return `${p.fn} ${p.ln}, a ${x.stars}-star ${p.pos} recruit from the ${p.reg}. ${x.fitCls === 'w' ? 'Your staff thinks he would start as a freshman.' : x.fitCls === 'maybe' ? 'He could start early.' : 'He would need time to develop.'} ${x.commit != null ? `He is committed to ${cteam(x.commit).name} but could flip.` : x.int >= 40 ? 'He is already interested in your school.' : x.int >= 20 ? 'He knows your school.' : 'He barely knows your school.'} Your school fits what he wants: grade ${x.grade}.`;
+}
+function colPitchPrompt(ans) {
+  if (!ans || !ans.rows || !ans.rows.length) return null;
+  const user = `The head coach asked: "${String(ans.text).slice(0, 300)}"\n\nFor each player, write a one or two sentence pitch to the coach, in a recruiting coordinator's voice, using only that player's facts. Never add skills, traits, stats or roles his facts don't name. No numbers except the ones in his facts.\n\n${ans.rows.map((r, i) => `${i + 1}. ${r.facts}`).join('\n')}\n\nAnswer with JSON: {"pitches": ["pitch 1", ...]} with exactly ${ans.rows.length} pitches in that order.`;
+  return { system: 'You work for the head coach of a college football program in a video game, as his recruiting coordinator. Be brief and concrete. Never invent stats, injuries, ratings or offers. No em dashes.', user, schema: { type: 'object', properties: { pitches: { type: 'array', items: { type: 'string', maxLength: 260 }, minItems: ans.rows.length, maxItems: ans.rows.length } }, required: ['pitches'] }, maxTokens: 70 * ans.rows.length + 30, temperature: 0.6 };
+}
 // ---------- setup, saves ----------
 function setUserC(tid) { CS.userTid = tid; CS.bg = false; if (CS.phase === 'season' && CS.week === 1) CS.recPts = recHours(tid); ensureCoaches(); cteam(tid).coach = null; CS.me = null; initMe(); autoRedshirtAll(); for (const r of recruits()) { if (r.int[tid] == null) { const f = recFit(r, cteam(tid)); if (f > 8) r.int[tid] = f; } } cnews(`You took over as head coach of ${cteam(tid).name}.`, true); }
 function autoRedshirtAll() { for (const t of CS.teams) autoRedshirt(t); }
@@ -12842,6 +13349,7 @@ return {
   setFict: () => null, editTeam: editTeamC, renameConf: renameConfC, editPlayer: editPlayerC, packC, applyPackC, rosterCsv: rosterCsvC, importRoster: importRosterC, get edited() { return !!(CS && CS.edited); }, reviews: () => (CS && CS.reviews) || {}, lbl, rivName, rivTrophy, get fict() { return !!(CS && CS.fict); }, carRecruit, gradeVal, recFit, colDepth, COL_START, cplayer: id => CS.players[id], cplayers: () => cplayers(), heisList: () => (CS.hw && CS.hw.list) || [], get front() { return CS.front || null; }, adv: season => ((CS.adv || {})[season ?? CS.season]) || {}, advSeasons: () => Object.keys(CS.adv || {}).map(Number).sort((a, b) => b - a), get asks() { return (CS.asks || []).filter(x => x.s === CS.season); }, answerDemand, nilWant, PERS_C, PERS_TIP, chemWord, teamChem: tid => cteam(tid).chem ?? 60, get fronts() { return CS.fronts || []; },
   playWeek, playCCG, playPlayoffRound, holdSigningDay, portalDay, portalOffer, retainPlayer, talkStay, portalPlayers, portalLog, scholarships, recFitToday, portalAsk, progRep: () => CS.progRep || null, progSeen: () => { if (CS.progRep) CS.progRep.seen = true; }, recHours: tid => recHours(tid ?? CS.userTid), portalOffers: () => (CS.portal ? { ...CS.portal.offers } : {}), portalChance, nextSeason, simToEnd,
   team: cteam, roster: croster, recruits, commitsOf, classNeeds, recAction, nilLeft, nilUsed, colPower, rankOf, confStandings, clsOf, setRedshirt, phaseLabel: colPhase, poPairs: () => (CS.po && CS.phase === 'playoff' ? poPairsC() : []),
+  PITCH_BTN, PITCH_COST, recDm, recPitch, cvxView, cvxSeen, cvxQueue, cvxPrompt, cvxWrite, cvxBadge, colAsk, colPitchPrompt,
 };
 })();
 // pro side: turn a college draft class into this year's prospects
@@ -15366,6 +15874,7 @@ return {
   pruneOffers, acceptOffer, declineOffer, takeJob, teamRank, draftForecast, draftOddsFor, warNextPick, teamNeeds, ratingWith, playoffOdds, tradeOdds, faSignRead, contractComps, negPatience, ODDS_SIMS,
   careerRecords, franchiseLeaders, REC_KEYS, REC_LABEL, hofScore, hofOutlook, hofWatch, LEAD_KEYS, mainTeam,
   weekBegin, weekEnd, watchWeek, uniBgStep, weekRestStep, weekFlush, weekPending: () => !!(S && S.weekLazy), poBegin, poEnd, poPairs, coachStart, coachFinish, runGen, scoutingReport, setGamePlan, OFF_PLANS, DEF_PLANS, gamePlanFor,
+  vxView, vxSeen, vxAct, vxSend, vxCall, vxPrompt, vxWrite, vxQueuePro, vxBadgePro, vxSync,
   optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carWatchable, carWatchStart, carWatchFinish, carStoryPrompt, carStoryWrite, carStoryQueue, carStoryView, carStorySeen, stForce, stStep, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carCoachView, carTakeCoachJob, carCoachScheme, carCanCoach, CC_SCH, carSeasons, carGameLine, carHofStatus, carDraftProjection, carSocPost, carSocReply, carSocBlock, carSocMute, carSocIdeas, socCharPen, socAbout, carSocDelete, carSocMore, carSocPrompt, carSocLabelPrompt, carSocWrite, carSocQueue, carSocView, gmAsk, gmAskPrompt, gmPitchPrompt, gmPitchCheck, asstParse, carSocSeen, socShowAt, socRead, socCtx, socCheck, SOC_MAX, carPcView, carPcAnswer, carDmView, carDmSend, carDmAct, carDmBlock, carDmSeen, carDmQueue, carDmPrompt, carDmWrite, carMxBadges, mxPressMake, mxDmStart, mxStep, mxAgMul, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
   injStatus, injuryReport, toggleRest, gameKey, pkgFor, setPackage, marketComps, positionMarket, hotSeat, hotSeatHeat,
   PROTECT_N, defaultProtect, ACHIEVEMENTS, RULES_DEFAULT, PROPOSALS, castVote, expandLeague: (n, pr) => { const r = expandLeague(n, pr); topUpProspects(); return r; }, MILESTONES, MS_NAME, stadiumTag, tradeDeadline,
@@ -15838,7 +16347,7 @@ function topbar() {
     meta: [`<span>${E(seasonLbl)} · <strong>${E(HM.phaseLabel())}</strong></span>`, `<span>Record <strong class="num">${recStr(t.rec)}</strong> · ${ord(place)} ${HM.confName(t.conf)} ${HM.DIVS[t.div % 4]}</span>`, `<span>Cap space <strong class="num">${money(HM.capRoom(s.userTid))}</strong></span>`, `<span>Roster <strong class="num">${HM.roster(s.userTid).length}/${HM.rosterMax()}</strong></span>`],
     undo: ui.undo ? `<button class="btn tb-undo" data-act="undo" title="Undo ${E(ui.undo.label)} (Ctrl/Cmd + Z)">↶ <span>Undo ${E(ui.undo.label)}</span></button>` : '', acts: topActs() });
 }
-const NAV = [['dashboard', 'Front office'], ['todo', 'To-do'], ['roster', 'Roster'], ['depth', 'Game plan'], ['schedule', 'Schedule & scores'], ['standings', 'Standings'], ['stats', 'League stats'], ['fa', 'Free agents'], ['trade', 'Trades'], ['draft', 'Draft'], ['inbox', 'Inbox'], ['staff', 'Coaching staff'], ['dev', 'Player development'], ['pulse', 'League pulse'], ['finance', 'Finances'], ['history', 'History'], ['hof', 'Hall of Fame'], ['gm', 'GM career'], ['editor', 'League editor'], ['health', 'League health'], ['league', 'League & saves'], ['help', 'Help']];
+const NAV = [['dashboard', 'Front office'], ['todo', 'To-do'], ['roster', 'Roster'], ['depth', 'Game plan'], ['schedule', 'Schedule & scores'], ['standings', 'Standings'], ['stats', 'League stats'], ['fa', 'Free agents'], ['trade', 'Trades'], ['draft', 'Draft'], ['inbox', 'Inbox'], ['vox', 'Messages'], ['asst', 'Assistant'], ['staff', 'Coaching staff'], ['dev', 'Player development'], ['pulse', 'League pulse'], ['finance', 'Finances'], ['history', 'History'], ['hof', 'Hall of Fame'], ['gm', 'GM career'], ['editor', 'League editor'], ['health', 'League health'], ['league', 'League & saves'], ['help', 'Help']];
 function nav() {
   const s = S();
   const badge = v => {
@@ -15846,6 +16355,7 @@ function nav() {
     if (v === 'fa' && s.phase === 'fa') return '<span class="badge">Open</span>';
     if (v === 'todo') { const n = todoItems().filter(x => x.lvl !== 'fyi').length; return n ? `<span class="badge">${n}</span>` : ''; }
     if (v === 'inbox') { const n = HM.inboxCount(); return n ? `<span class="badge">${n}</span>` : ''; }
+    if (v === 'vox') { const n = vxCount(s.vox); return n ? `<span class="badge">${n}</span>` : ''; }
     if (v === 'staff' && HM.userStaffGaps().length) return '<span class="badge">!</span>';
     if (v === 'roster' && s.phase === 'resign') { const n = HM.roster(s.userTid).filter(p => p.expiring).length; return n ? `<span class="badge">${n}</span>` : ''; }
     return '';
@@ -16111,7 +16621,7 @@ app.addEventListener('click', e => {
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && (ui.simMenu || ui.setMenu || ui.navOpen || ui.tbMeta)) { ui.simMenu = ui.setMenu = ui.navOpen = ui.tbMeta = false; render(); } });
 // ---------- the pro sidebar, grouped ----------
 const NAV_GROUPS = [
-  { t: null, items: [['dashboard', 'Front office'], ['todo', 'To-do'], ['inbox', 'Inbox']] },
+  { t: null, items: [['dashboard', 'Front office'], ['todo', 'To-do'], ['inbox', 'Inbox'], ['vox', 'Messages']] },
   { t: 'Team', items: [['roster', 'Roster'], ['dchart', 'Depth chart'], ['depth', 'Game plan'], ['staff', 'Coaching staff'], ['dev', 'Player development'], ['finance', 'Finances']] },
   { t: 'Front office', items: [['fa', 'Free agents'], ['trade', 'Trades'], ['asst', 'Assistant'], ['draft', 'Draft'], ['gm', 'GM career']] },
   { t: 'League', items: [['schedule', 'Schedule & scores'], ['standings', 'Standings'], ['stats', 'League stats'], ['pulse', 'League pulse'], ['college', 'College football'], ['history', 'History'], ['hof', 'Hall of Fame']] },
@@ -20747,7 +21257,7 @@ const stars = n => `<span class="stars" aria-label="${n} stars">${'★'.repeat(n
 const crec = r => `${r.w}-${r.l}`;
 const cfn = c => { const n = HC().COL_CONFS[c] || ''; if (CSx() && CSx().confRen && CSx().confRen[c]) return n; return n === 'Independent' ? 'Independents' : /Conference|Alliance|Twelve|Big |SEC|ACC|MAC|Pac-12|American|Sun Belt|Mountain West/.test(n) ? n : n + ' Conference'; };
 const cplink = p => (p && p.gone ? `<span title="No longer in college">${E(p.fn + ' ' + p.ln)}</span> <span class="muted" style="font-size:11px">(former)</span>` : p ? `<button class="plink" data-act="cPlayer" data-id="${p.id}">${E(p.fn + ' ' + p.ln)}</button>${genB(p)}` : '—');
-const C_NAV = [['home', 'Home'], ['front', 'Front page'], ['coach', 'Your job'], ['roster', 'Roster'], ['plan', 'Game plan'], ['dev', 'Development'], ['recruit', 'Recruiting'], ['sched', 'Schedule'], ['polls', 'Polls'], ['stats', 'Stats'], ['awards', 'Awards'], ['rivals', 'Rivalries'], ['stand', 'Conferences'], ['playoff', 'Playoff'], ['portal', 'Transfer portal'], ['draft', 'Draft class'], ['history', 'History']];
+const C_NAV = [['home', 'Home'], ['front', 'Front page'], ['coach', 'Your job'], ['roster', 'Roster'], ['plan', 'Game plan'], ['dev', 'Development'], ['recruit', 'Recruiting'], ['cmsgs', 'Messages'], ['casst', 'Assistant'], ['sched', 'Schedule'], ['polls', 'Polls'], ['stats', 'Stats'], ['awards', 'Awards'], ['rivals', 'Rivalries'], ['stand', 'Conferences'], ['playoff', 'Playoff'], ['portal', 'Transfer portal'], ['draft', 'Draft class'], ['history', 'History']];
 const cNavList = () => (uniOnUI() ? [...C_NAV.slice(0, -1), ['pros', 'The pros'], C_NAV[C_NAV.length - 1]] : C_NAV);
 
 // ---------- persistence for college saves ----------
@@ -20838,14 +21348,14 @@ function cTopActs() {
 const C_NAV_GROUPS = () => [
   { t: null, items: [['home', 'Home'], ['front', 'Front page']] },
   { t: 'Program', items: [['roster', 'Roster'], ['depth', 'Depth chart'], ['plan', 'Game plan'], ['dev', 'Development'], ['coach', 'Your job']] },
-  { t: 'Recruiting', items: [['recruit', 'Recruiting'], ['portal', 'Transfer portal'], ['draft', 'Draft class']] },
+  { t: 'Recruiting', items: [['recruit', 'Recruiting'], ['cmsgs', 'Messages'], ['portal', 'Transfer portal'], ['casst', 'Assistant'], ['draft', 'Draft class']] },
   { t: 'Season', items: [['sched', 'Schedule'], ['polls', 'Polls'], ['stats', 'Stats'], ['awards', 'Awards'], ['playoff', 'Playoff']] },
   { t: 'More', more: true, items: [['rivals', 'Rivalries'], ['stand', 'Conferences'], ['history', 'History'], ...(uniOnUI() ? [['pros', 'The pros']] : []), ['editor', 'League editor']] },
 ];
 function collegeRender() {
   guideMark();
   const c = CSx(), t = CT(c.userTid), v = ui.cView || 'home';
-  const views = { review: () => cReviewPage(ui.cRvS ?? CSx().season), home: cHome, roster: cRoster, recruit: cRecruit, sched: cSched, polls: cPolls, stand: cStand, playoff: cPlayoff, stats: cStats, plan: cPlan, portal: cPortalView, draft: cDraft, history: cHistory, coach: cCoach, rivals: cRivals, awards: cAwards, dev: cDev, live: cLive, pros: cPros, front: cFront, editor: cEditorView, depth: () => depthBoard('col'), pl: cPlayerPage, tm: cTeamPage };
+  const views = { review: () => cReviewPage(ui.cRvS ?? CSx().season), home: cHome, roster: cRoster, recruit: cRecruit, sched: cSched, polls: cPolls, stand: cStand, playoff: cPlayoff, stats: cStats, plan: cPlan, portal: cPortalView, draft: cDraft, history: cHistory, coach: cCoach, rivals: cRivals, awards: cAwards, dev: cDev, live: cLive, pros: cPros, front: cFront, editor: cEditorView, depth: () => depthBoard('col'), pl: cPlayerPage, tm: cTeamPage, cmsgs: cMsgs, casst: cAsst };
   let modal = '';
   if (v !== 'live' && !ui.sim) { // reports that open by themselves wait their turn behind whatever is open
     if (c.classRep && !c.classRep.seen && c.classRep.s !== c.season) c.classRep.seen = true; // a year-old report stays closed
@@ -20853,7 +21363,7 @@ function collegeRender() {
     mqOpen();
   }
   if (ui.modal) { const m = ui.modal; const inner = m.type === 'cbox' ? cBoxModal(c.games[m.id]) : m.type === 'cplayer' ? cPlayerModal(CP(m.id)) : m.type === 'player' && P(m.id) ? playerModal(P(m.id)) : m.type === 'retired' && retiredById(m.id) ? retiredModal(retiredById(m.id)) : m.type === 'classRep' ? cClassReport() : m.type === 'progRep' ? progReportHtml(HC().progRep(), true) : ''; if (inner) modal = `<div class="ov" data-act="close" role="dialog" aria-modal="true"><div class="modal" onclick="event.stopPropagation()">${mqBar()}${inner}</div></div>`; }
-  const badge = k => k === 'coach' && c.me && c.me.offers && c.me.offers.length ? '<span class="badge">Offers</span>' : k === 'recruit' && c.phase === 'season' ? `<span class="badge">${c.recPts}</span>` : k === 'portal' && c.phase === 'portal' ? '<span class="badge">Open</span>' : k === 'playoff' && c.phase === 'playoff' ? '<span class="badge">Live</span>' : '';
+  const badge = k => k === 'coach' && c.me && c.me.offers && c.me.offers.length ? '<span class="badge">Offers</span>' : k === 'recruit' && c.phase === 'season' ? `<span class="badge">${c.recPts}</span>` : k === 'portal' && c.phase === 'portal' ? '<span class="badge">Open</span>' : k === 'cmsgs' && vxCount(c.vox) ? `<span class="badge">${vxCount(c.vox)}</span>` : k === 'playoff' && c.phase === 'playoff' ? '<span class="badge">Live</span>' : '';
   const top = shellTop({ mode: 'college', sub: 'College', search: true, team: `${cchip(t)}<b>${cname(t, true)}</b>`, acts: cTopActs(),
     meta: [`<span>${c.season} · <strong>${E(HC().phaseLabel())}</strong></span>`, `<span>Record <strong class="num">${crec(t.rec)}</strong> · conf <strong class="num">${t.rec.cw}-${t.rec.cl}</strong></span>`, `<span>Prestige <strong class="num">${t.pres}</strong></span>`, `<span>NIL left <strong class="num">$${HC().nilLeft(t.tid)}M</strong></span>`] });
   return `${top}
@@ -20918,7 +21428,7 @@ function cRecruit() {
   ${board.map(r => { const v = V(r); return `<tr class="recmain"><td>${cplink(r)}<div class="muted" style="font-size:11.5px">${r.rk ? '#' + r.rk + ' · ' : ''}${E(r.reg)}</div></td><td>${r.pos}</td><td>${stars(r.stars)}</td><td class="num" data-sort="${(() => { const e = HC().recEst(r); return (e.lo + e.hi) / 2; })()}">${(() => { const e = HC().recEst(r); return `${e.text}${e.scouted ? ' <span class="pill" style="font-size:10px">scouted</span>' : ''}`; })()}</td>${recFitCell(r).replace('white-space:nowrap', 'max-width:130px')}<td style="font-size:12px;max-width:170px">${stageTxt(r, v)}</td>
     <td style="font-size:12px;min-width:100px">${v.stand ? `<b>#${v.stand.pos}</b> of ${v.stand.of}` : '—'}<div class="bar" style="margin-top:3px" aria-label="Interest ${v.int}"><i style="display:block;height:100%;width:${v.int}%;background:var(--accent)"></i></div><span class="muted">${v.int} interest</span></td>
     <td style="font-size:12px">${v.prios.map(p => p.known ? `<div><span class="${gradeCls(p.grade)}"><b>${p.grade}</b></span> ${E(p.label)}</div>` : '<div class="muted">? Call to find out</div>').join('')}</td><td class="n"><b class="${gradeCls(v.fitGrade)}">${v.fitGrade}</b></td></tr>
-    <tr class="recacts"><td colspan="9"><div class="row" style="gap:4px;flex-wrap:wrap"><span class="muted" style="font-size:11.5px;margin-right:2px">This week:</span>${btn(r, v, 'text', 'Text', 1)}${btn(r, v, 'call', 'Call', 3)}${btn(r, v, 'asst', 'Assistant', 2)}${btn(r, v, 'home', 'Home visit', 12, !inS || v.hv)}${v.scouted ? '' : btn(r, v, 'scout', 'Scout', 5)}
+    <tr class="recacts"><td colspan="9"><div class="row" style="gap:4px;flex-wrap:wrap"><span class="muted" style="font-size:11.5px;margin-right:2px">This week:</span>${btn(r, v, 'text', 'Text', 1)}${btn(r, v, 'call', 'Call', 3)}${btn(r, v, 'asst', 'Assistant', 2)}<button class="btn sm" data-act="cPitchOpen" data-id="${r.id}" ${c.recPts < HC().PITCH_COST || v.acts.includes('pitch') ? 'disabled' : ''} title="${HC().PITCH_COST} hrs · sell him on one thing about your school, in his DMs${v.acts.includes('pitch') ? ' · done this week' : ''}">Pitch</button>${btn(r, v, 'home', 'Home visit', 12, !inS || v.hv)}${v.scouted ? '' : btn(r, v, 'scout', 'Scout', 5)}
       ${inS && !v.visits.some(x => x.tid === u) && hw.length && c.visits > 0 ? `<select data-visit="${r.id}" aria-label="Schedule an official visit"><option value="">Official visit…</option>${hw.map(x => `<option value="${x.wk}">Wk ${x.wk} vs ${E(CT(x.opp).abbr)}${x.riv != null ? ' (rivalry)' : HC().rankOf(x.opp) ? ' (ranked)' : ''}</option>`).join('')}</select>` : v.visits.filter(x => x.tid === u).map(x => `<span class="pill ${x.done ? 'w' : ''}" style="font-size:10.5px">${x.done ? `Visited (+${x.v})` : `Visit wk ${x.wk}`}</span>`).join('')}
       <button class="btn sm" data-act="cRec" data-id="${r.id}" data-v="nil" data-amt="${r.nilAsk}" ${HC().nilLeft(u) < r.nilAsk || (r.nilOff && r.nilOff[u] >= r.nilAsk) ? 'disabled' : ''} title="Pledge $${r.nilAsk}M a year from your collective">NIL $${r.nilAsk}M</button><button class="btn sm" data-act="cRec" data-id="${r.id}" data-v="unboard" title="Pull your offer">✕</button></div></td></tr>`; }).join('') || `<tr><td colspan="9"><div class="row" style="justify-content:space-between;gap:10px;padding:6px 0"><span class="muted">Your board is empty. Add up to ${HC().BOARD_MAX} targets${HC().autoRec ? ', or let auto-recruit fill it when you play the week (it\'s on)' : ''}.</span><button class="btn sm primary" data-act="seg" data-k="cRecTab" data-v="find">Find recruits</button></div></td></tr>`}
   </tbody></table></div></section>`;
@@ -23208,6 +23718,147 @@ function collegeOutlookView() {
   } else body = futureDraftsBody(false);
   return `<div class="pagehead"><div><h2>College football</h2><p>The college world that feeds your draft. Future classes, the national rankings and the award race, as seen from the pros.</p></div>${tabs}</div>${body}`;
 }
+// =====================================================================
+// MESSAGES for a GM and a head coach: rival GMs talking trades, the owner, and (in college) the recruits you pitch.
+// The game decides every outcome (97v-voices.js, 98-college-8c-voices.js); in the desktop app the AI model writes the
+// other side's words, the same way it writes the career DMs. Elsewhere the game's own lines show right away.
+// =====================================================================
+NAV_ICO.vox = NAV_ICO.msgs; NAV_ICO.cmsgs = NAV_ICO.msgs; NAV_ICO.casst = NAV_ICO.asst;
+const VX_KIND = { gm: 'GM', owner: 'Owner', rec: 'Recruit' };
+const vxShown = (m, now) => m.me || (m.at <= now && (m.ai !== 0 || !socAiOn() || now - m.at > 20000));
+const vxUnread = (th, now) => th.msgs.some(m => !m.me && vxShown(m, now) && m.at > (th.seen || 0));
+const vxCount = vx => { if (!vx) return 0; const now = Date.now(); return vx.th.filter(th => vxUnread(th, now)).length; };
+function vxRowHtml(th, now, on) {
+  const shown = th.msgs.filter(m => vxShown(m, now)), last = shown[shown.length - 1], open = th.act && !th.res;
+  return `<button class="dmrow${on ? ' on' : ''}" data-act="vxOpen" data-t="${th.id}">${socAvatar(th.who.name, th.who.name, 34)}<span style="min-width:0"><b>${E(th.who.name)}</b> <span class="muted" style="font-size:11.5px">${E(VX_KIND[th.k] || '')}${open ? ' · waiting on you' : ''}</span><div class="pv">${last ? E((last.me ? 'You: ' : '') + last.text) : '<span class="stype">typing…</span>'}</div></span>${vxUnread(th, now) && !on ? '<span class="dmdot"></span>' : '<span></span>'}</button>`;
+}
+function vxMsgsHtml(th, now) {
+  const shown = th.msgs.filter(m => vxShown(m, now)), typing = th.msgs.some(m => !m.me && !vxShown(m, now) && m.at - now < 15000);
+  return `${shown.map(m => `<div class="dmb${m.me ? ' me' : ''}">${E(m.text)}</div>`).join('')}${typing ? `<div class="muted stype" style="font-size:12px">${E(th.who.name.split(' ')[0])} is typing…</div>` : ''}`;
+}
+// the part under the messages: the deal on the table, the buttons, the result, and the box to type in
+function vxThreadBody(th, col) {
+  const s = col ? CSx() : S(); let extra = '', btns = '', compose = '';
+  if (!col && th.k === 'gm' && th.act && th.act.kind === 'offer' && !th.res) { const o = (s.offers || []).find(x => x.id === th.off); if (o) extra = offerBody(o); }
+  if (!col && th.k === 'owner' && s.owner) extra = `<div class="row" style="gap:6px;margin:6px 0"><span class="pill">Job security ${s.owner.mood}/100</span>${s.owner.goal ? `<span class="pill">Goal: ${E(s.owner.goal.text)}</span>` : ''}${s.owner.vow === s.season ? '<span class="pill w">You promised</span>' : ''}</div>`;
+  if (col && th.k === 'rec') {
+    const r = CP(th.who.rid), live = r && r.tid === -2 && !r.signed;
+    if (live) {
+      const v = HC().recView(r), done = v.acts.includes('pitch'), low = s.recPts < HC().PITCH_COST, why = done ? 'You already pitched him this week.' : low ? `Not enough recruiting hours (${HC().PITCH_COST} needed).` : '';
+      extra = `<div class="row" style="gap:6px;margin:6px 0;flex-wrap:wrap"><span class="pill">${stars(r.stars)} ${E(r.pos)}</span><span class="pill">Interest ${v.int}</span>${v.stand ? `<span class="pill">You're #${v.stand.pos} of ${v.stand.of}</span>` : ''}<span class="muted" style="font-size:12px">Wants: ${v.prios.map(p => p.known ? `<b class="${gradeCls(p.grade)}">${p.grade}</b> ${E(p.label)}` : '?').join(' · ')}</span></div>`;
+      btns = `<div class="lbl" style="margin-top:6px">Sell him on (${HC().PITCH_COST} hours, once a week)</div><div class="row dmacts" style="flex-wrap:wrap">${Object.entries(HC().PITCH_BTN).map(([k, l]) => `<button class="btn sm" data-act="cPitch" data-id="${r.id}" data-k="${k}"${done || low ? ` disabled title="${E(why)}"` : ''}>${E(l)}</button>`).join('')}</div>`;
+      compose = th.end && done ? '<p class="muted" style="margin:6px 0 0;font-size:12.5px">He isn\'t answering right now. Try again next week.</p>' : `<div class="scompose sm"><textarea id="vxIn" rows="2" maxlength="280" placeholder="Or pitch him in your own words"${done || low ? ' disabled' : ''}>${E(ui.vxDraft || '')}</textarea><div class="row" style="gap:6px"><button class="btn sm primary" data-act="cPitchSay" data-id="${r.id}"${done || low ? ' disabled' : ''}>Send</button><span class="muted" style="font-size:12px">${E(why || 'Sell what he cares about, where your school is strong. He can tell when you\'re stretching.')}</span></div></div>`;
+    } else compose = `<p class="muted" style="margin:6px 0 0;font-size:12.5px">${r && r.signed ? 'He signed. Recruiting is over.' : 'He\'s off the board.'}</p>`;
+  } else {
+    if (th.act && !th.res) btns = `<div class="row dmacts">${th.act.opts.map(([l, val], i) => `<button class="btn sm${i === 0 ? ' primary' : ''}" data-act="vxAct" data-t="${th.id}" data-v="${val}">${E(l)}</button>`).join('')}</div>`;
+    compose = th.end ? '<p class="muted" style="margin:6px 0 0;font-size:12.5px">He\'s done talking for now.</p>' : `<div class="scompose sm"><textarea id="vxIn" rows="2" maxlength="280" placeholder="Message ${E(th.who.name.split(' ')[0])}">${E(ui.vxDraft || '')}</textarea><div class="row" style="gap:6px"><button class="btn sm primary" data-act="vxSend" data-t="${th.id}">Send</button><span class="muted" style="font-size:12px">${th.k === 'owner' ? 'He reads every word. Respect goes a long way.' : 'Tone counts: GMs remember how you talk to them.'}</span></div></div>`;
+  }
+  return `${extra}${btns}${th.res ? `<div class="note ok" style="margin:6px 0">${E(th.res)}</div>` : ''}${compose}`;
+}
+function vxThreadHtml(th, now, col) {
+  if (!th) return `<section class="panel"><p class="muted" style="margin:0">${col ? 'No conversations yet. Press "Pitch" on a recruit on your board to start one.' : 'No messages yet. Rival GMs reach out when they want one of your players, and the owner checks in.'}</p></section>`;
+  const sub = th.k === 'gm' && !col ? `${th.who.sub}${(() => { const g = S().gms && S().gms[th.who.tid]; return g ? ` · ${HM.relLabel ? HM.relLabel(g.rel) : ''}` : ''; })()}` : th.who.sub;
+  return `<section class="panel"><div class="row" style="gap:10px">${!col && th.who.tid != null ? chip(T(th.who.tid)) : ''}${socAvatar(th.who.name, th.who.name, 40)}<div><b>${E(th.who.name)}</b><div class="muted" style="font-size:12.5px">${E(sub || '')}</div></div></div>
+    <div class="dmmsgs" id="vxMsgs" data-t="${th.id}">${vxMsgsHtml(th, now)}</div>${vxThreadBody(th, col)}</section>`;
+}
+function vxPage(col) {
+  socAiInit();
+  const dv = col ? HC().cvxView() : HM.vxView(), now = Date.now(), L = dv.threads, key = col ? 'cvxOpen' : 'vxOpen', th = L.find(x => x.id === ui[key]) || L[0];
+  if (th) { col ? HC().cvxSeen(th.id, now) : HM.vxSeen(th.id, now); }
+  setTimeout(vxWriter, 0);
+  return `<div class="pagehead"><div><h2>Messages</h2><p>${col ? 'Your DMs with recruits. Sell each one on what he cares about, where your school is strong: a pitch that lands moves him and tells you what he wants; one that misses falls flat, and selling a weakness he cares about backfires.' : 'Rival GMs calling about your players, and your owner. Take a deal, push for more, counter or pass, or just tell them what you think. What you say counts: GMs remember, and the owner signs your checks.'}</p></div></div>
+  <div class="grid2 dmgrid"><div class="stack" style="gap:14px"><section class="panel" style="padding:6px"><div class="dmlist" id="vxList">${L.length ? L.map(x => vxRowHtml(x, now, th && x.id === th.id)).join('') : '<p class="muted" style="margin:8px;font-size:12.5px">No messages yet.</p>'}</div></section></div>
+  <div class="stack" style="gap:14px">${vxThreadHtml(th, now, col)}</div></div>`;
+}
+const voxView = () => vxPage(false), cMsgs = () => vxPage(true);
+// the AI writer for these conversations (the career has its own, in 96c-career-feed.js)
+async function vxWriter() {
+  if (SOC_AI.busy || !socAiOn()) return;
+  const col = ui.mode === 'college', pro = !col && ui.mode !== 'career' && S() && S().userTid != null && !S().car;
+  if (!(col ? CSx() : pro)) return;
+  const x = (col ? HC().cvxQueue(4) : HM.vxQueuePro(4)).find(y => y.at <= Date.now() + 8000); if (!x) return;
+  const req = col ? HC().cvxPrompt(x.th, x.id) : HM.vxPrompt(x.th, x.id); if (!req) return;
+  SOC_AI.busy = true;
+  try { const r = await DESKTOP.ai.generate({ ...req, timeout: 30000 }), t = r && r.ok && r.json && typeof r.json.text === 'string' ? r.json.text : null; if (!t) socAiFail(); else SOC_AI.fails = 0; if (col ? CSx() : S()) { if (col) HC().cvxWrite(x.th, x.id, t); else HM.vxWrite(x.th, x.id, t); socSaveSoon(); } }
+  catch (e) { socAiFail(); } finally { SOC_AI.busy = false; }
+  setTimeout(vxWriter, 50);
+}
+// keep an open conversation live without redrawing the page (or touching what you're typing)
+function vxRefresh() {
+  const col = ui.mode === 'college', on = col ? ui.cView === 'cmsgs' : ui.mode !== 'career' && ui.view === 'vox'; if (!on) return;
+  const vx = col ? CSx() && CSx().vox : S() && S().vox; if (!vx) return;
+  const now = Date.now(), el = document.getElementById('vxMsgs'), list = document.getElementById('vxList'); if (!el) return;
+  const th = vx.th.find(x => x.id === +el.dataset.t); if (!th) return;
+  const html = vxMsgsHtml(th, now); if (el.dataset.h !== html) { el.dataset.h = html; el.innerHTML = html; el.scrollTop = el.scrollHeight; th.seen = now; }
+  if (list) { const lh = vx.th.slice().sort((a, b) => b.last - a.last).map(x => vxRowHtml(x, now, x.id === th.id)).join(''); if (list.dataset.h !== lh) { list.dataset.h = lh; list.innerHTML = lh; } }
+  vxWriter();
+}
+setInterval(() => { try { vxRefresh(); } catch (e) { /* messages never break the page */ } }, 1500);
+const vxScroll = () => setTimeout(() => { const el = document.getElementById('vxMsgs'); if (el) el.scrollTop = el.scrollHeight; }, 0);
+app.addEventListener('input', e => { if (e.target.id === 'vxIn') ui.vxDraft = e.target.value; });
+app.addEventListener('keydown', e => { if (e.target.id === 'vxIn' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); const b = document.querySelector('[data-act="vxSend"],[data-act="cPitchSay"]'); if (b && !b.disabled) b.click(); } });
+const cPitchToast = r => { if (r.msg) { toast(r.msg); return; } toast(r.out === 'rude' ? `That didn't go over well. Interest ${r.d}.` : `Interest ${r.d > 0 ? '+' : ''}${r.d}.${r.out === 'hit' || r.out === 'flop' ? ` Now you know he cares about ${HC().PRIOS[r.k].toLowerCase()}.` : ''}`); };
+Object.assign(actions, {
+  vxOpen: d => { ui[ui.mode === 'college' ? 'cvxOpen' : 'vxOpen'] = +d.t; ui.vxDraft = ''; vxScroll(); },
+  vxAct: d => {
+    const r = HM.vxAct(+d.t, d.v) || {};
+    if (r.ui === 'counter' && r.off) { const off = r.off; ui.tradeTid = off.tid; ui.give = new Set(off.get); ui.get = new Set(off.give); ui.givePk = new Set(off.getPk); ui.getPk = new Set(off.givePk); ui.tradeMsg = { ok: true, reason: 'Their offer is loaded. Change the pieces and press Propose to counter.' }; ui.view = 'trade'; ui.tradeTab = 'build'; persist(); return; }
+    if (r.ui === 'tb' && r.call) { const c = r.call; ui.tradeTid = c.tid; ui.get = new Set(c.get); ui.give = new Set(c.give); ui.getPk = new Set(); ui.givePk = new Set(c.givePk); ui.tradeMsg = { ok: true, reason: 'His price is loaded. Adjust it or press Propose.' }; ui.view = 'trade'; ui.tradeTab = 'build'; persist(); return; }
+    if (r.msg) toast(r.msg); persist(); vxScroll(); vxWriter();
+  },
+  vxSend: d => { const t = (ui.vxDraft || '').trim(); if (!t) { toast('Write something first.'); return; } const r = HM.vxSend(+d.t, t) || {}; if (r.ui === 'counter') return; if (r.msg) toast(r.msg); else { ui.vxDraft = ''; if (r.note) toast(r.note); } persist(); vxScroll(); vxWriter(); },
+  vxCall: d => { const r = HM.vxCall(+d.id); if (r.msg) { toast(r.msg); return; } ui.vxOpen = r.th; ui.vxDraft = ''; ui.view = 'vox'; persist(); vxScroll(); },
+  cPitchOpen: d => { const r = HC().recDm(+d.id); if (r.msg) { toast(r.msg); return; } ui.cvxOpen = r.th; ui.vxDraft = ''; ui.cView = 'cmsgs'; persist(); vxScroll(); },
+  cPitch: d => { const r = HC().recPitch(+d.id, d.k); cPitchToast(r); persist(); vxScroll(); vxWriter(); },
+  cPitchSay: d => { const t = (ui.vxDraft || '').trim(); if (!t) { toast('Write something first.'); return; } const r = HC().recPitch(+d.id, null, t); if (!r.msg) ui.vxDraft = ''; cPitchToast(r); persist(); vxScroll(); vxWriter(); },
+});
+
+// ---------- the college assistant: recruits and the portal, in plain words ----------
+const CASST_IDEAS = () => {
+  const c = CSx();
+  if (c.phase === 'portal') return ['A starting QB from the portal', 'A cheap portal corner with two years left', 'The best transfer at my biggest need', 'A portal receiver who would start'];
+  return ['A 4-star receiver who would start', 'A quarterback who already likes us', 'Recruits from our region who would start', 'A cheap 3-star lineman', 'A 5-star I could flip'];
+};
+function casstCard(x) {
+  const p = CP(x.pid); if (!p) return '';
+  if (x.src === 'portal') return `<div class="acard"><div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b>${cplink(p)}</b> <span class="muted">${E(p.pos)} · ${E(x.cls)}</span><div class="muted" style="font-size:12.5px">From ${E(CT(x.from).name)} · ${x.elig} year${x.elig === 1 ? '' : 's'} left · asks $${x.ask}M NIL</div></div>
+    <div class="row" style="gap:6px;flex-wrap:wrap"><span class="pill">${x.ovr} OVR</span><span class="pill ${x.rank <= x.start ? 'w' : ''}">${x.rank <= x.start ? 'would start' : `#${x.rank} at ${E(p.pos)}`}</span></div></div>
+    <p style="margin:8px 0 6px;font-size:13.5px">${E(x.pitch)}</p><div class="row" style="gap:6px">${x.offered ? '<span class="pill w">Offer made</span>' : `<button class="btn sm primary" data-act="cOffer" data-id="${p.id}" data-amt="${x.ask}">Offer $${x.ask}M NIL</button><button class="btn sm" data-act="cOffer" data-id="${p.id}" data-amt="0">Offer, no NIL</button>`}</div></div>`;
+  return `<div class="acard"><div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b>${cplink(p)}</b> <span class="muted">${E(p.pos)} · ${E(p.reg)}</span><div class="muted" style="font-size:12.5px">${stars(x.stars)} · staff read ${E(x.est)} · ${x.commit != null ? `committed to ${E(CT(x.commit).name)}` : E(HC().stageOf(p))}</div></div>
+    <div class="row" style="gap:6px;flex-wrap:wrap"><span class="pill ${x.fitCls === 'w' ? 'w' : ''}">${E(x.fit)}</span><span class="pill">Interest ${x.int}</span><span class="pill">Fit ${E(x.grade)}</span></div></div>
+    <p style="margin:8px 0 6px;font-size:13.5px">${E(x.pitch)}</p><div class="row" style="gap:6px">${x.board ? `<button class="btn sm primary" data-act="cPitchOpen" data-id="${p.id}">Pitch him</button>` : `<button class="btn sm primary" data-act="cRec" data-id="${p.id}" data-v="board">Add to board</button>`}</div></div>`;
+}
+function casstAnswer(a) {
+  return `<div class="amsg me">${E(a.text)}</div><div class="amsg">${a.read && a.read.length ? `<div class="row" style="gap:4px;flex-wrap:wrap;margin-bottom:8px"><span class="muted" style="font-size:12px">I looked for:</span>${a.read.map(x => `<span class="pill">${E(x)}</span>`).join('')}</div>` : ''}${a.loose ? `<p class="muted" style="margin:0 0 8px;font-size:12.5px">${E(a.loose)}</p>` : ''}${a.none ? `<p style="margin:0">${E(a.none)}</p>` : `<div class="stack" style="gap:8px">${a.rows.map(casstCard).join('')}</div>`}${a.pitching ? '<p class="muted stype" style="margin:8px 0 0;font-size:12px">Writing up the pitches…</p>' : ''}</div>`;
+}
+function cAsst() {
+  socAiInit();
+  const A = ui.casst || (ui.casst = { log: [] }), ai = socAiOn();
+  return `<div class="pagehead"><div><h2>Assistant</h2><p>Tell your recruiting coordinator what you're looking for, in plain words: a position, stars, whether he'd start, his region, whether he already likes you, recruits or the transfer portal. He brings back real players from your staff's read. Follow up with "younger", "cheaper" or another position.</p></div>${A.log.length ? '<button class="btn sm" data-act="casstClear">Start over</button>' : ''}</div>
+  <section class="panel"><div class="stack" style="gap:10px">${A.log.length ? A.log.map(casstAnswer).join('') : '<p class="muted" style="margin:0;font-size:13px">Nothing asked yet. Try one of these:</p>'}${ui.asstBusy ? '<div class="amsg"><span class="muted stype">Looking…</span></div>' : ''}</div>
+    <div class="row sideas" style="margin:10px 0 8px">${CASST_IDEAS().map((t, i) => `<button class="btn sm" data-act="casstIdea" data-i="${i}">${E(t)}</button>`).join('')}</div>
+    <div class="scompose sm"><textarea id="casstIn" rows="2" maxlength="300" placeholder="Find me a 4-star receiver who would start">${E(ui.casstDraft || '')}</textarea><div class="row" style="gap:8px"><button class="btn sm primary" data-act="casstAsk"${ui.asstBusy ? ' disabled' : ''}>${ui.asstBusy ? 'Looking…' : 'Ask'}</button><span class="muted" style="font-size:12px">${ai ? 'The built-in AI model reads your request and writes the pitches; the players come from the game.' : 'The game reads your request. In the desktop app, the built-in AI model reads it too and writes the pitches.'}</span></div></div></section>`;
+}
+async function casstRun(text) {
+  const A = ui.casst || (ui.casst = { log: [] }), prev = A.log.length ? A.log[A.log.length - 1].q : null;
+  ui.asstBusy = true; render();
+  let mq = null;
+  if (socAiOn()) { try { const r = await Promise.race([DESKTOP.ai.generate({ ...HM.gmAskPrompt(text, prev), timeout: 15000 }), new Promise(res => setTimeout(() => res(null), 17000))]); mq = r && r.ok && r.json ? r.json : null; } catch (e) { mq = null; } }
+  const a = HC().colAsk(text, prev, mq); ui.asstBusy = false;
+  if (a.err) { toast(a.err); render(); return; }
+  A.log.push(a); if (A.log.length > 12) A.log.shift(); render();
+  const pr = socAiOn() && a.rows && a.rows.length ? HC().colPitchPrompt(a) : null; if (!pr) return;
+  a.pitching = true; render();
+  try { const r = await DESKTOP.ai.generate({ ...pr, timeout: 30000 }), L = r && r.ok && r.json && Array.isArray(r.json.pitches) ? r.json.pitches : []; a.rows.forEach((row, i) => { const t = HM.gmPitchCheck(L[i], row.facts); if (t) row.pitch = t; }); } catch (e) { /* the game's pitches stay */ }
+  a.pitching = false; if (ui.cView === 'casst') render();
+}
+app.addEventListener('input', e => { if (e.target.id === 'casstIn') ui.casstDraft = e.target.value; });
+app.addEventListener('keydown', e => { if (e.target.id === 'casstIn' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); actions.casstAsk(); } });
+Object.assign(actions, {
+  casstAsk: () => { const t = (ui.casstDraft || '').trim(); if (!t || ui.asstBusy) { if (!t) toast('Ask me something.'); return; } ui.casstDraft = ''; casstRun(t); },
+  casstIdea: d => { const t = CASST_IDEAS()[+d.i]; if (t && !ui.asstBusy) casstRun(t); },
+  casstClear: () => { ui.casst = { log: [] }; },
+});
 // ---------- draft war room: the live draft as a room (your board, the prospect up on the screen, the odds, the phones) ----------
 // Two looks: glass (the default, which follows the light or dark theme) and hologram. Ratings are your scouts' read
 // (HM.userView), the forecast replays the AI teams' boards (HM.draftForecast), and the clock is for show: nothing
@@ -23555,15 +24206,25 @@ const ASST_IDEAS = () => {
   const s = S(), L = ['A cheap startable corner', 'A young pass rusher on a rookie deal', 'A WR2 under $8M', 'A backup QB for the stretch run'];
   if (s.phase === 'fa' || s.phase === 'resign') L.unshift('The best free agent I can afford');
   if (s.phase === 'regular' && s.week <= HM.TRADE_DEADLINE) L.push('A veteran upgrade on the block, for a mid-round pick');
+  // around the draft, the class comes first
+  if (['draft', 'playoffs', 'resign', 'fa'].includes(s.phase) || (s.phase === 'regular' && s.week >= 12)) L.unshift('The best prospect at my biggest need', 'A pass rusher I can get in round 2 of the draft');
   return L.slice(0, 5);
 };
+// a prospect, through your scouts' eyes
+function asstDraftCard(r) {
+  const p = P(r.pid); if (!p) return ''; const s = S(), clock = s.phase === 'draft' && s.draft && s.draft.order[s.draft.idx] === s.userTid;
+  return `<div class="acard"><div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><div class="row" style="gap:10px">${faceOf(p, 40)}<div><b>${plink(p)}</b> <span class="muted">${E(p.pos)} · ${p.age}</span><div class="muted" style="font-size:12.5px">Prospect · projected pick ${r.slot} (round ${r.rd})</div></div></div>
+    <div class="row" style="gap:6px;flex-wrap:wrap"><span class="pill" title="Your scouts' read, not the truth">Scouts: ${rv(r.ovr)} now · ${rv(r.pot)} ceiling</span>${r.ch != null ? `<span class="pill ${r.ch >= 0.7 ? 'w' : r.ch < 0.3 ? 'l' : ''}">${Math.round(r.ch * 100)}% to last to your pick</span>` : ''}${r.need === 'high' ? '<span class="pill w">big need</span>' : ''}</div></div>
+    <p style="margin:8px 0 6px;font-size:13.5px">${E(r.pitch)}</p>${clock ? `<div class="row" style="gap:6px"><button class="btn sm primary" data-act="draft" data-id="${r.pid}">Draft him</button></div>` : ''}</div>`;
+}
 function asstCard(r) {
+  if (r.src === 'draft') return asstDraftCard(r);
   const p = P(r.pid); if (!p) return '';
   const t = r.tid >= 0 ? T(r.tid) : null, up = r.up;
   return `<div class="acard"><div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><div class="row" style="gap:10px">${faceOf(p, 40)}<div><b>${plink(p)}</b> <span class="muted">${E(p.pos)} · ${p.age}</span><div class="muted" style="font-size:12.5px">${t ? `${chip(t)} ${E(t.city + ' ' + t.name)}` : 'Free agent'} · ${r.src === 'fa' ? `asking ${money(p.ask.sal)} × ${p.ask.yrs}` : `${money(r.sal)} × ${r.yrs}`}${r.src === 'trade' && p.contract.rk ? ' · rookie deal' : ''}</div></div></div>
     <div class="row" style="gap:6px;flex-wrap:wrap">${ovrB(rv(p.ovr))}<span class="pill ${up > 0 ? 'w' : up < -2 ? 'l' : ''}">${r.up > 0 ? `+${rv(p.ovr) - rv(p.ovr - up)} over your starter` : r.up >= -2 ? 'about your starter' : 'depth'}</span>${r.blk ? '<span class="pill">on the block</span>' : ''}</div></div>
     <p style="margin:8px 0 6px;font-size:13.5px">${E(r.pitch)}</p>
-    <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center">${r.src === 'trade' ? `<span class="muted" style="font-size:12.5px">Price: ${E(r.price)}${r.fits ? '' : ' · his salary is more than your cap space'}</span><button class="btn sm" data-act="asstTake" data-id="${r.pid}">What would it take?</button><button class="btn sm primary" data-act="tradeAsk" data-id="${r.pid}">Get a price</button>` : `<span class="muted" style="font-size:12.5px">${r.pay < p.ask.sal ? `Likely about ${money(r.pay)} from you` : 'At his asking price'}${r.fits ? '' : ' · more than your cap space'}</span><button class="btn sm primary" data-act="neg" data-kind="fa" data-id="${r.pid}">Negotiate</button>`}</div></div>`;
+    <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center">${r.src === 'trade' ? `<span class="muted" style="font-size:12.5px">Price: ${E(r.price)}${r.fits ? '' : ' · his salary is more than your cap space'}</span><button class="btn sm" data-act="asstTake" data-id="${r.pid}">What would it take?</button><button class="btn sm" data-act="vxCall" data-id="${r.pid}">Call his GM</button><button class="btn sm primary" data-act="tradeAsk" data-id="${r.pid}">Get a price</button>` : `<span class="muted" style="font-size:12.5px">${r.pay < p.ask.sal ? `Likely about ${money(r.pay)} from you` : 'At his asking price'}${r.fits ? '' : ' · more than your cap space'}</span><button class="btn sm primary" data-act="neg" data-kind="fa" data-id="${r.pid}">Negotiate</button>`}</div></div>`;
 }
 function asstAnswer(a) {
   const ask = a.ask;
@@ -23573,7 +24234,7 @@ function asstAnswer(a) {
 function asstView() {
   socAiInit();
   const A = ui.asst || (ui.asst = { log: [] }), ai = socAiOn();
-  return `<div class="pagehead"><div><h2>Assistant</h2><p>Tell your personnel assistant what you're looking for, in plain words: a position, a budget, an age, how good he has to be, trade or free agency. He searches every roster and the free agent list and brings back real players with what they'd cost. Follow up with "younger", "cheaper" or "what would it take?"</p></div>${A.log.length ? '<button class="btn sm" data-act="asstClear">Start over</button>' : ''}</div>
+  return `<div class="pagehead"><div><h2>Assistant</h2><p>Tell your personnel assistant what you're looking for, in plain words: a position, a budget, an age, how good he has to be, trade or free agency. He searches every roster, the free agent list and the draft class (ask about the draft, a round or your next pick) and brings back real players with what they'd cost or where they'll go. Follow up with "younger", "cheaper" or "what would it take?"</p></div>${A.log.length ? '<button class="btn sm" data-act="asstClear">Start over</button>' : ''}</div>
   <section class="panel"><div class="stack" style="gap:10px">${A.log.length ? A.log.map(asstAnswer).join('') : '<p class="muted" style="margin:0;font-size:13px">Nothing asked yet. Try one of these:</p>'}
     ${ui.asstBusy ? '<div class="amsg"><span class="muted stype">Looking…</span></div>' : ''}</div>
     <div class="row sideas" style="margin:10px 0 8px">${ASST_IDEAS().map((t, i) => `<button class="btn sm" data-act="asstIdea" data-i="${i}">${E(t)}</button>`).join('')}</div>
@@ -24085,7 +24746,7 @@ function render() {
   if (ui.live) { app.innerHTML = liveShell() + toastHtml(); liveUpdate(true); return; }
   if (s.fired) { app.innerHTML = topbar() + `<div class="shell">${nav()}<main class="main">${dashboard()}</main></div>` + firedScreen() + toastHtml(); return; }
   if (HM.fdOn) ui.view = 'fdraft';
-  const views = { dchart: () => depthBoard('pro'), pl: playerPage, tm: teamPage, fdraft: fdRoomView, seasonreview: () => reviewPage(ui.rvSeason ?? S().season), dashboard, inbox: inboxView, staff: staffView, roster: rosterView, depth: depthView, dev: devView, schedule: scheduleView, standings: standingsView, stats: statsView, fa: faView, trade: tradeView, asst: asstView, draft: draftView, history: historyView, league: leagueView, pulse: pulseView, hof: hofView, todo: todoView, gm: gmView, finance: financeView, editor: editorView, health: healthView, help: helpView, college: collegeOutlookView };
+  const views = { dchart: () => depthBoard('pro'), pl: playerPage, tm: teamPage, fdraft: fdRoomView, seasonreview: () => reviewPage(ui.rvSeason ?? S().season), dashboard, inbox: inboxView, vox: voxView, staff: staffView, roster: rosterView, depth: depthView, dev: devView, schedule: scheduleView, standings: standingsView, stats: statsView, fa: faView, trade: tradeView, asst: asstView, draft: draftView, history: historyView, league: leagueView, pulse: pulseView, hof: hofView, todo: todoView, gm: gmView, finance: financeView, editor: editorView, health: healthView, help: helpView, college: collegeOutlookView };
   tourMark();
   let modal = '';
   if (!HM.fdOn && !s.car && !ui.sim) { mqCollect([['devRep', () => { const dr = HM.devRep(); return dr && !dr.seen; }, () => HM.devRepSeen()], ['progRep', () => { const pr = HM.progRep(); return pr && !pr.seen; }, () => HM.progSeen()]]); mqOpen(); } // reports wait their turn
