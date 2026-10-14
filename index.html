@@ -8334,14 +8334,15 @@ const QUOTES = {
   loss: { leader: ['That one\'s on us. We\'ll fix it.', 'Heads up. Long season.'], diva: ['I was open all day. Just saying.', 'Not my fault. Watch the tape.'], grinder: ['Tape doesn\'t lie. Back to work.', 'We\'ll be better.'], steady: ['Tough one. We\'ll learn from it.', 'Credit to them.'] },
   traded: { leader: ['Thank you to the city and my teammates. Time to get to work in a new place.'], diva: ['New city, same me. They\'ll see.', 'Somebody\'s going to regret this.'], grinder: ['Grateful for the opportunity. Ready to work.'], steady: ['Excited for the next chapter.'] },
   signed: { leader: ['Here to win and help build something.'], diva: ['Bigger stage. Let\'s go.', 'Paid and motivated.'], grinder: ['Blessed. Time to earn it.'], steady: ['Excited to be here. Let\'s get to work.'] },
-  snub: { leader: ['Congrats to the guys who made it. We keep working.'], diva: ['Pro Bowl voting is a joke. Check the numbers.', 'Snubbed again. Noted.'], grinder: ['Doesn\'t matter. Chip on the shoulder.'], steady: ['Happy for my teammates who made it.'] },
-  prime: { leader: ['Love playing on the big stage.'], diva: ['Primetime. My time.'], grinder: ['Same game, bigger lights.'], steady: ['Fun night.'] },
+  snub: { leader: ['Congrats to the guys who made it. We keep working.', 'Not my focus. Bigger goals in this building.', 'Proud of my teammates who got the nod.'], diva: ['Pro Bowl voting is a joke. Check the numbers.', 'Snubbed again. Noted.', 'Funny how the tape and the votes don\'t match.', 'Keep my name out your mouth in January.', 'Y\'all watching the same games I am?', 'Fuel. That\'s all this is.'], grinder: ['Doesn\'t matter. Chip on the shoulder.', 'Back to work. Votes don\'t win games.', 'Didn\'t make it. Didn\'t expect to. Keep grinding.'], steady: ['Happy for my teammates who made it.', 'Congrats to everybody who made it. Well earned.', 'Next year. On to the next one.'] },
+  prime: { leader: ['Love playing on the big stage.', 'Whole country watching. Let\'s handle business.'], diva: ['Primetime. My time.', 'Lights on. Watch this.', 'Bring the cameras.'], grinder: ['Same game, bigger lights.', 'Doesn\'t matter what night it is.'], steady: ['Fun night.', 'Good to play in front of everybody.'] },
 };
 const handle = p => '@' + (p.fn + p.ln).replace(/[^A-Za-z]/g, '') + (p.num || '');
 function post(p, kind, extra) {
   if (!p || !QUOTES[kind]) return;
   const bank = QUOTES[kind][p.pers || 'steady'] || QUOTES[kind].steady;
-  const text = (extra ? extra + ' ' : '') + pick(bank);
+  const recent = new Set((S.feed || []).slice(0, 30).map(f => f.text)), fresh = bank.filter(t => !recent.has((extra ? extra + ' ' : '') + t));
+  const text = (extra ? extra + ' ' : '') + pick(fresh.length ? fresh : bank);
   (S.feed || (S.feed = [])).unshift({ s: S.season, wk: S.phase === 'regular' && S.week <= S.schedule.length ? S.week : null, ph: S.phase, pid: p.id, name: fullName(p), h: handle(p), tid: p.tid, text, likes: Math.round((p.ovr - 55) * (80 + rnd() * 160) * (p.pers === 'diva' ? 1.6 : 1)) });
   if (S.feed.length > 120) S.feed.length = 120;
 }
