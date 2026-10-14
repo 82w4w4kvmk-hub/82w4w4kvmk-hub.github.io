@@ -1119,111 +1119,9 @@ ul.dlog li.sep{background:none;text-align:center;font-weight:700}
 .war .w-deck .w-bar{flex:1;margin-left:8px}
 .war .w-btn[disabled]{opacity:.45;cursor:default}
 .war .mono{font-family:var(--fm)}
-/* franchise museum (src/ui/97zm-museum.js): an old museum, the same in both themes */
-.mu{--brass:#C9A24A;--brass2:#8C6A2A;--cream:#F1E7CF;--mink:#2B2118;--mink2:#6B5A45;--mser:Georgia,"Times New Roman",Times,serif;
-  position:relative;border-radius:6px;padding:26px 28px 30px;color:#EFE4CC;font-family:var(--mser);border:10px solid #4A2E1E;box-shadow:inset 0 0 0 2px var(--brass2),inset 0 0 80px rgba(0,0,0,.55),0 14px 40px rgba(0,0,0,.35);
-  background:radial-gradient(ellipse at 50% -10%,rgba(255,214,140,.16),transparent 55%),repeating-linear-gradient(90deg,rgba(255,255,255,.018) 0 2px,transparent 2px 26px),repeating-radial-gradient(circle at 13px 13px,rgba(201,162,74,.07) 0 3px,transparent 3px 26px),linear-gradient(180deg,#3A251A,#2A1B14 70%,#21150F)}
-.mu .plink{font:inherit;color:inherit;text-decoration:underline;text-decoration-color:rgba(201,162,74,.5);text-underline-offset:2px}
-.mu-sign{text-align:center;margin:0 auto 18px;max-width:760px;padding:14px 20px;border-top:2px solid var(--brass);border-bottom:2px solid var(--brass);position:relative}
-.mu-sign:before,.mu-sign:after{content:"";position:absolute;left:0;right:0;height:1px;background:var(--brass2)}.mu-sign:before{top:4px}.mu-sign:after{bottom:4px}
-.mu-sign h2{text-transform:none;margin:4px 0;font:400 34px/1.15 var(--mser);font-variant:small-caps;letter-spacing:.08em;color:#F6E7C1;text-shadow:0 2px 0 rgba(0,0,0,.5)}
-.mu-sk{font:italic 13px var(--mser);color:var(--brass);letter-spacing:.06em}
-.mu-doors{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-bottom:22px}
-.mu-doors button{cursor:pointer;min-width:132px;padding:8px 14px 9px;border:1px solid var(--brass2);border-radius:3px;background:linear-gradient(180deg,#3E2819,#2A1A10);color:#E8D7B0;font:15px var(--mser);display:flex;flex-direction:column;align-items:center;gap:1px}
-.mu-doors button i{font:italic 11px var(--mser);color:var(--brass);letter-spacing:.08em}
-.mu-doors button:hover{border-color:var(--brass)}
-.mu-doors button[aria-pressed="true"]{background:linear-gradient(180deg,#E3C474,#B08A38);color:#2A1A0E;border-color:#F0D890;box-shadow:0 0 18px rgba(232,196,116,.35)}
-.mu-doors button[aria-pressed="true"] i{color:#4A3412}
-.mu-doors button:focus-visible,.mu button:focus-visible{outline:2px solid #F0D890;outline-offset:2px}
-.mu-room{display:flex;flex-direction:column;gap:16px}
-.mu-h{display:flex;align-items:baseline;justify-content:center;gap:14px;flex-wrap:wrap}
-.mu-h h3{text-transform:none;margin:0;font:400 24px var(--mser);font-variant:small-caps;letter-spacing:.1em;color:#F6E7C1}
-.mu-h>span{font:italic 13px var(--mser);color:var(--brass)}
-.mu-sub{font:400 15px var(--mser);font-variant:small-caps;letter-spacing:.12em;color:var(--brass);text-align:center;border-bottom:1px solid rgba(201,162,74,.35);padding-bottom:4px}
-.mu-note{margin:0;font:italic 13px/1.5 var(--mser);color:#C9B894;text-align:center}
-.mu-two{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px;align-items:start}
-.mu-btn{cursor:pointer;font:13px var(--mser);padding:5px 12px;border-radius:3px;border:1px solid var(--brass2);background:linear-gradient(180deg,#E3C474,#B08A38);color:#2A1A0E;white-space:nowrap}
-.mu-btn:hover{filter:brightness(1.07)}
-.mu-placard,.mu-card,.mu-ledger{background:linear-gradient(180deg,#F5ECD6,#E9DCBC);color:var(--mink);border-radius:2px;box-shadow:0 6px 16px rgba(0,0,0,.4),inset 0 0 0 1px rgba(120,90,40,.35)}
-.mu-placard{align-self:center;max-width:620px;width:100%;padding:16px 22px;text-align:center}
-.mu-placard p{margin:8px 0;font:15px/1.5 var(--mser)}
-.mu-pl-k{font:italic 12px var(--mser);color:var(--mink2);letter-spacing:.06em}
-.mu-pl-t{font:400 20px var(--mser);font-variant:small-caps;letter-spacing:.06em}
-.mu-pl-f{font:italic 12px var(--mser);color:var(--mink2)}
-.mu-eng{font:600 12px var(--fm);letter-spacing:.06em;color:#6E5320}
-.mu-card{padding:14px 16px;font-size:14px}
-.mu-ct{font:400 16px var(--mser);font-variant:small-caps;letter-spacing:.06em;border-bottom:1px solid rgba(90,65,30,.35);padding-bottom:6px;margin-bottom:6px}
-.mu-ct i{font:italic 12px var(--mser);font-variant:normal;color:var(--mink2);letter-spacing:0}
-.mu-card .mu-note,.mu-ledger .mu-note,.mu-placard .mu-note{color:var(--mink2)}
-.mu-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr) auto;gap:10px;align-items:center;padding:5px 0;border-bottom:1px dotted rgba(90,65,30,.35);font-size:13.5px}
-.mu-row:last-child{border-bottom:0}.mu-row>b{font:700 15px var(--mser)}
-.mu-lsub{color:var(--mink2);font-size:12.5px}
-.mu-velvet{padding:26px 20px 20px;border-radius:4px;border:6px solid #5A3A22;box-shadow:inset 0 0 0 2px var(--brass2),inset 0 10px 40px rgba(0,0,0,.6);background:radial-gradient(ellipse at 50% 0,rgba(255,220,160,.18),transparent 60%),repeating-linear-gradient(45deg,rgba(255,255,255,.02) 0 2px,transparent 2px 5px),#5B0F1A}
-.mu-velvet .mu-note{color:#E9CFA8}
-.mu-case{display:flex;flex-wrap:wrap;justify-content:center;gap:22px}
-.mu-rc{all:unset;box-sizing:border-box;cursor:pointer;display:flex;flex-direction:column;align-items:center;width:128px;transition:transform .15s}
-.mu-rc:hover{transform:translateY(-3px)}.mu-rc:focus-visible{outline:2px solid #F0D890;outline-offset:4px}
-.mu-ring{width:96px;height:96px;position:relative;z-index:1;filter:drop-shadow(0 8px 8px rgba(0,0,0,.55))}
-.mu-rc.on .mu-ring{filter:drop-shadow(0 0 14px rgba(255,220,140,.75)) drop-shadow(0 8px 8px rgba(0,0,0,.55))}
-.mu-ry{font:700 13px var(--mser)}.mu-ra{font:700 9px var(--fm);letter-spacing:.12em;fill:#fff}
-.mu-cush{width:92px;height:22px;margin-top:-14px;border-radius:50%;background:radial-gradient(ellipse at 50% 30%,#8A1E2E,#3C0810);box-shadow:0 6px 10px rgba(0,0,0,.5)}
-.mu-tag{margin-top:10px;padding:4px 10px;background:var(--cream);color:var(--mink);font:13px/1.25 var(--mser);text-align:center;box-shadow:0 3px 6px rgba(0,0,0,.4)}
-.mu-tag i{font-size:11px;color:var(--mink2)}
-.mu-frame{padding:16px;border-radius:2px;background:linear-gradient(135deg,#F2D688,#A97E2C 30%,#E9C877 50%,#8C6420 75%,#D9B45A);box-shadow:0 12px 30px rgba(0,0,0,.6),inset 0 0 0 3px rgba(80,55,15,.6)}
-.mu-photo{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:12px 8px;padding:18px;background:radial-gradient(ellipse at 50% 40%,#E8D9B5,#C8B184 85%,#A88F60);color:#3A2A18;box-shadow:inset 0 0 0 6px #F1E5C8,inset 0 0 40px rgba(70,45,15,.45)}
-.mu-blank .mu-photo{display:block}.mu-blank .mu-note{color:#5A4528}
-.mu-pp{display:flex;flex-direction:column;align-items:center;text-align:center;gap:1px;min-width:0}
-.mu-pp .fc{filter:sepia(.75) contrast(1.05) saturate(.8);border-radius:50%;box-shadow:0 0 0 2px rgba(70,45,15,.35)}
-.mu-pn{font:700 13px var(--mser);margin-top:4px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mu-ps{font:italic 11px var(--mser);color:#6B5434}
-.mu-now{font:12px var(--mser);margin-top:2px}
-.mu-now.k-hof{color:#8A5A00;font-weight:700}.mu-now.k-here,.mu-now.k-play{color:#2F5A2A}.mu-now.k-coach{color:#5B2E6E}.mu-now.k-ret,.mu-now.k-fa{color:#6B5A45}
-.mu-yrs{display:inline-flex;gap:6px;font-style:normal}
-.mu-yrs button{cursor:pointer;font:13px var(--mser);padding:3px 10px;border:1px solid var(--brass2);border-radius:3px;background:transparent;color:#E8D7B0}
-.mu-yrs button[aria-pressed="true"]{background:var(--brass);color:#2A1A0E}
-.mu-narrow .mu-btn{margin-top:4px}
-.mu-ledger{padding:12px 16px 14px;background:repeating-linear-gradient(180deg,transparent 0 27px,rgba(70,100,140,.18) 27px 28px),linear-gradient(90deg,transparent 46px,rgba(170,40,40,.3) 46px 47px,transparent 47px),linear-gradient(180deg,#F5ECD6,#ECE0C2)}
-.mu-lh{font:400 17px var(--mser);font-variant:small-caps;letter-spacing:.06em;margin-bottom:6px;display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
-.mu-lh span{font:italic 11.5px var(--mser);font-variant:normal;color:var(--mink2);letter-spacing:0}
-.mu-lr{display:grid;grid-template-columns:44px minmax(0,1fr) 40px 78px;gap:8px;align-items:center;padding:6px 0;font:13.5px/1.35 var(--mser);border-bottom:1px solid rgba(90,65,30,.18)}
-.mu-lr:last-child{border-bottom:0}.mu-lr>b{font:700 15px var(--mser);text-align:right}
-.mu-lr i,.mu-pk i{font-size:12px;color:var(--mink2)}
-.mu-ly{font:italic 13px var(--mser);color:#8A2A2A}
-.mu .pos{color:#2F6A2A}.mu .neg{color:#9A2A20}
-.mu-stamp{justify-self:end;font:700 13px var(--mser);padding:1px 8px;border:2px solid currentColor;border-radius:4px;transform:rotate(-6deg);color:#6B5A45;text-align:center;opacity:.85;white-space:nowrap}
-.mu-stamp.early{font:italic 11px var(--mser);border-style:dashed;transform:none}
-.mu-stamp.gA{color:#2F6A2A}.mu-stamp.gB{color:#2E4E7A}.mu-stamp.gC{color:#9A6A10}.mu-stamp.gD,.mu-stamp.gF{color:#A3261C}
-.mu-dc{all:unset;box-sizing:border-box;width:100%;cursor:pointer;display:grid;grid-template-columns:44px minmax(0,1fr) 40px 78px;gap:8px;align-items:center;padding:6px 4px;font:13.5px var(--mser);border-bottom:1px solid rgba(90,65,30,.18)}
-.mu-dc:hover,.mu-dc.on{background:rgba(201,162,74,.18)}
-.mu-picks{margin:4px 0 8px 18px;padding-left:10px;border-left:2px solid rgba(138,42,42,.4)}
-.mu-pk{display:grid;grid-template-columns:40px minmax(0,1fr) minmax(0,.9fr) 36px 70px;gap:8px;align-items:center;padding:4px 0;font:13px var(--mser)}
-.mu-pk>b{text-align:right}
-.mu-flag{font:700 10px var(--fm);text-transform:uppercase;letter-spacing:.06em;padding:0 5px;border:1px solid currentColor;border-radius:2px}
-.mu-ch{width:100%;max-height:150px;display:block}
-.mu-cv{font:11px var(--mser);fill:#5A4528}
-.mu-rafters{padding:4px 10px 10px;border-top:6px solid #4A2E1E;background:linear-gradient(180deg,rgba(0,0,0,.35),transparent 70%)}
-.mu-raft{display:flex;flex-wrap:wrap;justify-content:center;gap:12px}
-.mu-pen{width:60px;height:96px;filter:drop-shadow(0 8px 8px rgba(0,0,0,.5))}
-.mu-py{font:700 15px var(--mser)}.mu-pt{font:700 6.5px var(--fm);letter-spacing:.08em;fill:#fff}
-.mu-brass{display:flex;flex-wrap:wrap;justify-content:center;gap:12px}
-.mu-brass>div{min-width:120px;padding:10px 14px;text-align:center;border-radius:3px;background:linear-gradient(160deg,#E7CB80,#B08A38 45%,#D9B45A 70%,#8C6A2A);color:#2A1A0E;box-shadow:0 5px 12px rgba(0,0,0,.45),inset 0 0 0 1px rgba(255,240,200,.5)}
-.mu-brass b{display:block;font:700 24px/1.1 var(--mser)}.mu-brass span{font:italic 12px var(--mser)}
-.mu-nums{display:flex;flex-wrap:wrap;justify-content:center;gap:14px}
-.mu-jersey{width:120px;padding:10px 8px 12px;text-align:center;color:#fff;border:6px solid #5A3A22;box-shadow:inset 0 0 0 2px var(--brass2),0 8px 18px rgba(0,0,0,.5);background:radial-gradient(ellipse at 50% 30%,rgba(255,255,255,.12),transparent 60%),var(--tc)}
-.mu-jersey b{display:block;font:900 46px/1 var(--fd);text-shadow:0 2px 0 rgba(0,0,0,.4)}
-.mu-jersey span{display:block;font:13px var(--mser);margin-top:4px}.mu-jersey i{font:italic 11px var(--mser);opacity:.8}
-.mu-plqs{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
-.mu-plq{padding:16px 16px 14px;border-radius:4px;text-align:center;font:13px/1.45 var(--mser);color:#2A1A0E;display:flex;flex-direction:column;align-items:center;gap:3px;background:linear-gradient(160deg,#B98A4A,#7A5228 40%,#A97A40 70%,#5E3E1E);box-shadow:0 8px 18px rgba(0,0,0,.55),inset 0 0 0 3px rgba(60,35,15,.5),inset 0 0 0 5px rgba(240,200,140,.35)}
-.mu-plq.hof{background:linear-gradient(160deg,#F0D890,#B08A38 40%,#E3C474 70%,#8C6A2A)}
-.mu-pq-k{font:italic 12px var(--mser);color:#3A2410}
-.mu-pq-nm{font:400 22px/1.1 var(--mser);font-variant:small-caps;letter-spacing:.05em;color:#1E1209;text-shadow:0 1px 0 rgba(255,230,180,.35)}
-.mu-pq-nm .plink{text-decoration:none}
-.mu-pq-rule{width:60%;height:1px;background:rgba(40,22,8,.5);margin:3px 0}
-.mu-pq-ln{font:600 12px var(--fm);color:#2A1A0E}.mu-pq-hn{font:italic 12.5px var(--mser)}
-.mu-plq .mu-btn{margin-top:6px;background:#2A1A0E;color:#E8D7B0}
 </style>
 <div id="app"></div>
-<script>
+<script id="hm-engine">
 /* Hash Marks — shared sports-sim engine (football module v1)
    No DOM in this file: it runs in the browser and in Node for testing. */
 const HM = (() => {
@@ -1454,6 +1352,7 @@ function openingCap(t, limit) {
 // development reach their steady state, then hold: the opening league starts there instead)
 const OPEN_SETTLE = { QB: 2.8, RB: 1, WR: 2.1, TE: 2.5, OL: 3.6, DL: 4.2, LB: 1.9, CB: 2.6, S: 2.2 };
 function newLeague() {
+  PAR_P.clear();
   S = { v: 1, gtdFixV: 1, colScaleV: 1, fieldDefV: 1, season: 2026, phase: 'regular', week: 1, userTid: null, teams: [], players: {}, nextPid: 1, nextGid: 1,
     schedule: [], games: {}, po: null, draft: null, faDay: 0, news: [], history: [], awards: {}, retired: [], cap: 301.2, capScale: 1.181, picks: [], nextPickId: 1, dead: [], coaches: {}, nextCid: 1, offers: [], honors: {}, recs: {}, hof: [], hofPending: [], waivers: [], claims: [], comp: [], potw: {}, recaps: {}, hofBallots: {}, hofV: 2, ratV: 2, stories: [], mocks: [], block: [], pressLog: [], visits: 10 };
   initAgents();
@@ -3215,7 +3114,7 @@ const spdCode = (ps, pos) => ps.map((p, i) => clamp(Math.round((topSpd(p, pos[i]
 function blankTS() { return { fd: 0, py: 0, ry: 0, pa: 0, pc: 0, ra: 0, to: 0, sk: 0, top: 0, c3: 0, a3: 0, pl: 0, epa: 0, sp: 0, su: 0, pe: 0, pp: 0, ps: 0, re: 0, rp: 0, rs: 0, db: 0, prs: 0, rzt: 0, rztd: 0 }; }
 
 // Run a game to the end. AI answers every coaching decision.
-function simGame(ht, at, opt = {}) { const it = gameGen(ht, at, opt); let r = it.next(); while (!r.done) r = it.next(r.value.auto); return r.value; }
+function simGame(ht, at, opt = {}) { if (PAR_P.size && !PAR_PW) { const g = parTakeP(ht, at, opt); if (g) return g; } const it = gameGen(ht, at, opt); let r = it.next(); while (!r.done) r = it.next(r.value.auto); return r.value; }
 // The game as a generator: in coached games it pauses (yields) at the user's decisions.
 function* gameGen(ht, at, opt = {}) {
   const hurtCopy = L => { for (const pos of POS_ORDER) L[pos] = L[pos].map(p => p.id != null && p.rushed && p.rushed.s === S.season && !(p.inj > 0) ? { ...p, a: Object.fromEntries(Object.entries(p.a).map(([k, v]) => [k, Math.round(v * 0.94)])), ovr: Math.round(p.ovr * 0.94) } : p.id != null && p.holdin && !(p.inj > 0) ? { ...p, a: Object.fromEntries(Object.entries(p.a).map(([k, v]) => [k, Math.round(v * 0.96)])), ovr: Math.round(p.ovr * 0.96) } : p.id != null && p.inj > 0 ? { ...p, a: Object.fromEntries(Object.entries(p.a).map(([k, v]) => [k, Math.round(v * 0.92)])), ovr: Math.round(p.ovr * 0.92), playingHurt: true } : p); return L; };
@@ -3938,7 +3837,6 @@ function applyGame(g) {
   for (const pid in g.ps) { const l = g.ps[pid]; if (Object.keys(l).every(k => k === 'gp' || k === 'gs')) { delete g.ps[pid]; delete g.pt[pid]; } }
   S.games[g.gid] = g;
   updateRivalry(g);
-  homeLog(g);
   disciplineAfterGame(g);
 }
 
@@ -4145,8 +4043,7 @@ function endSeason() {
     t.hist.push({ s: S.season, w: t.rec.w, l: t.rec.l, t: t.rec.t, pf: t.rec.pf, pa: t.rec.pa, res });
   }
   try { settleInjuryDecisions(); } catch (e) {}
-  const fg = S.games[((po.rounds || [])[(po.rounds || []).length - 1] || [])[0]], fin = fg ? (fg.home === po.champ ? [fg.score[0], fg.score[1]] : [fg.score[1], fg.score[0]]) : undefined;
-  S.history.push({ s: S.season, champ: po.champ, runnerUp: po.runnerUp, awards: S.awards[S.season], user: S.userTid, fin });
+  S.history.push({ s: S.season, champ: po.champ, runnerUp: po.runnerUp, awards: S.awards[S.season], user: S.userTid });
   try { recordHealth(); } catch (e) {}
   try { buildSeasonReview(); } catch (e) {}
   processWaivers();
@@ -4376,7 +4273,7 @@ function draftPlayer(pid) {
   const d = S.draft; if (!d || d.idx >= d.order.length) return 'The draft is over.';
   const p = S.players[pid]; if (!p || p.tid !== -2) return 'That prospect is not available.';
   const tid = d.order[d.idx], rd = d.rd ? d.rd[d.idx] : Math.floor(d.idx / 32) + 1, pk = d.idx + 1, inRd = d.pk ? d.pk[d.idx] : (d.idx % 32) + 1;
-  p.tid = tid; p.draft = { season: S.season + 1, rd, pk: inRd, ovrPick: pk, tid, comp: !!(d.pid && d.pid[d.idx] != null && S.picks.find(x => x.id === d.pid[d.idx])?.comp), pkid: d.pid && d.pid[d.idx] != null ? d.pid[d.idx] : undefined };
+  p.tid = tid; p.draft = { season: S.season + 1, rd, pk: inRd, ovrPick: pk, tid, comp: !!(d.pid && d.pid[d.idx] != null && S.picks.find(x => x.id === d.pid[d.idx])?.comp) };
   p.contract = mkContract(rookieScale(pk), 4, rd === 1 ? 'r1' : rd === 2 ? 'r2' : 'rk'); p.contract.rk = rd;
   p.draft.ds = r1(draftScore(p)); if (d.br && d.br[p.id]) p.draft.br = d.br[p.id];
   delete p.sc; p.mor = 65; assignNumber(p);
@@ -4674,7 +4571,7 @@ function evaluateTrade(otherTid, give, get, givePk = [], getPk = []) {
 function executeTrade(otherTid, give, get, givePk = [], getPk = []) {
   const ev = evaluateTrade(otherTid, give, get, givePk, getPk);
   if (!ev.ok) { const g = rivalGm(otherTid), key = S.season + '-' + S.phase + '-' + (S.week || S.faDay || 0); if (g && ev.vOut && ev.vIn < ev.vOut * 0.7 && g.lowball !== key) { g.lowball = key; bumpRel(otherTid, -2, 'lowball offers'); } if (ev.vOut != null) dlLeak(otherTid, give); return ev; }
-  (S.utrades || (S.utrades = [])).push({ s: S.season, ph: S.phase, tid: otherTid, give: give.slice(), get: get.slice(), givePk: givePk.slice(), getPk: getPk.slice(), vIn: ev.vIn, vOut: ev.vOut, me: S.userTid, pk: [...givePk, ...getPk].map(id => S.picks.find(p => p.id === id)).filter(Boolean).map(p => ({ id: p.id, y: p.y, rd: p.rd, o: p.o })) });
+  (S.utrades || (S.utrades = [])).push({ s: S.season, ph: S.phase, tid: otherTid, give: give.slice(), get: get.slice(), givePk: givePk.slice(), getPk: getPk.slice(), vIn: ev.vIn, vOut: ev.vOut });
   bumpRel(otherTid, 3 + Math.min(4, Math.max(0, (ev.vIn - ev.need) / 3)), 'a trade');
   const names = (ids, pids) => [...ids.map(id => `${S.players[id].pos} ${fullName(S.players[id])}`), ...pids.map(id => 'a ' + pickLabel(S.picks.find(p => p.id === id)) + ' pick')].join(', ') || 'nothing';
   const msg = `Trade with ${team(otherTid).abbr}: sent ${names(give, givePk)}; received ${names(get, getPk)}.`;
@@ -9806,202 +9703,6 @@ function teamNeeds(tid) {
   }
   return out.sort((a, b) => b.gap - a.gap);
 }
-// ---------- the franchise museum: rings, the title team photos, the vault (old trades and drafts graded after the fact),
-// home field (banners, the home record, the building's records) and plaques (ring of honor, retired numbers) ----------
-// Everything here reads the history the save already keeps. Three small logs feed it going forward: the title game
-// score on S.history, each team's home games (t.hf) and the pick each drafted player came from (p.draft.pkid).
-
-// after every game: the home team's record and the building's single-game marks (neutral sites don't count)
-function homeLog(g) {
-  if (!g || g.neutral || g.pre || !g.score) return;
-  const t = team(g.home); if (!t) return;
-  const H = t.hf || (t.hf = { since: S.season, w: 0, l: 0, t: 0, pw: 0, pl: 0, run: 0, best: null, big: [], recs: {} });
-  const [us, them] = g.score, wk = g.week || 0, po = g.po || 0;
-  if (us > them) { H.w++; if (po) H.pw++; H.run = Math.max(0, H.run) + 1; if (!H.best || H.run > H.best.n) H.best = { n: H.run, s: S.season }; }
-  else if (us < them) { H.l++; if (po) H.pl++; H.run = Math.min(0, H.run) - 1; }
-  else { H.t++; H.run = 0; }
-  // the wins worth hanging on the wall: playoff wins first, then the margin
-  if (us > them) {
-    const x = { s: S.season, wk, po, opp: g.away, us, them, gid: g.gid };
-    const key = y => (y.po ? 100 + y.po * 10 : 0) + (y.us - y.them);
-    H.big.push(x); H.big.sort((a, b) => key(b) - key(a)); if (H.big.length > 6) H.big.length = 6;
-  }
-  for (const pid in g.ps || {}) {
-    const line = g.ps[pid], p = S.players[pid]; if (!p) continue;
-    const tid = g.pt[pid] === 0 ? g.home : g.away;
-    for (const k of GREC_KEYS) {
-      const v = line[k] || 0; if (v <= 0) continue;
-      const r = H.recs[k]; if (!r || v > r.v) H.recs[k] = { v, pid: p.id, name: fullName(p), pos: p.pos, tid, s: S.season, wk, po };
-    }
-  }
-}
-
-// how much a player gave a team in a season: games times how good he was, plus the honors he won there
-const MUS_HON = { MVP: 4, OPOY: 4, DPOY: 4, AP: 2.5, PB: 1, FMVP: 1, ROY: 1 };
-function musOvrAt(p, y) {
-  let o = null; for (const h of p.hist || []) if (h.s <= y && h.ovr != null) o = h.ovr;
-  return o ?? (p.hist && p.hist[0] ? p.hist[0].ovr : p.ovr ?? p.peak ?? 60);
-}
-function musSeasonVal(p, y, st) { return (Math.min(17, st.gp || 0) / 17) * Math.max(0, musOvrAt(p, y) - 60) / 5; }
-// value with one team (tid) from season `from` on; tid null = with anyone
-function musValue(p, tid, from) {
-  let v = 0;
-  for (const y in p.stats || {}) { const st = p.stats[y]; if (+y < from || (tid != null && st.tid !== tid)) continue; v += musSeasonVal(p, +y, st); }
-  for (const h of p.hon || []) if (h.s >= from && (tid == null || h.tid === tid)) v += MUS_HON[h.t] || 0;
-  return v;
-}
-// every player the save remembers, active or retired, by id
-function musPeople() {
-  const m = new Map();
-  for (const r of S.retired || []) m.set(r.id, r);
-  for (const p of allPlayers()) m.set(p.id, p);
-  return m;
-}
-const musName = p => p.name || fullName(p);
-const musLeagueStart = () => { const ss = (S.history || []).map(h => h.s); for (const t of S.teams) for (const h of t.hist || []) ss.push(h.s); return ss.length ? Math.min(...ss) : S.season; };
-const musDone = () => { const h = S.history || []; return h.length ? h[h.length - 1].s : S.season - 1; }; // the last finished season
-// where a player is now
-function musNow(p, tid) {
-  const q = S.players[p.id];
-  if (q) {
-    if (q.tid === tid) return { k: 'here', txt: 'Still here' };
-    if (q.tid >= 0) return { k: 'play', txt: `Plays for ${team(q.tid).abbr}` };
-    return { k: 'fa', txt: 'Free agent' };
-  }
-  const r = (S.retired || []).find(x => x.id === p.id) || p;
-  if (r.hof) return { k: 'hof', txt: `Hall of Fame, ${r.hof}` };
-  const c = r.coach != null && S.coaches ? S.coaches[r.coach] : null;
-  if (c && c.tid >= 0) return { k: 'coach', txt: `${ROLE_NAME[c.role]}, ${team(c.tid).abbr}` };
-  if (c) return { k: 'coach', txt: 'Looking for a coaching job' };
-  if ((S.hofPending || []).some(x => x.id === r.id)) return { k: 'ret', txt: `Retired ${r.s}, Hall of Fame finalist` };
-  return { k: 'ret', txt: `Retired ${r.s || ''}`.trim() };
-}
-
-// the rings: every title (gold) and every final reached (silver)
-function musFinalScore(h) {
-  if (h.fin) return h.fin;
-  const k = rivKey(h.champ, h.runnerUp), x = ((S.h2h || {})[k]?.g || []).find(z => z[0] === h.s && z[2] === 4);
-  if (!x) return null;
-  const champLow = h.champ < h.runnerUp;
-  return champLow ? [x[3], x[4]] : [x[4], x[3]];
-}
-function musRings(tid) {
-  const out = [];
-  for (const h of S.history || []) {
-    if (h.champ !== tid && h.runnerUp !== tid) continue;
-    const won = h.champ === tid, sc = musFinalScore(h), th = (team(tid).hist || []).find(x => x.s === h.s), aw = h.awards || {};
-    out.push({ s: h.s, won, opp: won ? h.runnerUp : h.champ, sc: sc ? (won ? sc : [sc[1], sc[0]]) : null, rec: th ? `${th.w}-${th.l}${th.t ? '-' + th.t : ''}` : '',
-      fmvp: won && aw.fmvp ? aw.fmvp.name : null, mvp: aw.mvp && aw.mvp.tid === tid ? aw.mvp.name : null, yours: h.user === tid });
-  }
-  return out.reverse();
-}
-
-// the title team photo and where they are now
-function musTitleTeams(tid) {
-  const titles = (S.history || []).filter(h => h.champ === tid).map(h => h.s); if (!titles.length) return [];
-  const people = musPeople(), out = [];
-  for (const y of titles.reverse()) {
-    const aw = ((S.history || []).find(h => h.s === y) || {}).awards || {};
-    const roster = [];
-    for (const p of people.values()) {
-      if (!(p.hon || []).some(h => h.t === 'RING' && h.s === y && h.tid === tid)) continue;
-      const st = (p.stats || {})[y] || {}, ap = (p.hon || []).some(h => h.s === y && (h.t === 'AP' || h.t === 'MVP'));
-      const age = (p.age || 27) - ((S.players[p.id] ? S.season : p.s || S.season) - y);
-      roster.push({ id: p.id, act: !!S.players[p.id], name: musName(p), pos: p.pos, num: p.num, gp: st.gp || 0, gs: st.gs || 0, ovr: musOvrAt(p, y), face: { id: p.id, faceSeed: p.faceSeed, pos: p.pos, age, fn: p.fn, ln: p.ln },
-        star: aw.fmvp?.pid === p.id ? 'Final MVP' : aw.mvp?.pid === p.id ? 'MVP' : ap ? 'All-Pro' : '', now: musNow(p, tid) });
-    }
-    const rk = x => (x.star ? 1000 : 0) + (x.gp >= 6 ? 100 : x.gp * 10) + x.ovr; // the stars, then the regulars by how good they were
-    roster.sort((a, b) => rk(b) - rk(a));
-    const n = k => roster.filter(x => x.now.k === k).length;
-    out.push({ s: y, roster, sum: { hof: n('hof'), play: n('here') + n('play'), here: n('here'), coach: n('coach'), ret: n('ret') + n('fa') } });
-  }
-  return out;
-}
-
-// the vault: the user's trades and this franchise's drafts, graded by what came of them
-const MUS_RATE_DEF = [3.2, 2.2, 1.4, 0.8, 0.45, 0.25];
-const musBucket = k => k <= 10 ? 0 : k <= 32 ? 1 : k <= 64 ? 2 : k <= 100 ? 3 : k <= 160 ? 4 : 5;
-let MUS_C = null;
-function musRates() {
-  const key = S.season + S.phase + (S.week || 0) + (S.retired || []).length;
-  if (MUS_C && MUS_C.S === S && MUS_C.key === key) return MUS_C.r;
-  const start = musLeagueStart(), done = musDone(), sum = [0, 0, 0, 0, 0, 0], n = [0, 0, 0, 0, 0, 0];
-  for (const p of musPeople().values()) {
-    const d = p.draft; if (!d || !(d.season > start) || !d.ovrPick) continue;
-    const e = done - d.season + 1; if (e < 1) continue;
-    const b = musBucket(d.ovrPick); sum[b] += musValue(p, null, d.season) / e; n[b]++;
-  }
-  const r = sum.map((x, i) => (x + MUS_RATE_DEF[i] * 12) / (n[i] + 12));
-  MUS_C = { S, key, r }; return r;
-}
-function musGrade(got, exp) { return gradeOf((got + 1) / (exp + 1)); }
-function musDrafts(tid) {
-  const start = musLeagueStart(), done = musDone(), rates = musRates(), by = {};
-  for (const p of musPeople().values()) {
-    const d = p.draft; if (!d || d.tid !== tid || !(d.season > start)) continue;
-    const e = Math.max(0, done - d.season + 1), all = musValue(p, null, d.season), mine = musValue(p, tid, d.season), exp = rates[musBucket(d.ovrPick || 224)] * e;
-    const c = by[d.season] || (by[d.season] = { s: d.season, e, picks: [] });
-    c.picks.push({ id: p.id, act: !!S.players[p.id], name: musName(p), pos: p.pos, rd: d.rd, pk: d.pk, ovr: d.ovrPick, val: Math.round(all * 10) / 10, mine: Math.round(mine * 10) / 10, exp: Math.round(exp * 10) / 10,
-      grade: e >= 2 ? musGrade(all, exp) : null, tag: e >= 2 && all >= 8 && all >= exp * 2 ? 'Steal' : e >= 3 && d.rd === 1 && all < exp * 0.35 ? 'Bust' : '', now: musNow(p, tid) });
-  }
-  return Object.values(by).sort((a, b) => b.s - a.s).map(c => {
-    c.picks.sort((a, b) => a.ovr - b.ovr);
-    const v = c.picks.reduce((a, x) => a + x.val, 0), x = c.picks.reduce((a, y) => a + y.exp, 0);
-    c.val = Math.round(v * 10) / 10; c.grade = c.e >= 2 ? musGrade(v, x) : null;
-    const best = c.picks.slice().sort((a, b) => b.val - a.val)[0]; c.best = best && best.val > 0 ? best.name : null;
-    return c;
-  });
-}
-const MUS_OFF = ['resign', 'fa', 'draft'];
-function musTrades(tid) {
-  const people = musPeople(), done = musDone(), out = [];
-  const pickPlayer = id => { for (const p of people.values()) if (p.draft && p.draft.pkid === id) return p; return null; };
-  for (const x of S.utrades || []) {
-    if ((x.me ?? S.userTid) !== tid || x.tid == null) continue;
-    const from = MUS_OFF.includes(x.ph) ? x.s + 1 : x.s, e = done - from + 1, opp = x.tid;
-    const side = (ids, pks, owner) => {
-      const items = []; let v = 0, open = 0;
-      for (const id of ids) { const p = people.get(id); if (!p) { items.push({ name: 'a former player', val: 0 }); continue; } const pv = musValue(p, owner, from); v += pv; items.push({ id, act: !!S.players[id], name: musName(p), pos: p.pos, val: Math.round(pv * 10) / 10 }); }
-      for (const id of pks) {
-        const snap = (x.pk || []).find(z => z.id === id), live = (S.picks || []).find(z => z.id === id), pk = snap || live;
-        const lbl = pk ? `${pk.y} round ${pk.rd} pick` : 'a draft pick';
-        if (live) { open++; items.push({ name: lbl, val: null, open: true }); continue; }
-        const p = pickPlayer(id);
-        if (!p) { items.push({ name: lbl, val: null, lost: true }); continue; }
-        const pv = musValue(p, p.draft.tid, p.draft.season); v += pv;
-        items.push({ pick: lbl, id: p.id, act: !!S.players[p.id], name: musName(p), pos: p.pos, val: Math.round(pv * 10) / 10 });
-      }
-      return { items, v, open };
-    };
-    const got = side(x.get || [], x.getPk || [], tid), gave = side(x.give || [], x.givePk || [], opp);
-    out.push({ s: x.s, ph: x.ph, opp, got: got.items, gave: gave.items, net: Math.round(got.v - gave.v), gv: got.v, gvv: gave.v,
-      grade: e >= 2 && !got.open && !gave.open ? musGrade(got.v, gave.v) : null, early: e < 2 || got.open + gave.open > 0 });
-  }
-  return out.sort((a, b) => b.net - a.net);
-}
-
-// plaques: the ring of honor, with each member's years, games and honors here
-function musPlaques(tid) {
-  const t = team(tid), people = musPeople();
-  return (t.ring || []).map(m => {
-    const p = people.get(m.rid) || {}, ys = Object.keys(p.stats || {}).map(Number).filter(y => p.stats[y].tid === tid), hon = (p.hon || []).filter(h => h.tid === tid);
-    const c = k => hon.filter(h => h.t === k).length;
-    return { rid: m.rid, name: m.name, pos: m.pos, num: m.num, s: m.s, gp: m.gp, yrs: ys.length ? `${Math.min(...ys)}–${Math.max(...ys)}` : '', tot: (p.byTeam || {})[tid] || null,
-      hon: { MVP: c('MVP'), AP: c('AP'), PB: c('PB'), RING: c('RING') }, hof: p.hof || null, retired: (t.retNums || []).some(r => r.num === m.num && r.rid === m.rid) };
-  }).reverse();
-}
-
-function museum(tid) {
-  tid = tid ?? S.userTid;
-  const t = team(tid), hist = t.hist || [];
-  const banners = hist.filter(h => /^Won/.test(h.res) || h.res === 'Lost in ' + LEAGUE.final).map(h => ({ s: h.s, won: /^Won/.test(h.res) })).reverse();
-  const po = hist.filter(h => !/Missed/.test(h.res)).length;
-  return {
-    tid, rings: musRings(tid), titles: musTitleTeams(tid), drafts: musDrafts(tid), trades: musTrades(tid), plaques: musPlaques(tid),
-    retNums: (t.retNums || []).slice(), home: { banners, po, seasons: hist.length, hf: t.hf || null, opened: t.fin?.newStadium || null, seats: t.fin?.seats || null },
-    seasons: hist.map(h => ({ s: h.s, w: h.w, l: h.l, t: h.t || 0, res: h.res })),
-  };
-}
 // ---------- pro event rooms: playoff odds, the free-agent market read, contract comparisons ----------
 // A team's overall rating with some players added or taken away, from its best healthy players at each spot. The
 // depth chart is skipped on both sides of a what-if, so the before and after are measured the same way.
@@ -10681,6 +10382,7 @@ function genRecruitGen() {
   return r;
 }
 function newCollege() {
+  PAR_C.clear();
   CS = { mode: 'college', v: 2, confs: FBS.map(c => c[0]), cgames: FBS.map(c => c[1]), cbase: FBS.map(c => c[2]), season: 2026, phase: 'season', week: 1, userTid: null, teams: [], players: {}, nextPid: 1, nextGid: 1, games: {}, sched: [], news: [], hist: [], polls: [], po: null, bowls: [], classes: {}, heis: {}, recPts: REC_PTS, visits: VISITS, portal: null };
   RC = null; CNAMES = new Set(); LIVE = null; PRE = null;
   FBS.forEach(([cn, , , list], conf) => { for (const [name, abbr, color, reg, pr] of list) { const t = { tid: CS.teams.length, name, mascot: '', abbr, key: abbr, color, conf, reg, pres: clamp(Math.round(pr + gauss(0, 2)), 10, 99), rec: cblank(), hist: [], rsv: {} }; t.nilB = nilFor(t); CS.teams.push(t); } });
@@ -12109,6 +11811,7 @@ function colGameFinish(X) {
 }
 function colGame(h, a, opt = {}) {
   if (PRE && PRE.h === h && PRE.a === a) { const g = PRE; PRE = null; g.wk = opt.wk || g.wk; if (opt.name) g.name = opt.name; return g; }
+  if (PAR_C.size && !PAR_W) { const g = parTakeC(h, a, opt); if (g) return g; }
   const X = colGameInit(h, a, opt);
   let guard = 0; while (X.phase !== 'end' && guard++ < 900) cStep(X);
   return colGameFinish(X);
@@ -12174,14 +11877,19 @@ function advAdd(a, b) { for (const k in b) { const v = b[k]; if (typeof v === 'n
 const advLite = a => { const o = { ...a }; delete o.cm; delete o.rc; return o; };
 // season totals per team: offense and defense (the other side's offense). Route-vs-coverage detail is kept for your team only.
 function advStore(X) {
-  const g = X.g, s = g.s ?? CS.season; if (!CS.adv) CS.adv = {}; const S = CS.adv[s] || (CS.adv[s] = {});
+  const g = X.g;
+  if (X.log) g.adv = [advLite(X.adv[0]), advLite(X.adv[1])];
+  if (PAR_W) { g._adv = X.adv; return; } // (played ahead in a worker: the tally travels with the game and is booked when it's taken)
+  advMerge(g, X.adv);
+}
+function advMerge(g, adv) {
+  const s = g.s ?? CS.season; if (!CS.adv) CS.adv = {}; const S = CS.adv[s] || (CS.adv[s] = {});
   for (const side of [0, 1]) {
     const tid = side === 0 ? g.h : g.a, e = S[tid] || (S[tid] = { o: advNew(), d: advNew() }), keepRc = tid === CS.userTid;
-    const o = keepRc ? X.adv[side] : { ...X.adv[side], rc: {} }, d = keepRc ? X.adv[1 - side] : { ...X.adv[1 - side], rc: {} };
+    const o = keepRc ? adv[side] : { ...adv[side], rc: {} }, d = keepRc ? adv[1 - side] : { ...adv[1 - side], rc: {} };
     advAdd(e.o, o); advAdd(e.d, d); e.o.gp++; e.d.gp++;
   }
   for (const k of Object.keys(CS.adv)) if (+k < s - 1) delete CS.adv[k];
-  if (X.log) g.adv = [advLite(X.adv[0]), advLite(X.adv[1])];
 }
 
 // ---------- highlights: the plays worth watching again ----------
@@ -13719,6 +13427,59 @@ function colPitchPrompt(ans) {
   const user = `The head coach asked: "${String(ans.text).slice(0, 300)}"\n\nFor each player, write a one or two sentence pitch to the coach, in a recruiting coordinator's voice, using only that player's facts. Never add skills, traits, stats or roles his facts don't name. No numbers except the ones in his facts.\n\n${ans.rows.map((r, i) => `${i + 1}. ${r.facts}`).join('\n')}\n\nAnswer with JSON: {"pitches": ["pitch 1", ...]} with exactly ${ans.rows.length} pitches in that order.`;
   return { system: 'You work for the head coach of a college football program in a video game, as his recruiting coordinator. Be brief and concrete. Never invent stats, injuries, ratings or offers. No em dashes.', user, schema: { type: 'object', properties: { pitches: { type: 'array', items: { type: 'string', maxLength: 260 }, minItems: ans.rows.length, maxItems: ans.rows.length } }, required: ['pitches'] }, maxTokens: 70 * ans.rows.length + 30, temperature: 0.6 };
 }
+// ---------- games played ahead on other cores (the UI's worker pool, src/ui/00b-par.js; the pro half is 98-z-par.js) ----------
+// A week's games go to Web Workers, each holding a copy of the save, and what comes back waits here until colGame asks for
+// that game. It's used only if both teams still look exactly as they did when it was sent (players, injuries, depth, staff);
+// otherwise the game is played live as before. In a worker (PAR_W) a game books nothing league-wide: its advanced-stat tally
+// and the changes to its players travel back with it and are booked when it's taken. Nothing here is saved.
+let PAR_C = new Map(), PAR_W = false;
+const parStat = { hit: 0, miss: 0 };
+const parKeyC = (s, wk, h, a, opt) => `${s}|${wk}|${h}|${a}|${opt.neutral ? 1 : 0}|${opt.riv ?? ''}`;
+// what a game depends on: both teams and their players, as they are now
+const parFpC = (h, a) => [h, a].map(t => JSON.stringify(cteam(t)) + JSON.stringify(croster(t).sort((x, y) => x.id - y.id))).join('#');
+// a cached game only for the plain week games colPlayMatch plays (not title games, bowls or playoffs, which carry a name)
+const parPlain = opt => opt && !opt.name && !opt.log && Object.keys(opt).every(k => k === 'wk' || k === 'neutral' || k === 'riv');
+function parTakeC(h, a, opt) {
+  if (!parPlain(opt)) return null;
+  const k = parKeyC(CS.season, opt.wk || CS.week, h, a, opt), e = PAR_C.get(k); if (!e) return null;
+  PAR_C.delete(k);
+  if (e.fp !== parFpC(h, a)) { parStat.miss++; return null; }
+  parStat.hit++; parFx(e.fx);
+  const g = e.g; g.gid = CS.nextGid++;
+  if (g._adv) { advMerge(g, g._adv); delete g._adv; }
+  return g;
+}
+// changes a game made to its players (injuries, a new jersey number), as [set, deleted keys] by player id
+function parFx(fx) {
+  for (const id in fx || {}) { const p = CS.players[id]; if (!p) continue; const [set, del] = fx[id]; Object.assign(p, set); for (const k of del) delete p[k]; if ('tid' in set) RC = null; }
+}
+// the week's games that can be played ahead: this week's, not the user's own (it may be watched or coached)
+function parPlanC() {
+  if (!CS || CS.phase !== 'season') return [];
+  for (const k of PAR_C.keys()) { const [s, wk] = k.split('|').map(Number); if (s !== CS.season || wk < CS.week) PAR_C.delete(k); }
+  const wk = CS.week, lg = LIVE && LIVE.X && LIVE.X.g, out = [];
+  for (const m of CS.sched[wk - 1] || []) {
+    if (m.gid || isMe(m.h) || isMe(m.a) || (lg && (lg.h === m.h || lg.h === m.a))) continue;
+    if (PRE && PRE.h === m.h && PRE.a === m.a) continue;
+    const opt = { wk, neutral: !!m.neutral, riv: m.riv }, key = parKeyC(CS.season, wk, m.h, m.a, opt), fp = parFpC(m.h, m.a), e = PAR_C.get(key);
+    if (e && e.fp === fp) continue;
+    out.push({ w: 'c', key, h: m.h, a: m.a, opt, fp });
+  }
+  return out;
+}
+// in a worker: play these games and send back each result with what it changed
+function parPlayC(items) {
+  PAR_W = true;
+  try {
+    return items.map(it => {
+      const list = [...croster(it.h), ...croster(it.a)], before = new Map(list.map(p => [p.id, JSON.stringify(p)]));
+      const g = colGame(it.h, it.a, it.opt);
+      return { w: 'c', key: it.key, fp: it.fp, g, fx: parDiff(before, list) };
+    });
+  } finally { PAR_W = false; }
+}
+function parPutC(r) { PAR_C.set(r.key, { fp: r.fp, g: r.g, fx: r.fx }); }
+const parClearC = () => { PAR_C.clear(); };
 // ---------- setup, saves ----------
 function setUserC(tid) { CS.userTid = tid; CS.bg = false; if (CS.phase === 'season' && CS.week === 1) CS.recPts = recHours(tid); ensureCoaches(); cteam(tid).coach = null; CS.me = null; initMe(); autoRedshirtAll(); for (const r of recruits()) { if (r.int[tid] == null) { const f = recFit(r, cteam(tid)); if (f > 8) r.int[tid] = f; } } cnews(`You took over as head coach of ${cteam(tid).name}.`, true); }
 function autoRedshirtAll() { for (const t of CS.teams) autoRedshirt(t); }
@@ -13740,13 +13501,14 @@ function carRecruit(o) {
 }
 return {
   get S() { return CS; }, get COL_CONFS() { return confNames(); }, isInd, percentiles: colPercentiles, CLS, COL_ROS, COL_MAX, REC_PTS, PO_NAMES_C, STAR_PTS,
-  newCollege, setUser: setUserC, save: () => JSON.stringify(CS), load: j => { const d = typeof j === 'string' ? JSON.parse(j) : j; if (!d || d.mode !== 'college') throw new Error('Not a college save.'); CS = d; RC = null; CNAMES = null; LIVE = null; PRE = null; persAll(); if (CS.teams.some(t => t.chem == null)) chemAll(); fxUpgrade(); return CS; },
+  newCollege, setUser: setUserC, save: () => JSON.stringify(CS), load: j => { const d = typeof j === 'string' ? JSON.parse(j) : j; if (!d || d.mode !== 'college') throw new Error('Not a college save.'); CS = d; RC = null; CNAMES = null; LIVE = null; PRE = null; PAR_C.clear(); persAll(); if (CS.teams.some(t => t.chem == null)) chemAll(); fxUpgrade(); return CS; },
   news: cnews, flipOdds, signingBoard, cfpRankOf, PRIOS, REC_ACTS, BOARD_MAX, recView, recEst, boardOf, boardOpen, homeWeeks, scheduleVisit, stageOf, gradeLetter, setAutoRec: on => { CS.auto = !!on; }, get autoLog() { return CS.autoLog || null; }, get autoTot() { return CS.autoTot && CS.autoTot.s === CS.season ? CS.autoTot : null; }, get autoRec() { return CS.auto !== false; }, poGameName, projectedClass, isMe, RIV, rivalryTable, rivalsOf: rivalsOfC, coachInfo, acceptJob, declineJobs, seatLabel, genCoach: genCoachC, coachChange, TRAIN, setTraining, trainOf, springGame, POS_MOVES: COL_POS_MOVES, posChangePreview, changePos, POS_AWARDS, AA_SLOTS,
   weekBgStep, liveStart, liveState, playTxt: colPlayTxt, liveCall, live4th, liveSim, liveFinish, liveAbandon, liveIce, livePat, liveKick, liveHalf, liveTimeout, liveTempo, liveAuto, userNext, OFF_C, DEF_C, CALL_TIPS, ROUTE_NM: C_ROUTE_NM, COVS: C_COVS, colGame, gameStep: cStep, gameInit: colGameInit, get live() { return LIVE; }, awardsOf: s => (CS.awards || {})[s] || null, confSize,
   programInfo, recordBook, RB_KEYS, OFF_SCH, DEF_SCH, schemeFit, fitWord, hireCoord, fireCoord, coordCands, setPlan, filmStudy, scoutReport, ccOn, ccCoach, ccRank, ccOpenings, ccJob, ccLeave, ccScheme, ccHoldRelease, ccHcTake, carEnd: () => { if (CS) CS.car = null; }, exPull: () => (CS && CS.me ? exPull(CS.me) : 0), get cc() { return CS.cc || null; }, get plan() { return CS.plan || { off: 'bal', def: 'bal' }; }, get film() { return CS.film && CS.film.s === CS.season && CS.film.wk === CS.week ? CS.film : null; }, setDepth: (pos, ids) => { CS.udepth = CS.udepth || {}; if (ids) CS.udepth[pos] = ids.slice(); else delete CS.udepth[pos]; return null; },
   setFict: () => null, editTeam: editTeamC, renameConf: renameConfC, editPlayer: editPlayerC, packC, applyPackC, rosterCsv: rosterCsvC, importRoster: importRosterC, get edited() { return !!(CS && CS.edited); }, reviews: () => (CS && CS.reviews) || {}, lbl, rivName, rivTrophy, get fict() { return !!(CS && CS.fict); }, carRecruit, gradeVal, recFit, colDepth, COL_START, cplayer: id => CS.players[id], cplayers: () => cplayers(), heisList: () => (CS.hw && CS.hw.list) || [], get front() { return CS.front || null; }, adv: season => ((CS.adv || {})[season ?? CS.season]) || {}, advSeasons: () => Object.keys(CS.adv || {}).map(Number).sort((a, b) => b - a), get asks() { return (CS.asks || []).filter(x => x.s === CS.season); }, answerDemand, nilWant, PERS_C, PERS_TIP, chemWord, teamChem: tid => cteam(tid).chem ?? 60, get fronts() { return CS.fronts || []; },
   playWeek, playCCG, playPlayoffRound, holdSigningDay, portalDay, portalOffer, retainPlayer, talkStay, portalPlayers, portalLog, scholarships, recFitToday, portalAsk, progRep: () => CS.progRep || null, progSeen: () => { if (CS.progRep) CS.progRep.seen = true; }, recHours: tid => recHours(tid ?? CS.userTid), portalOffers: () => (CS.portal ? { ...CS.portal.offers } : {}), portalChance, nextSeason, simToEnd,
   team: cteam, roster: croster, recruits, commitsOf, classNeeds, recAction, nilLeft, nilUsed, colPower, rankOf, confStandings, clsOf, setRedshirt, phaseLabel: colPhase, poPairs: () => (CS.po && CS.phase === 'playoff' ? poPairsC() : []),
+  par: { plan: parPlanC, play: parPlayC, put: parPutC, clear: parClearC, stat: parStat, get size() { return PAR_C.size; } },
   PITCH_BTN, PITCH_COST, recDm, recPitch, cvxView, cvxSeen, cvxQueue, cvxPrompt, cvxWrite, cvxBadge, colAsk, colPitchPrompt,
 };
 })();
@@ -16263,6 +16025,87 @@ function stForce(kind) {
 }
 function carStoryView() { const c = S.car; if (!c) return null; const st = stS(); return { list: st.list, seen: st.seen }; }
 function carStorySeen(t) { stS().seen = t || Date.now(); }
+// ---------- games played ahead on other cores (the pro half; the college half is 98-college-8d-par.js) ----------
+// HM.par is what the UI's worker pool (src/ui/00b-par.js) and tests/par-pool.js use:
+//   plan(o)   this week's games that can be played ahead, in both worlds, with a fingerprint of each pair of teams
+//             (o.college: a college-only game; o.pre: the week's setup is run first, as the next sim is about to)
+//   snap(o)   the save a worker loads; work({ snap, items }) runs in the worker and returns the results; put(results)
+// simGame and colGame take a cached game only while both teams still match their fingerprint; any other game is played live.
+let PAR_P = new Map(), PAR_PW = false;
+const parStatP = { hit: 0, miss: 0 };
+const parKeyP = (s, wk, h, a, pbp) => `${s}|${wk}|${h}|${a}|${pbp ? 1 : 0}`;
+const parFpP = (h, a) => [h, a].map(t => JSON.stringify(team(t)) + JSON.stringify(roster(t))).join('#');
+function parTakeP(ht, at, opt) {
+  if (!Object.keys(opt).every(k => k === 'week' || k === 'pbp')) return null;
+  const k = parKeyP(S.season, opt.week, ht.tid, at.tid, opt.pbp), e = PAR_P.get(k); if (!e) return null;
+  PAR_P.delete(k);
+  const wx = e.fx.wx || {};
+  if (e.fp !== parFpP(ht.tid, at.tid) || Object.keys(wx).some(w => S.wx && S.wx[w] && JSON.stringify(S.wx[w]) !== JSON.stringify(wx[w]))) { parStatP.miss++; return null; }
+  parStatP.hit++;
+  let moved = false;
+  for (const id in e.fx.p) { const p = S.players[id]; if (!p) continue; const [set, del] = e.fx.p[id]; Object.assign(p, set); for (const k of del) delete p[k]; if ('tid' in set) moved = true; }
+  if (moved) touchPlayers();
+  S.wx = S.wx || {}; Object.assign(S.wx, wx);
+  const g = e.g; g.gid = S.nextGid++; return g;
+}
+// each player's changed top-level fields, as [set, deleted keys] by id (before: id -> JSON as it was)
+function parDiff(before, list) {
+  const fx = {};
+  for (const p of list) {
+    const b = before.get(p.id); if (b == null) continue; const old = JSON.parse(b), now = JSON.parse(JSON.stringify(p)), set = {}, del = [];
+    for (const k in now) if (JSON.stringify(now[k]) !== JSON.stringify(old[k])) set[k] = now[k];
+    for (const k in old) if (!(k in now)) del.push(k);
+    if (del.length || Object.keys(set).length) fx[p.id] = [set, del];
+  }
+  return fx;
+}
+function parPlanP() {
+  if (!S || !S.teams || S.phase !== 'regular' || inCamp() || fdOn() || !S.schedule[S.week - 1]) return [];
+  for (const k of PAR_P.keys()) { const [s, wk] = k.split('|').map(Number); if (s !== S.season || wk < S.week) PAR_P.delete(k); }
+  const wk = S.week, ct = carTidPro(), out = [];
+  for (const m of S.schedule[wk - 1]) {
+    if (m.gid || m.h === S.userTid || m.a === S.userTid) continue; // (the user's game is played by weekBegin, watched or not)
+    const pbp = ct != null && (m.h === ct || m.a === ct), key = parKeyP(S.season, wk, m.h, m.a, pbp), fp = parFpP(m.h, m.a), e = PAR_P.get(key);
+    if (e && e.fp === fp) continue;
+    out.push({ w: 'p', key, h: m.h, a: m.a, opt: { week: wk, pbp }, fp });
+  }
+  return out;
+}
+function parPlayP(items) {
+  PAR_PW = true;
+  try {
+    return items.map(it => {
+      const list = [...roster(it.h), ...roster(it.a)], before = new Map(list.map(p => [p.id, JSON.stringify(p)])), wx0 = new Set(Object.keys(S.wx || {}));
+      const g = simGame(team(it.h), team(it.a), it.opt), wx = {};
+      for (const k in S.wx || {}) if (!wx0.has(k)) wx[k] = S.wx[k];
+      return { w: 'p', key: it.key, fp: it.fp, g, fx: { p: parDiff(before, list), wx } };
+    });
+  } finally { PAR_PW = false; }
+}
+const parPreAhead = () => { const CS = COLLEGE.S; return uniOn() && S.uni.fg === 'college' && !UNI_BUSY && CS.phase === 'season' && S.season === CS.season && S.phase === 'regular' && !inCamp() && !fdOn() && proDone() === PRO_FOR_COL(CS.week) - 1 && S.weekPre !== S.season * 100 + S.week; };
+const proWorld = o => !(o && o.college) && !!(S && S.teams);
+const parApi = {
+  plan(o = {}) {
+    const out = [];
+    if (proWorld(o)) {
+      if (o.pre && S.phase === 'regular' && !inCamp() && !fdOn()) weekPre();
+      else if (parPreAhead()) { autoFixRoster(); weekPre(); } // (as uniBgStep would: the college world leads, so the pro week's setup can run ahead)
+      out.push(...parPlanP());
+    }
+    if ((o.college || uniOn()) && COLLEGE.S) out.push(...COLLEGE.par.plan());
+    // a career player's own team plays live: his ratings get the week's boost just before (carBoost), so a copy would never match
+    const cp = S && S.car ? carPlayer() : null, w = cp && cp.tid >= 0 ? (S.car.stage === 'pro' ? 'p' : 'c') : null;
+    return w ? out.filter(it => it.w !== w || (it.h !== cp.tid && it.a !== cp.tid)) : out;
+  },
+  snap: (o = {}) => (proWorld(o) ? { k: 'pro', j: JSON.stringify(S) } : { k: 'col', j: JSON.stringify(COLLEGE.S) }),
+  work(m) {
+    if (m.snap) { if (m.snap.k === 'pro') load(m.snap.j); else COLLEGE.load(m.snap.j); }
+    return [...parPlayP(m.items.filter(x => x.w === 'p')), ...COLLEGE.par.play(m.items.filter(x => x.w === 'c'))];
+  },
+  put(rs) { for (const r of rs) if (r.w === 'p') PAR_P.set(r.key, { fp: r.fp, g: r.g, fx: r.fx }); else COLLEGE.par.put(r); },
+  clear() { PAR_P.clear(); COLLEGE.par.clear(); },
+  get stat() { const c = COLLEGE.par.stat; return { hit: parStatP.hit + c.hit, miss: parStatP.miss + c.miss, cached: PAR_P.size + COLLEGE.par.size }; },
+};
 // ---------- stats helpers ----------
 function careerTotals(p) { const t = {}; for (const s in p.stats) for (const k in p.stats[s]) if (k !== 'tid') { if (['rl', 'rcl', 'fgl', 'pl'].includes(k)) t[k] = Math.max(t[k] || 0, p.stats[s][k]); else inc(t, k, p.stats[s][k]); } return t; }
 
@@ -16294,7 +16137,7 @@ function saveBreakdown() {
   const out = { players: kb(S.players), games: kb(S.games), history: kb([S.history, S.retired, S.hof, S.honors, S.recs, S.hofBallots]), other: 0 };
   out.total = kb(S); out.other = Math.max(0, out.total - out.players - out.games - out.history); return out;
 }
-function load(json) { const d = typeof json === 'string' ? JSON.parse(json) : json; if (!d || !d.teams || !d.players) throw new Error('That is not a Hash Marks save.'); S = d; touchPlayers(); if (d.uni && d.col) COLLEGE.load(d.col);
+function load(json) { const d = typeof json === 'string' ? JSON.parse(json) : json; if (!d || !d.teams || !d.players) throw new Error('That is not a Hash Marks save.'); S = d; PAR_P.clear(); touchPlayers(); if (d.uni && d.col) COLLEGE.load(d.col);
   for (const p of allPlayers()) if (!p.hist) p.hist = [{ s: S.season, age: p.age, ovr: p.ovr, pot: p.pot }];
   if (S.phase !== 'draft') ensurePicks();
   for (const p of allPlayers()) if (p.tid >= 0 && p.contract.gtd == null) p.contract.gtd = r1(gtdFor(p.contract.sal, p.contract.yrs) * 0.6);
@@ -16350,7 +16193,7 @@ function setAiPlans() {
 
 return {
   get S() { return S; }, LEAGUE, CONFS, confName, setConfNames, setStartRules, setLeagueSize, packPro, applyPackPro, fdStart, fdView, fdUserPick, fdAutoPick, fdAutoRest, fdAdvance, fdAfford, progRep: () => S.progRep || null, progSeen: () => { if (S.progRep) S.progRep.seen = true; }, autoPlayStep, scoutProfile, userScout, SCOUT_SPEC, SCOUT_LEAN, devRep: () => S.devRep || null, devRepSeen: () => { if (S.devRep) S.devRep.seen = true; }, get fdOn() { return fdOn(); }, rosterCsv, importRoster, parseTable, rosterRows, PACK_RULE_KEYS, cleanLogo, DIVS, POS, POS_ORDER, ATTR, ROSTER_MIN, ROSTER_MAX, WEEKS, get TRADE_DEADLINE() { return tradeDeadline(); }, PO_ROUNDS,
-  newLeague, setUser, save, load, simWeek, simToEndOfRegular, simPlayoffRound, reSign, toFreeAgency, faNextDay, toDraft, draftPlayer, aiDraftPick,
+  par: parApi, newLeague, setUser, save, load, simWeek, simToEndOfRegular, simPlayoffRound, reSign, toFreeAgency, faNextDay, toDraft, draftPlayer, aiDraftPick,
   simDraftToUser, simDraftToEnd, autoPickUser, startSeason, signPlayer, release, evaluateTrade, executeTrade, ensureDepth, teamRatings, roster, payroll, capRoom,
   team, freeAgents, prospects, marketValue, tradeValue, userRosterIssue, confSeeds, divStandings, pct, phaseLabel, fullName, nm, careerTotals, formerStatRows,
   compactState, saveBreakdown, TV, GRADE_PTS, restructurePreview, restructure, payCutPreview, askPayCut, appealSuspension, mentorOf, menteeOf, canMentor, setMentor, endMentor, marketSize, MARKET_NAME, fanMood, merchLeaders, starMerch, rsFuture, GM_STYLES, GM_PHIL, rivalGm, relLabel, gmPremium, gmValue, gmPickValue, gmInterest, gmRead, GM_READS, dlMarket, dlNext, DL_DAYS, shopAround, shopTake, SHOP_WANTS, setDifficulty, DIFF, inCamp, rosterMax, CAMP_MAX, playPreseasonGame, finishCamp, cutCandidates, resolveBattles, treatInjury, rushBack, PRACTICE, practiceOf, setPractice, practiceEffects, setReturner, returnerScore, autoReturner, returnersFor, discLabel, AGGR_NAME, tendText, hcTend, coachProfile, coachTree, disputeAction, visitFA, marketInfo, onMarket, stEdge, SET_OPTS, SET_DEFAULT, setSimSetting, h2hFor, franchiseSeasonLeaders, SEASON_LEAD_KEYS, proComparison, GRADE_CURVE, OFF_CALLS, DEF_CALLS, CALL_TIPS, offScore, defScore, lineup, r1, draftScore, picksOf, pickValue, pickLabel, projSlot, deadFor, deadIfCut, capYear, passerRating, autoFixRoster, minSalary, seasonPayroll,
@@ -16358,7 +16201,7 @@ return {
   ROLES, ROLE_NAME, coachOf, coachRat, staffBudget, staffSpend, hireCoach, fireCoach, userStaffGaps, trainerMult,
   userView, deepScout, scoutSd, scoutPointsFor,
   negotiation, scoreOffer, makeOffer, tagPrice, franchiseTag,
-  pruneOffers, acceptOffer, declineOffer, takeJob, teamRank, draftForecast, draftOddsFor, museum, warNextPick, teamNeeds, ratingWith, playoffOdds, tradeOdds, faSignRead, contractComps, negPatience, ODDS_SIMS,
+  pruneOffers, acceptOffer, declineOffer, takeJob, teamRank, draftForecast, draftOddsFor, warNextPick, teamNeeds, ratingWith, playoffOdds, tradeOdds, faSignRead, contractComps, negPatience, ODDS_SIMS,
   careerRecords, franchiseLeaders, REC_KEYS, REC_LABEL, hofScore, hofOutlook, hofWatch, LEAD_KEYS, mainTeam,
   weekBegin, weekEnd, watchWeek, uniBgStep, weekRestStep, weekFlush, weekPending: () => !!(S && S.weekLazy), poBegin, poEnd, poPairs, coachStart, coachFinish, runGen, scoutingReport, setGamePlan, OFF_PLANS, DEF_PLANS, gamePlanFor,
   vxView, vxSeen, vxAct, vxSend, vxCall, vxPrompt, vxWrite, vxQueuePro, vxBadgePro, vxSync,
@@ -16378,6 +16221,8 @@ return {
 };
 })();
 if (typeof module !== 'undefined') module.exports = HM;
+</script>
+<script>
 /* Hash Marks — football front-office UI */
 (() => {
 'use strict';
@@ -16455,7 +16300,7 @@ async function unpackSave(code) { if (code.startsWith('HMZ2:')) { const st = new
 function readIdx() { try { return JSON.parse(lsGet(IDX_KEY) || '[]'); } catch (e) { return []; } }
 function writeIdx(a) { try { lsSet(IDX_KEY, JSON.stringify(a)); } catch (e) {} }
 const newSlotId = () => 's' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
-function persist() { if (saving) { saveAgain = true; return; } saving = doSave().catch(() => {}).finally(() => { saving = null; if (saveAgain) { saveAgain = false; persist(); } }); }
+function persist() { parBg(true); if (saving) { saveAgain = true; return; } saving = doSave().catch(() => {}).finally(() => { saving = null; if (saveAgain) { saveAgain = false; persist(); } }); }
 async function doSave() {
   if (ui.mode === 'college' && !(S() && S().uni)) return doSaveCol();
   const s = S(); if (!s || s.userTid == null) return;
@@ -16477,7 +16322,7 @@ async function doSave() {
   }
 }
 function openSave(d) { if (d.mode === 'college') { HM.college.load(d); ui.mode = 'college'; ui.cView = 'home'; } else { HM.load(d); ui.mode = d.car ? 'career' : d.uni && d.uni.fg === 'college' ? 'college' : null; ui.cView = 'home'; ui.carView = 'home'; } }
-async function loadSlot(id) { const code = SLOTS.get(id); if (!code) throw new Error('missing'); openSave(JSON.parse(await unpackSave(code))); slotId = id; try { lsSet(CUR_KEY, id); } catch (e) {} }
+async function loadSlot(id) { const code = SLOTS.get(id); if (!code) throw new Error('missing'); openSave(JSON.parse(await unpackSave(code))); slotId = id; try { lsSet(CUR_KEY, id); } catch (e) {} parBg(); }
 // tests/ui.test.py and tests/shot.py open a saved game (a repro save or a test checkpoint) without going through a slot
 window.HMtest = { load: j => { openSave(typeof j === 'string' ? JSON.parse(j) : j); slotId = newSlotId(); ui.view = 'dashboard'; ui.modal = null; render(); } };
 async function migrateOld() { const old = lsGet(KEY); if (!old || readIdx().length) return; try { HM.load(old); slotId = newSlotId(); await doSave(); lsDel(KEY); } catch (e) {} }
@@ -16795,11 +16640,17 @@ const WEEK_BG_OK = new Set(['liveKick', 'liveToggle', 'liveSpeed', 'liveJump', '
 function weekBg() {
   clearTimeout(ui.weekBgT); ui.weekBgT = null;
   if (!HM.weekPending || !HM.weekPending()) return;
-  if (HM.weekRestStep()) { ui.weekBgT = setTimeout(weekBg, 40); return; }
+  if (parBusy()) { ui.weekBgT = setTimeout(weekBg, 60); return; }
+  // (games the workers already played take a moment each, so a tick books several of them)
+  const t0 = performance.now(); let more; while ((more = HM.weekRestStep()) && performance.now() - t0 < 25) ;
+  if (more) { ui.weekBgT = setTimeout(weekBg, 40); return; }
   if (!HM.weekPending()) persist();
 }
 function weekBgFlush() { if (!ui.weekBgT && !(HM.weekPending && HM.weekPending())) return; clearTimeout(ui.weekBgT); ui.weekBgT = null; const watched = HM.weekPending() && !(ui.live && ui.live.coach); HM.weekFlush(); if (watched && !HM.weekPending()) persist(); }
 function runAct(name, d) {
+  if (PAR.wait) { (PAR.queue || (PAR.queue = [])).push([name, { ...d }]); return 'norender'; } // (the week's games are still coming back from the workers)
+  if (PAR_WAIT.has(name) && !(d && d.parOk)) return parGate(() => { const r = runAct(name, { ...d, parOk: '1' }); if (r !== 'norender') render(); }, true);
+  if (PAR_SIDE.has(name)) parSide();
   if (!WEEK_BG_OK.has(name)) weekBgFlush();
   let snap = null;
   if (UNDOABLE[name] && S() && S().userTid != null) { try { snap = HM.save(); } catch (e) {} }
@@ -16807,6 +16658,7 @@ function runAct(name, d) {
   const r = actions[name](d);
   if (snap) { let changed = true; try { changed = HM.save() !== snap; } catch (e) {} if (changed) ui.undo = { label: UNDOABLE[name], snap }; }
   if (UNDO_CLEARS.includes(name)) ui.undo = null;
+  if (UNDO_CLEARS.includes(name) || PAR_ACTS.has(name) || PAR_NEW.has(name)) parBg();
   return r;
 }
 // ---------- top bar ----------
@@ -16834,7 +16686,7 @@ function topbar() {
     meta: [`<span>${E(seasonLbl)} · <strong>${E(HM.phaseLabel())}</strong></span>`, `<span>Record <strong class="num">${recStr(t.rec)}</strong> · ${ord(place)} ${HM.confName(t.conf)} ${HM.DIVS[t.div % 4]}</span>`, `<span>Cap space <strong class="num">${money(HM.capRoom(s.userTid))}</strong></span>`, `<span>Roster <strong class="num">${HM.roster(s.userTid).length}/${HM.rosterMax()}</strong></span>`],
     undo: ui.undo ? `<button class="btn tb-undo" data-act="undo" title="Undo ${E(ui.undo.label)} (Ctrl/Cmd + Z)">↶ <span>Undo ${E(ui.undo.label)}</span></button>` : '', acts: topActs() });
 }
-const NAV = [['dashboard', 'Front office'], ['todo', 'To-do'], ['roster', 'Roster'], ['depth', 'Game plan'], ['schedule', 'Schedule & scores'], ['standings', 'Standings'], ['stats', 'League stats'], ['fa', 'Free agents'], ['trade', 'Trades'], ['draft', 'Draft'], ['inbox', 'Inbox'], ['vox', 'Messages'], ['asst', 'Assistant'], ['staff', 'Coaching staff'], ['dev', 'Player development'], ['pulse', 'League pulse'], ['finance', 'Finances'], ['history', 'History'], ['museum', 'Franchise museum'], ['hof', 'Hall of Fame'], ['gm', 'GM career'], ['editor', 'League editor'], ['health', 'League health'], ['league', 'League & saves'], ['help', 'Help']];
+const NAV = [['dashboard', 'Front office'], ['todo', 'To-do'], ['roster', 'Roster'], ['depth', 'Game plan'], ['schedule', 'Schedule & scores'], ['standings', 'Standings'], ['stats', 'League stats'], ['fa', 'Free agents'], ['trade', 'Trades'], ['draft', 'Draft'], ['inbox', 'Inbox'], ['vox', 'Messages'], ['asst', 'Assistant'], ['staff', 'Coaching staff'], ['dev', 'Player development'], ['pulse', 'League pulse'], ['finance', 'Finances'], ['history', 'History'], ['hof', 'Hall of Fame'], ['gm', 'GM career'], ['editor', 'League editor'], ['health', 'League health'], ['league', 'League & saves'], ['help', 'Help']];
 function nav() {
   const s = S();
   const badge = v => {
@@ -16850,6 +16702,99 @@ function nav() {
   return navGroups(NAV_GROUPS, ui.view, 'nav', badge, '', `<button class="nav-search" data-act="searchOpen">${ICON.search} Find a player</button>`);
 }
 
+// ---------- the week's games on other cores ----------
+// Web Workers, each running this page's own engine script (<script id="hm-engine">) with a copy of the save, play the week's
+// games ahead; the engine takes each one when the sim reaches it, if both teams are unchanged, and plays anything else live
+// (HM.par). A sim that shows your game first (watch, coach, quick sim) starts at once and the workers play the rest alongside:
+// the loops that book the rest of the week (weekBg, cQuick, cBg) wait for them (parBusy). A sim with nothing to show first
+// (career Next, each step of a multi-week sim) waits for them (parGate). After a sim the next week's games start in the
+// background (parBg), so the next click usually finds them done. Without workers everything plays on the page as before.
+const PAR = window.HMpar = { ws: null, n: 0, run: null, wait: false, off: false, seq: 0, bgT: null, idleT: null };
+// the actions that play games: the ones that show your game first, and the ones that wait (multi-week sims go through
+// runSim, which waits before every step)
+const PAR_SIDE = new Set(['week', 'quickWeek', 'coachWeek', 'cWeek', 'cWatch', 'carWatch']), PAR_WAIT = new Set(['carNext']);
+const PAR_ACTS = new Set([...PAR_SIDE, ...PAR_WAIT]);
+// and the ones that start or open a game, after which the first week's games can start in the background
+const PAR_NEW = new Set(['cBegin', 'carBegin', 'openSlot', 'importSave']);
+function parWorkers() {
+  if (PAR.ws || PAR.off) return PAR.ws;
+  try {
+    const eng = document.getElementById('hm-engine');
+    if (!eng || typeof Worker === 'undefined') { PAR.off = true; return null; }
+    const src = eng.textContent + '\nself.onmessage = e => { const m = e.data; try { postMessage({ id: m.id, res: HM.par.work(m) }); } catch (err) { postMessage({ id: m.id, err: String(err && err.stack || err) }); } };';
+    const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+    PAR.n = Math.max(1, Math.min(6, (navigator.hardwareConcurrency || 4) - 2));
+    PAR.ws = Array.from({ length: PAR.n }, () => { const w = new Worker(url); w.cb = new Map(); w.onmessage = e => { const f = w.cb.get(e.data.id); if (f) { w.cb.delete(e.data.id); f(e.data); } }; w.onerror = () => parDown(); return w; });
+  } catch (e) { console.warn('worker pool off:', e); PAR.off = true; PAR.ws = null; }
+  return PAR.ws;
+}
+// a worker failed: stop using them (everything still plays on the page)
+function parDown() { PAR.off = true; if (PAR.ws) for (const w of PAR.ws) { for (const f of w.cb.values()) f({ err: 'worker stopped' }); w.terminate(); } PAR.ws = null; try { HM.par.clear(); } catch (e) {} }
+const parAsk = (w, msg) => new Promise((res, rej) => { const id = ++PAR.seq; w.cb.set(id, r => (r.err ? rej(new Error(r.err)) : res(r.res))); w.postMessage({ ...msg, id }); });
+const parOpt = pre => ({ pre, college: ui.mode === 'college' && !HM.uniOn() });
+function parPlan(pre) { try { return HM.par.plan(parOpt(pre)); } catch (e) { console.warn(e); return []; } }
+// the games go out two at a time, each worker coming back for more when it's done: on a laptop with fast and slow cores the
+// fast ones end up playing most of them. A worker gets the save with its first pair (later pairs are other teams' games, so
+// what the earlier ones changed in its copy doesn't matter); each result is cached as soon as it's back.
+function parSend(items) {
+  const t0 = performance.now(), snap = HM.par.snap(parOpt(false)), q = items.slice(), CH = 2;
+  const one = async w => { let first = true; while (q.length) { const x = q.splice(0, CH); HM.par.put(await parAsk(w, first ? { snap, items: x } : { items: x })); first = false; } };
+  const p = Promise.all(PAR.ws.map(one))
+    .then(() => { PAR.last = { n: items.length, ms: Math.round(performance.now() - t0) }; }, e => console.warn('games played ahead were dropped:', e))
+    .finally(() => { if (PAR.run === p) PAR.run = null; parIdle(); });
+  PAR.run = p; return p;
+}
+// everything the next sim needs, sent and back (the week's setup runs first, as the sim is about to)
+async function parReady() {
+  for (let i = 0; i < 3; i++) {
+    if (PAR.run) { await PAR.run; continue; }
+    if (!PAR.ws) return;
+    const items = parPlan(true); if (!items.length) return;
+    await parSend(items);
+  }
+}
+// run fn once the workers have played what it will need; fn runs at once when there's nothing to wait for
+function parGate(fn, show) {
+  if (!parWorkers()) return fn();
+  if (!PAR.run) { const items = parPlan(true); if (!items.length) return fn(); parSend(items); }
+  if (show) { PAR.wait = true; parWaitShow(true); } // (a multi-week sim shows its own progress and keeps its Cancel button)
+  const t0 = performance.now();
+  parReady().catch(e => console.warn(e)).finally(() => {
+    PAR.waited = Math.round(performance.now() - t0); if (show) { PAR.wait = false; parWaitShow(false); }
+    try { fn(); } finally { parBg(); }
+    // clicks made while it waited run now, in order, as they did when a sim held the page (a second Next plays a second week)
+    const q = (PAR.queue || []).splice(0);
+    (function next() { while (q.length && !PAR.wait) { const [name, d] = q.shift(); const r = runAct(name, d); if (r !== 'norender') render(); } if (q.length) (PAR.queue || (PAR.queue = [])).unshift(...q); })();
+  });
+  return 'norender';
+}
+// a sim that shows your game first: the workers start on the rest, and the sim goes ahead at once
+function parSide() { if (!parWorkers()) return; parReady().catch(e => console.warn(e)).finally(() => parBg()); }
+// a loop booking the rest of a week asks first: true while games are still coming back (check again shortly)
+const parBusy = () => !!PAR.run;
+function parWaitShow(on) {
+  let el = document.querySelector('.par-wait');
+  if (on && !el) { el = document.createElement('div'); el.className = 'toast par-wait'; el.textContent = "Playing this week's games…"; document.body.appendChild(el); }
+  else if (!on && el) el.remove();
+}
+// the next week's games, in the background, once things settle (not while a sim is running or the page is waiting).
+// persist() asks after every save; it only looks again once the calendar has moved (a click on a sim checks everything anyway)
+const parClock = () => { const s = HM.S, c = HM.college.S; return [s && s.teams ? `${s.season}|${s.phase}|${s.week}|${s.weekLazy ? 1 : 0}` : '', c ? `${c.season}|${c.phase}|${c.week}` : '', ui.mode].join('/'); };
+function parBg(fromSave) {
+  clearTimeout(PAR.bgT);
+  PAR.bgT = setTimeout(() => {
+    if (PAR.wait || PAR.run || (ui.sim && !ui.sim.done) || PAR.off) return;
+    let k = ''; try { k = parClock(); } catch (e) { return; }
+    if (fromSave && k === PAR.clock) return;
+    if (!parWorkers()) return;
+    PAR.clock = k; const items = parPlan(false); if (items.length) parSend(items);
+  }, 300);
+}
+// the workers hold a copy of the league each (about 150 MB): let them go after a few idle minutes
+function parIdle() {
+  clearTimeout(PAR.idleT);
+  PAR.idleT = setTimeout(() => { if (PAR.run || !PAR.ws) return; for (const w of PAR.ws) w.terminate(); PAR.ws = null; }, 180000);
+}
 // ---------- clickable names in free text ----------
 // News, headlines, mail, stories and play-by-play are plain sentences. LN(text) escapes the text and turns every
 // player name it recognises into the same clickable link plink() makes. Names are matched against the pro league
@@ -17074,7 +17019,6 @@ const NAV_ICO = {
 };
 NAV_ICO.dashboard = NAV_ICO.home;
 // career mode names its sections differently
-NAV_ICO.museum = '<path d="M3 9l9-5 9 5M5 10v8M9.7 10v8M14.3 10v8M19 10v8M3 20h18"/>';
 Object.assign(NAV_ICO, { team: NAV_ICO.roster, career: NAV_ICO.hof, news: NAV_ICO.history, lawards: NAV_ICO.awards, lfront: NAV_ICO.front, lhist: NAV_ICO.history, phist: NAV_ICO.history, lpo: NAV_ICO.playoff, lpolls: NAV_ICO.polls, lrivals: NAV_ICO.rivals, lsched: NAV_ICO.schedule, psched: NAV_ICO.schedule, lstand: NAV_ICO.standings, pstand: NAV_ICO.standings, phof: NAV_ICO.hof, ppulse: NAV_ICO.pulse });
 const navIco = k => `<svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${NAV_ICO[k] || NAV_ICO._}</svg>`;
 // the sidebar in groups. groups: [{ t: title or null, items: [[key, label]], more: true for the collapsible one }]
@@ -17112,7 +17056,7 @@ const NAV_GROUPS = [
   { t: null, items: [['dashboard', 'Front office'], ['todo', 'To-do'], ['inbox', 'Inbox'], ['vox', 'Messages']] },
   { t: 'Team', items: [['roster', 'Roster'], ['dchart', 'Depth chart'], ['depth', 'Game plan'], ['staff', 'Coaching staff'], ['dev', 'Player development'], ['finance', 'Finances']] },
   { t: 'Front office', items: [['fa', 'Free agents'], ['trade', 'Trades'], ['asst', 'Assistant'], ['draft', 'Draft'], ['gm', 'GM career']] },
-  { t: 'League', items: [['schedule', 'Schedule & scores'], ['standings', 'Standings'], ['stats', 'League stats'], ['pulse', 'League pulse'], ['college', 'College football'], ['history', 'History'], ['museum', 'Franchise museum'], ['hof', 'Hall of Fame']] },
+  { t: 'League', items: [['schedule', 'Schedule & scores'], ['standings', 'Standings'], ['stats', 'League stats'], ['pulse', 'League pulse'], ['college', 'College football'], ['history', 'History'], ['hof', 'Hall of Fame']] },
   { t: 'More', more: true, items: [['health', 'League health'], ['editor', 'League editor'], ['league', 'League & saves'], ['help', 'Help']] },
 ];
 // ---------- "Next up": the top of every home page ----------
@@ -21798,7 +21742,9 @@ function cQuick() {
   const Q = ui.cq; clearTimeout(ui.cqT); ui.cqT = null; if (!Q) return;
   if (Q.cs !== CSx() || ui.mode !== 'college') { ui.cq = null; return; } // (another save or mode was opened: what's played stays)
   if (FV.raf) { ui.cqT = setTimeout(cQuick, 120); return; }
-  let more = false; try { more = HM.uniBgStep(true); } catch (e) { console.error(e); more = false; }
+  if (parBusy() && Q.shown) { ui.cqT = setTimeout(cQuick, 60); return; } // (your game first, then the rest once the workers are back)
+  // (games the workers already played take a moment each, so a tick books several of them)
+  let more = false; const t0 = performance.now(); try { do more = HM.uniBgStep(true); while (more && performance.now() - t0 < 25); } catch (e) { console.error(e); more = false; }
   const c = CSx(), ms = c.sched[Q.wk - 1] || [], m = ms.find(x => x.h === c.userTid || x.a === c.userTid);
   if (!Q.shown && m && m.gid) { Q.shown = true; if (!ui.modal) ui.modal = { type: 'cbox', id: m.gid }; render(); }
   if (more) {
@@ -22188,8 +22134,8 @@ Object.assign(actions, {
 // never while a play is being drawn, so finishing the game only has the wrap-up left
 function cBg() {
   clearTimeout(ui.cBgT); ui.cBgT = null; if (!HC().live) return;
-  if (FV.raf) { ui.cBgT = setTimeout(cBg, 120); return; }
-  let more = false; try { more = HM.uniBgStep(); } catch (e) { more = false; }
+  if (FV.raf || parBusy()) { ui.cBgT = setTimeout(cBg, FV.raf ? 120 : 60); return; }
+  let more = false; const t0 = performance.now(); try { do more = HM.uniBgStep(); while (more && performance.now() - t0 < 12); } catch (e) { more = false; }
   if (more) ui.cBgT = setTimeout(cBg, 30);
 }
 // ---------- your job ----------
@@ -23810,8 +23756,13 @@ function runSim(o) {
   if (simBusy()) return;
   const st = ui.sim = { title: o.title, unit: o.unit, rows: [], n: 0, sub: '', head: '', done: null, cancel: false };
   const upd = () => { try { if (o.head) st.head = o.head(); if (o.sub) st.sub = o.sub(); } catch (e) {} };
-  const finish = (msg, err) => { st.done = msg; st.err = !!err; upd(); persist(); try { if (o.after) o.after(st); } catch (e) {} render(); };
+  const finish = (msg, err) => { st.done = msg; st.err = !!err; upd(); persist(); try { if (o.after) o.after(st); } catch (e) {} render(); parBg(); };
   const tick = () => {
+    if (ui.sim !== st) return;
+    if (st.cancel) return finish('Stopped. Everything played so far is saved.');
+    parGate(() => tick2(), false);
+  };
+  const tick2 = () => {
     if (ui.sim !== st) return;
     if (st.cancel) return finish('Stopped. Everything played so far is saved.');
     let r;
@@ -24926,105 +24877,6 @@ Object.assign(actions, {
   cfaSel: d => { ui.cfaSel = +d.v; },
   hofReveal: d => { ui.hofOpen = +d.v; },
 });
-// ---------- the franchise museum: one place for the save's history, styled as an old museum ----------
-// Galleries: the ring case, the title team photo (and where they are now), the archive (old trades and drafts graded
-// after the fact), the home field (banners, the home record, the building's records) and the hall of plaques (ring of
-// honor, retired numbers). Walnut and damask walls, brass, cream placards and serif type; the same in both themes.
-const MUS_ROOMS = [['rings', 'I', 'The Ring Case'], ['team', 'II', 'Title Teams'], ['vault', 'III', 'The Archive'], ['home', 'IV', 'Home Field'], ['plaques', 'V', 'Hall of Plaques']];
-const musLink = x => x.act && P(x.id) ? plink(P(x.id)) : x.id != null && retiredById(x.id) ? rlink(x.id, x.name) : E(x.name);
-const MUS_GOLD = '#D9B45A', MUS_SILVER = '#C9CED6';
-const musRoom = (title, sub, body, cls = '') => `<section class="mu-room ${cls}"><div class="mu-h"><h3>${title}</h3>${sub ? `<span>${sub}</span>` : ''}</div>${body}</section>`;
-const musCard = (h, b) => `<div class="mu-card">${h ? `<div class="mu-ct">${h}</div>` : ''}${b}</div>`;
-const musEmpty = t => `<p class="mu-note">${t}</p>`;
-function musRing(r, t) {
-  const c = r.won ? MUS_GOLD : MUS_SILVER, d = r.won ? '#8A6A22' : '#7D838C';
-  return `<svg class="mu-ring" viewBox="0 0 120 120" role="img" aria-label="${r.s} ${r.won ? 'championship' : 'conference'} ring">
-    <defs><linearGradient id="mrg${r.s}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c}"/><stop offset=".5" stop-color="#fff8e0" stop-opacity=".9"/><stop offset="1" stop-color="${d}"/></linearGradient></defs>
-    <circle cx="60" cy="70" r="37" fill="none" stroke="url(#mrg${r.s})" stroke-width="10"/><circle cx="60" cy="70" r="30.5" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="1.5"/>
-    <rect x="31" y="15" width="58" height="42" rx="12" fill="${t.color}" stroke="url(#mrg${r.s})" stroke-width="4"/>
-    <text x="60" y="35" text-anchor="middle" class="mu-ry" fill="${c}">${r.s}</text><text x="60" y="49" text-anchor="middle" class="mu-ra">${E(t.abbr)}</text>
-    ${[0, 1, 2, 3, 4, 5, 6].map(i => `<circle cx="${36 + i * 8}" cy="20" r="1.7" fill="#fff"/>`).join('')}</svg>`;
-}
-function musRingsRoom(m, t) {
-  if (!m.rings.length) return musRoom('The Ring Case', 'empty, for now', `<div class="mu-velvet">${musEmpty(`Win your conference and the first ring goes on the cushion: silver for reaching the ${E(HM.LEAGUE.final)}, gold for winning it.`)}</div>`);
-  const sel = m.rings.find(r => r.s === ui.musRing) || m.rings[0];
-  const line = r => `${r.won ? 'Defeated' : 'Fell to'} ${E(T(r.opp).city + ' ' + T(r.opp).name)}${r.sc ? `, ${r.sc[0]}–${r.sc[1]}` : ''}`;
-  return musRoom('The Ring Case', `${m.rings.filter(r => r.won).length} gold · ${m.rings.filter(r => !r.won).length} silver`, `<div class="mu-velvet"><div class="mu-case">${m.rings.map(r => `<button class="mu-rc${r === sel ? ' on' : ''}" data-act="musRing" data-v="${r.s}">${musRing(r, t)}<div class="mu-cush"></div><div class="mu-tag">${r.s}<br><i>${r.won ? 'Champions' : 'Conference champions'}</i></div></button>`).join('')}</div></div>
-  <div class="mu-placard"><div class="mu-pl-k">Exhibit · ${sel.s}</div><div class="mu-pl-t">${sel.won ? E(HM.LEAGUE.final) + ' Championship Ring' : 'Conference Championship Ring'}</div>
-    <p>${line(sel)}. The ${E(t.name)} went ${E(sel.rec)}.${sel.fmvp ? ` ${E(sel.fmvp)} was named the ${E(HM.LEAGUE.final)} MVP.` : ''}${sel.mvp ? ` ${E(sel.mvp)} was the league MVP.` : ''}</p>
-    <div class="mu-eng">Engraved inside: “${E(sel.rec)}${sel.fmvp ? ' · ' + E(sel.fmvp.toUpperCase()) : ''}”</div>
-    <div class="mu-pl-f">${sel.yours ? 'Won on your watch.' : 'Won before your time.'}</div></div>`);
-}
-function musTeamRoom(m, t) {
-  if (!m.titles.length) return musRoom('Title Teams', '', `<div class="mu-frame mu-blank"><div class="mu-photo">${musEmpty(`Win a ${E(HM.LEAGUE.final)} and the team that did it hangs here, with where each of them went.`)}</div></div>`);
-  const sel = m.titles.find(x => x.s === ui.musTitle) || m.titles[0], full = ui.musAll, shown = full ? sel.roster : sel.roster.slice(0, 24);
-  const sm = sel.sum, bits = [sm.hof && `${sm.hof} in the Hall of Fame`, sm.play && `${sm.play} still playing${sm.here ? ` (${sm.here} still here)` : ''}`, sm.coach && `${sm.coach} coaching`, sm.ret && `${sm.ret} retired or out of the league`].filter(Boolean);
-  return musRoom('Title Teams', m.titles.length > 1 ? `<span class="mu-yrs">${m.titles.map(x => `<button data-act="musTitle" data-v="${x.s}" aria-pressed="${x === sel}">${x.s}</button>`).join('')}</span>` : '',
-    `<div class="mu-frame"><div class="mu-photo">${shown.map(x => `<div class="mu-pp"><span class="fc" style="width:54px;height:54px">${faceSVG(x.face, 54, t.color)}</span>
-      <div class="mu-pn">${musLink(x)}</div><div class="mu-ps">${E(x.pos)}${x.num ? ' · No. ' + x.num : ''}${x.star ? ' · ' + E(x.star) : ''}</div><div class="mu-now k-${x.now.k}">${E(x.now.txt)}</div></div>`).join('')}</div></div>
-    <div class="mu-placard mu-narrow"><div class="mu-pl-k">${sel.s} · ${E(t.city + ' ' + t.name)}</div><div class="mu-pl-t">${E(HM.LEAGUE.final)} Champions</div>
-      <p>Where are they now (${S().season}): ${bits.join(', ') || '—'}.</p>${sel.roster.length > 24 ? `<button class="mu-btn" data-act="musAll">${full ? 'Show the starters' : `Show all ${sel.roster.length}`}</button>` : ''}</div>`);
-}
-function musVaultRoom(m, t) {
-  const gr = g => g ? `<span class="mu-stamp g${g[0]}">${g}</span>` : '<span class="mu-stamp early">too early</span>';
-  const side = a => a.map(x => `${x.pick ? E(x.pick) + ': ' : ''}${x.id != null ? musLink(x) : E(x.name)}${x.open ? ' <i>(not used yet)</i>' : x.lost ? ' <i>(no record)</i>' : x.val != null ? ` <i>${x.val}</i>` : ''}`).join(', ') || 'nothing';
-  const trades = m.trades.length ? m.trades.map(x => `<div class="mu-lr"><span class="mu-ly">${x.s}</span><div><div>Acquired ${side(x.got)}</div><div class="mu-lsub">for ${side(x.gave)}, from ${E(T(x.opp).abbr)}</div></div><b class="${x.net > 0 ? 'pos' : x.net < 0 ? 'neg' : ''}">${x.net > 0 ? '+' : ''}${x.net}</b>${gr(x.grade)}</div>`).join('')
-    : musEmpty('No trades on file. Every deal you make is entered here and graded once both sides have had two seasons to play out.');
-  const open = ui.musDraft;
-  const drafts = m.drafts.length ? m.drafts.map(c => `<button class="mu-lr mu-dc${open === c.s ? ' on' : ''}" data-act="musDraft" data-v="${c.s}"><span class="mu-ly">${c.s}</span><span>${c.picks.length} pick${c.picks.length === 1 ? '' : 's'}${c.best ? ` · best: ${E(c.best)}` : ''}</span><b></b>${gr(c.grade)}</button>
-    ${open === c.s ? `<div class="mu-picks">${c.picks.map(x => `<div class="mu-pk"><span class="mu-ly">${x.rd}.${x.pk}</span><span>${musLink(x)} <i>${E(x.pos)}</i>${x.tag ? ` <span class="mu-flag ${x.tag === 'Steal' ? 'pos' : 'neg'}">${x.tag}</span>` : ''}</span><span class="mu-lsub">${E(x.now.txt)}</span><b>${x.val}</b>${gr(x.grade)}</div>`).join('')}</div>` : ''}`).join('')
-    : musEmpty('Your first draft class is entered after the draft.');
-  const max = Math.max(1, ...m.seasons.map(h => h.w + h.l + h.t)), bars = m.seasons.slice(-24);
-  const chart = bars.length ? `<svg class="mu-ch" viewBox="0 0 ${Math.max(10, bars.length) * 34} 96" preserveAspectRatio="xMinYMax meet">${bars.map((h, i) => { const ht = Math.max(2, h.w / max * 70), x = i * 34 + 4, won = /^Won/.test(h.res), fin = h.res === 'Lost in ' + HM.LEAGUE.final, po = !/Missed/.test(h.res);
-    return `<rect x="${x}" y="${80 - ht}" width="26" height="${ht}" fill="${won ? '#B8892B' : fin ? '#8E949C' : po ? '#5E3A2A' : 'rgba(60,40,25,.28)'}"><title>${h.s}: ${h.w}-${h.l}${h.t ? '-' + h.t : ''}, ${E(h.res.toLowerCase())}</title></rect><text x="${x + 13}" y="${76 - ht}" text-anchor="middle" class="mu-cv">${h.w}</text><text x="${x + 13}" y="93" text-anchor="middle" class="mu-cv">’${String(h.s).slice(2)}</text>`; }).join('')}</svg>` : musEmpty('No finished seasons yet.');
-  return musRoom('The Archive', 'the ledgers, graded after the fact', `<div class="mu-two"><div class="mu-ledger"><div class="mu-lh">Trades, best to worst</div>${trades}</div><div class="mu-ledger"><div class="mu-lh">Draft classes</div>${drafts}</div></div>
-  <div class="mu-ledger"><div class="mu-lh">Every season <span>wins · gold, a title · grey, lost the final · brown, the playoffs</span></div>${chart}</div>
-  <p class="mu-note">Value counts the games a player played and how good he was in them, plus the honors he won, only while he was with that team. A draft grade compares a class with what picks in the same spots have produced across the league.</p>`);
-}
-function musHomeRoom(m, t) {
-  const h = m.home, hf = h.hf, gl = HM.GREC_LABEL || {};
-  const pennant = b => `<svg class="mu-pen" viewBox="0 0 60 96" role="img" aria-label="${b.s} ${b.won ? 'champions' : 'conference champions'}"><line x1="0" y1="2" x2="60" y2="2" stroke="#6B4A2B" stroke-width="4"/><path d="M5 2 H55 V74 L30 94 L5 74 Z" fill="${t.color}" stroke="${b.won ? MUS_GOLD : MUS_SILVER}" stroke-width="2.5"/><path d="M5 2 H55 V12 H5 Z" fill="${b.won ? MUS_GOLD : MUS_SILVER}"/><text x="30" y="40" text-anchor="middle" class="mu-py" fill="${b.won ? MUS_GOLD : MUS_SILVER}">${b.s}</text><text x="30" y="57" text-anchor="middle" class="mu-pt">${b.won ? 'CHAMPIONS' : 'CONFERENCE'}</text></svg>`;
-  const rafters = h.banners.length ? `<div class="mu-raft">${h.banners.map(pennant).join('')}</div>` : musEmpty('Empty rafters for now. Title and conference banners hang here.');
-  const recs = hf ? Object.entries(hf.recs || {}).map(([k, r]) => `<div class="mu-row"><span>${E(gl[k] || k)}</span><span class="mu-lsub">${E(r.name)} (${E(T(r.tid)?.abbr || '')}${r.tid === m.tid ? '' : ', visitor'}), ${r.s}</span><b>${r.v}</b></div>`).join('') : '';
-  const big = hf && hf.big.length ? hf.big.map(x => `<div class="mu-row"><span>${x.s} · ${x.po ? E(HM.PO_ROUNDS[x.po - 1]) : 'Week ' + x.wk}</span><span class="mu-lsub">over ${E(T(x.opp)?.abbr || '')}</span><b>${x.us}–${x.them}</b></div>`).join('') : musEmpty('No home wins on file yet.');
-  const streak = hf ? (hf.run > 0 ? `W${hf.run}` : hf.run < 0 ? `L${-hf.run}` : '—') : '—';
-  const brass = a => `<div class="mu-brass">${a.map(([b, l]) => `<div><b>${b}</b><span>${l}</span></div>`).join('')}</div>`;
-  return musRoom('Home Field', `${h.po} playoff trip${h.po === 1 ? '' : 's'} in ${h.seasons} season${h.seasons === 1 ? '' : 's'}`, `<div class="mu-rafters">${rafters}</div>
-  ${brass([[hf ? `${hf.w}-${hf.l}${hf.t ? '-' + hf.t : ''}` : '—', 'Home record'], [hf ? `${hf.pw}-${hf.pl}` : '—', 'Home playoffs'], [hf && hf.best ? hf.best.n : '—', `Best home streak${hf && hf.best ? ', ' + hf.best.s : ''}`], [streak, 'Current streak'], [h.seats ? h.seats.toLocaleString() : '—', 'Seats']])}
-  <div class="mu-two">${musCard('Great days in this building', big)}${musCard('Building records <i>anyone, home or visitor</i>', recs || musEmpty('The building\'s single-game records start with the next home game.'))}</div>
-  <p class="mu-note">${hf ? `Home games on file since ${hf.since}.` : 'Home games are kept from this version on.'}${h.opened ? ` The new stadium opened in ${h.opened}.` : ''}</p>`);
-}
-function musPlaquesRoom(m, t) {
-  const s = S(), mine = m.tid === s.userTid;
-  const nums = m.retNums.length ? `<div class="mu-nums">${m.retNums.map(r => `<div class="mu-jersey" style="--tc:${t.color}"><b>${r.num}</b><span>${E(r.name)}</span><i>retired ${r.s}</i></div>`).join('')}</div>` : musEmpty('No numbers retired yet. Ring of Honor members can have theirs retired.');
-  const hon = x => [x.hon.MVP && `${x.hon.MVP}× MVP`, x.hon.AP && `${x.hon.AP}× All-Pro`, x.hon.PB && `${x.hon.PB}× Pro Bowl`, x.hon.RING && `${x.hon.RING}× champion`].filter(Boolean).join(' · ');
-  const plaques = m.plaques.length ? `<div class="mu-plqs">${m.plaques.map(x => `<div class="mu-plq${x.hof ? ' hof' : ''}"><div class="mu-pq-k">${E(x.pos)}${x.num ? ' · No. ' + x.num : ''}${x.hof ? ` · Hall of Fame ${x.hof}` : ''}</div>
-    <div class="mu-pq-nm">${musLink({ id: x.rid, name: x.name })}</div><div class="mu-pq-rule"></div><div>${x.yrs ? E(x.yrs) + ' · ' : ''}${x.gp} games · inducted ${x.s}</div>
-    ${x.tot ? `<div class="mu-pq-ln">${E(careerLine(x.pos, x.tot))}</div>` : ''}${hon(x) ? `<div class="mu-pq-hn">${hon(x)}</div>` : ''}
-    ${mine && x.num && !m.retNums.some(r => r.num === x.num) ? `<button class="mu-btn" data-act="retNum" data-id="${x.rid}">Retire No. ${x.num}</button>` : ''}</div>`).join('')}</div>` : musEmpty('No one in the Ring of Honor yet. Stars who give the franchise their best years get in on their own, and you can add former players below.');
-  const eligible = mine ? s.retired.filter(r => ((r.byTeam || {})[m.tid]?.gp || 0) >= 32 && !(t.ring || []).some(x => x.rid === r.id)).sort((a, b) => b.byTeam[m.tid].gp - a.byTeam[m.tid].gp).slice(0, 10) : [];
-  return musRoom('Hall of Plaques', `${m.plaques.length} in the Ring of Honor`, `<div class="mu-sub">Retired numbers</div>${nums}<div class="mu-sub">The Ring of Honor</div>${plaques}
-  ${eligible.length ? musCard('Former players you could honor', eligible.map(r => `<div class="mu-row"><span>${rlink(r.id, r.name)}</span><span class="mu-lsub">${E(r.pos)} · ${r.byTeam[m.tid].gp} games with you</span><button class="mu-btn" data-act="addRing" data-id="${r.id}">Add to the ring</button></div>`).join('')) : ''}`);
-}
-function museumView() {
-  const s = S(), t = T(s.userTid), m = HM.museum(s.userTid);
-  const room = MUS_ROOMS.some(r => r[0] === ui.musRoom) ? ui.musRoom : 'rings';
-  const titles = m.rings.filter(r => r.won).length, est = m.seasons.length ? m.seasons[0].s : s.season;
-  const body = { rings: musRingsRoom, team: musTeamRoom, vault: musVaultRoom, home: musHomeRoom, plaques: musPlaquesRoom }[room](m, t);
-  return `<div class="mu" style="--tc:${t.color}">
-  <header class="mu-sign"><div class="mu-sk">Est. ${est}</div><h2>The ${E(t.city + ' ' + t.name)} Museum</h2>
-    <div class="mu-sk">${m.seasons.length} season${m.seasons.length === 1 ? '' : 's'} · ${m.seasons.reduce((a, h) => a + h.w, 0)}–${m.seasons.reduce((a, h) => a + h.l, 0)} all-time · ${titles} title${titles === 1 ? '' : 's'}</div></header>
-  <nav class="mu-doors" aria-label="Galleries">${MUS_ROOMS.map(([k, n, l]) => `<button data-act="musRoom" data-v="${k}" aria-pressed="${k === room}"><i>Gallery ${n}</i>${l}</button>`).join('')}</nav>
-  ${body}
-</div>`;
-}
-Object.assign(actions, {
-  musRoom: d => { ui.musRoom = d.v; },
-  musRing: d => { ui.musRing = +d.v; },
-  musTitle: d => { ui.musTitle = +d.v; ui.musAll = false; },
-  musAll: () => { ui.musAll = !ui.musAll; },
-  musDraft: d => { ui.musDraft = ui.musDraft === +d.v ? null : +d.v; },
-});
 // =====================================================================
 // LEAGUE EDITOR: a team designer with a live logo preview (pro and college), conference names,
 // college player and recruit editing, league packs (share a custom league as a file) and
@@ -25391,7 +25243,7 @@ function render() {
   if (ui.live) { app.innerHTML = liveShell() + toastHtml(); liveUpdate(true); return; }
   if (s.fired) { app.innerHTML = topbar() + `<div class="shell">${nav()}<main class="main">${dashboard()}</main></div>` + firedScreen() + toastHtml(); return; }
   if (HM.fdOn) ui.view = 'fdraft';
-  const views = { dchart: () => depthBoard('pro'), pl: playerPage, tm: teamPage, fdraft: fdRoomView, seasonreview: () => reviewPage(ui.rvSeason ?? S().season), dashboard, inbox: inboxView, vox: voxView, staff: staffView, roster: rosterView, depth: depthView, dev: devView, schedule: scheduleView, standings: standingsView, stats: statsView, fa: faView, trade: tradeView, asst: asstView, draft: draftView, history: historyView, museum: museumView, league: leagueView, pulse: pulseView, hof: hofView, todo: todoView, gm: gmView, finance: financeView, editor: editorView, health: healthView, help: helpView, college: collegeOutlookView };
+  const views = { dchart: () => depthBoard('pro'), pl: playerPage, tm: teamPage, fdraft: fdRoomView, seasonreview: () => reviewPage(ui.rvSeason ?? S().season), dashboard, inbox: inboxView, vox: voxView, staff: staffView, roster: rosterView, depth: depthView, dev: devView, schedule: scheduleView, standings: standingsView, stats: statsView, fa: faView, trade: tradeView, asst: asstView, draft: draftView, history: historyView, league: leagueView, pulse: pulseView, hof: hofView, todo: todoView, gm: gmView, finance: financeView, editor: editorView, health: healthView, help: helpView, college: collegeOutlookView };
   tourMark();
   let modal = '';
   if (!HM.fdOn && !s.car && !ui.sim) { mqCollect([['devRep', () => { const dr = HM.devRep(); return dr && !dr.seen; }, () => HM.devRepSeen()], ['progRep', () => { const pr = HM.progRep(); return pr && !pr.seen; }, () => HM.progSeen()]]); mqOpen(); } // reports wait their turn
