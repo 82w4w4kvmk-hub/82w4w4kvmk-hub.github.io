@@ -905,8 +905,6 @@ select[data-focus]{max-width:210px}
 .stars .muted{color:var(--line)}
 details.panel summary{cursor:pointer}
 .genb{display:inline-block;margin-left:4px;padding:0 5px;border-radius:4px;font:800 9.5px/16px var(--fb,sans-serif);letter-spacing:.06em;background:linear-gradient(135deg,#d4a017,#f5d76e);color:#3a2a00;vertical-align:1px}
-.legb{display:inline-block;margin-left:4px;padding:0 5px;border-radius:4px;font:800 9.5px/16px var(--fb,sans-serif);letter-spacing:.06em;text-transform:uppercase;border:1px solid color-mix(in srgb,var(--accent) 55%,transparent);color:var(--accent);vertical-align:1px}
-.legl{margin:2px 0 0;font-size:13px}.legl .plink{color:inherit;text-decoration:underline;text-underline-offset:2px}.mh .legl .muted{color:inherit;opacity:.7}
 .pill.gen{background:linear-gradient(135deg,#d4a017,#f5d76e);color:#3a2a00;border-color:transparent}
 .grid2>*,.grid3>*{min-width:0}
 button.call{display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:2px;white-space:normal;height:auto;padding:8px 12px}
@@ -1225,7 +1223,7 @@ ul.dlog li.sep{background:none;text-align:center;font-weight:700}
 .mu-plq .mu-btn{margin-top:6px;background:#2A1A0E;color:#E8D7B0}
 </style>
 <div id="app"></div>
-<script>
+<script id="hm-engine">
 /* Hash Marks — shared sports-sim engine (football module v1)
    No DOM in this file: it runs in the browser and in Node for testing. */
 const HM = (() => {
@@ -1456,6 +1454,7 @@ function openingCap(t, limit) {
 // development reach their steady state, then hold: the opening league starts there instead)
 const OPEN_SETTLE = { QB: 2.8, RB: 1, WR: 2.1, TE: 2.5, OL: 3.6, DL: 4.2, LB: 1.9, CB: 2.6, S: 2.2 };
 function newLeague() {
+  PAR_P.clear();
   S = { v: 1, gtdFixV: 1, colScaleV: 1, fieldDefV: 1, season: 2026, phase: 'regular', week: 1, userTid: null, teams: [], players: {}, nextPid: 1, nextGid: 1,
     schedule: [], games: {}, po: null, draft: null, faDay: 0, news: [], history: [], awards: {}, retired: [], cap: 301.2, capScale: 1.181, picks: [], nextPickId: 1, dead: [], coaches: {}, nextCid: 1, offers: [], honors: {}, recs: {}, hof: [], hofPending: [], waivers: [], claims: [], comp: [], potw: {}, recaps: {}, hofBallots: {}, hofV: 2, ratV: 2, stories: [], mocks: [], block: [], pressLog: [], visits: 10 };
   initAgents();
@@ -3217,7 +3216,7 @@ const spdCode = (ps, pos) => ps.map((p, i) => clamp(Math.round((topSpd(p, pos[i]
 function blankTS() { return { fd: 0, py: 0, ry: 0, pa: 0, pc: 0, ra: 0, to: 0, sk: 0, top: 0, c3: 0, a3: 0, pl: 0, epa: 0, sp: 0, su: 0, pe: 0, pp: 0, ps: 0, re: 0, rp: 0, rs: 0, db: 0, prs: 0, rzt: 0, rztd: 0 }; }
 
 // Run a game to the end. AI answers every coaching decision.
-function simGame(ht, at, opt = {}) { const it = gameGen(ht, at, opt); let r = it.next(); while (!r.done) r = it.next(r.value.auto); return r.value; }
+function simGame(ht, at, opt = {}) { if (PAR_P.size && !PAR_PW) { const g = parTakeP(ht, at, opt); if (g) return g; } const it = gameGen(ht, at, opt); let r = it.next(); while (!r.done) r = it.next(r.value.auto); return r.value; }
 // The game as a generator: in coached games it pauses (yields) at the user's decisions.
 function* gameGen(ht, at, opt = {}) {
   const hurtCopy = L => { for (const pos of POS_ORDER) L[pos] = L[pos].map(p => p.id != null && p.rushed && p.rushed.s === S.season && !(p.inj > 0) ? { ...p, a: Object.fromEntries(Object.entries(p.a).map(([k, v]) => [k, Math.round(v * 0.94)])), ovr: Math.round(p.ovr * 0.94) } : p.id != null && p.holdin && !(p.inj > 0) ? { ...p, a: Object.fromEntries(Object.entries(p.a).map(([k, v]) => [k, Math.round(v * 0.96)])), ovr: Math.round(p.ovr * 0.96) } : p.id != null && p.inj > 0 ? { ...p, a: Object.fromEntries(Object.entries(p.a).map(([k, v]) => [k, Math.round(v * 0.92)])), ovr: Math.round(p.ovr * 0.92), playingHurt: true } : p); return L; };
@@ -4337,8 +4336,8 @@ function toDraft() {
   topUpProspects(); setDraftBoard(); S.draft.proj = projRanks();
   news(`The ${year} draft is underway. ${team(order[0]).city} holds the first pick.`);
 }
-function genProspect(year, qShift = 0, pos0 = null) {
-  const pos = pos0 || wpick(POS_ORDER, [2.2, 3.5, 6, 3, 9, 8, 6, 7, 4, 0.55, 0.5]);
+function genProspect(year, qShift = 0) {
+  const pos = wpick(POS_ORDER, [2.2, 3.5, 6, 3, 9, 8, 6, 7, 4, 0.55, 0.5]);
   const age = randInt(21, 23);
   let q = gauss(51 + qShift, 5.8); if (rnd() < 0.05) q += randInt(5, 11);
   const p = genPlayer(pos, q, age); p.tid = -2; p.cls = year; p.since = year;
@@ -4358,7 +4357,6 @@ function genDraftClass() {
   for (let i = 0, n = Math.max(270, Math.round(S.teams.length * 8.5)); i < n; i++) genProspect(year);
   // in a shared universe the class comes from the college world (which has its own generational recruits), so don't invent one here
   if (!uniOn() && rnd() < GEN_RATE) genGenerational(year);
-  if (!uniOn()) legacyProspects(year);
   tierClass(); uniProjectClass();
   if (S.userTid != null) S.scoutPts = scoutPointsFor(S.userTid);
   S.visits = VISITS_PER_YEAR;
@@ -8488,7 +8486,7 @@ function retirePlayer(p) {
   if (car.gp >= 40 || p.ovr >= 75 || (car.gp || 0) + preLeagueGp(p) >= 40) { // (a veteran from before the league began: few box scores, a long career)
     S.retired.push({ id: p.id, colMine: p.colMine || undefined, name: fullName(p), fn: p.fn, ln: p.ln, pos: p.pos, age: p.age, s: S.season, car, teamLast: p.tid >= 0 ? team(p.tid).abbr : 'FA', byTeam: byTeamTotals(p), hon: (p.hon || []).slice(), stats: p.stats, hist: p.hist, draft: p.draft, col: p.col, peak: Math.max(p.ovr, ...(p.hist || []).map(h => h.ovr)), hofScore: hofScore(p, car), faceSeed: p.faceSeed, num: p.num });
     const rr = S.retired[S.retired.length - 1]; honorFranchise(rr); if (rr.hofScore < 34) { stArchivePro(p); delete rr.stats; delete rr.hist; }
-    notable = p.ovr >= 78 || car.gp >= 150; considerHof(p, car); maybeCoachCareer(p, car, rr); legacyRoll(rr, p);
+    notable = p.ovr >= 78 || car.gp >= 150; considerHof(p, car); maybeCoachCareer(p, car, rr);
     // some come back: keep a copy of good players who could still play
     if (p.ovr >= 68 && p.age <= 37 && car.gp >= 40 && p.farewell !== S.season) { S.retPool = (S.retPool || []).filter(x => x.s >= S.season - 2).slice(-9); const cp = JSON.parse(JSON.stringify(p)); delete cp.retQ; delete cp.prom; S.retPool.push({ s: S.season, p: cp }); }
   }
@@ -8717,59 +8715,6 @@ function autoSeasonLine() {
   const po = Object.values(S.games).filter(g => g.season === S.season && g.po && (g.home === u || g.away === u)).sort((a, b) => b.po - a.po)[0];
   const res = h && h.champ === u ? `won the ${LEAGUE.final}` : po ? `lost in the ${PO_ROUNDS[po.po - 1] || 'playoffs'}` : 'missed the playoffs';
   return { s: S.season, w: t.rec.w, l: t.rec.l, t: t.rec.t || 0, res, champ: h ? h.champ : null, won: !!(h && h.champ === u) };
-}
-// ---------- legacy families: a retired player's son comes up through recruiting and the draft ----------
-// A notable retiree may have a son on the way: more often a star, and usually the career player. The son turns up the
-// year he's 17: in a shared universe as a college recruit (98-college-6c-legacy), otherwise in the draft class at 21.
-// He leans toward his father's position and strengths and is a little better on average. A lean, not a copy.
-// S.legacy: { rid, fn, ln, pos, peak, top (his two best ratings), col, due (the son's recruiting year), car, son }
-const LEG_NEAR = { QB: ['WR'], RB: ['WR', 'CB'], WR: ['CB', 'RB'], TE: ['WR', 'LB', 'OL'], OL: ['DL'], DL: ['OL', 'LB'], LB: ['DL', 'S'], CB: ['S', 'WR'], S: ['CB', 'LB'], K: ['P'], P: ['K'] };
-const legBase = ln => String(ln || '').replace(/\s+(Jr\.|Sr\.|II|III|IV)$/, '');
-function legacyRoll(rr, p) {
-  const peak = rr.peak || p.ovr || 60, ch = p.car ? 0.75 : 0.06 + 0.16 * clamp((peak - 70) / 20, 0, 1);
-  if (rnd() >= ch) return null;
-  // (the son is born when his father is 24 to 34; one already past high school isn't coming)
-  const age = (p.age || 30) - randInt(24, 34); if (age > 15) return null;
-  const top = (POS[p.pos] ? POS[p.pos].attrs : []).slice().sort((a, b) => (p.a[b] || 0) - (p.a[a] || 0)).slice(0, 2);
-  const l = { rid: rr.id, fn: p.fn, ln: p.ln, pos: p.pos, peak, top, col: p.col || null, due: S.season + Math.max(2, 17 - age), car: p.car ? true : undefined, son: null };
-  (S.legacy || (S.legacy = [])).push(l); return l;
-}
-// his position: usually his father's, sometimes a neighbor, now and then anything
-function legacyPos(l) { const r = rnd(); return !POS[l.pos] || r >= 0.88 ? pick(POS_ORDER) : r < 0.6 || !LEG_NEAR[l.pos] ? l.pos : pick(LEG_NEAR[l.pos]); }
-// talent: a star's son starts a little ahead (in rating points before the class's own spread)
-const legacyQ = l => clamp(((l.peak || 70) - 72) * 0.35, -2, 7);
-// name him (a quarter of them are juniors), give him his father's lean, and tie the two together
-function legacyMake(p, l, calc) {
-  const base = legBase(l.ln); if (rnd() < 0.25) { p.fn = l.fn; p.ln = base + ' Jr.'; } else p.ln = base;
-  if (p.pos === l.pos) for (const k of l.top || []) if (p.a[k] != null) p.a[k] = clamp(p.a[k] + randInt(2, 5), 20, 99);
-  const o = p.ovr; p.ovr = calc(p); p.pot = Math.max(p.pot + p.ovr - o, p.ovr);
-  p.leg = { rid: l.rid, fn: l.fn, ln: l.ln, pos: l.pos };
-  l.son = { fn: p.fn, ln: p.ln, pos: p.pos, s: S.season };
-  return p.ovr - o;
-}
-const legFather = l => `${S && (S.hof || []).some(h => h.id === l.rid) ? 'Hall of Famer' : 'former ' + l.pos} ${l.fn} ${l.ln}`;
-// a league with no college world: the son is in the draft class the year he turns 21
-function legacyProspects(year) {
-  for (const l of S.legacy || []) {
-    if (l.son || l.due + 4 > year) continue;
-    const p = genProspect(year, legacyQ(l), legacyPos(l)), d = legacyMake(p, l, calcOvr);
-    p.age = randInt(21, 22); p.hist = [{ s: S.season, age: p.age, ovr: p.ovr, pot: p.pot }]; p.sc.ovr = clamp(p.sc.ovr + d, 20, 99); l.son.pid = p.id; if (l.col && rnd() < 0.4) p.col = l.col;
-    news(`Draft class: ${p.pos} ${fullName(p)}, son of ${legFather(l)}, is in the ${year} draft.`, l.peak >= 80 || !!l.car);
-  }
-}
-// what a card says about a son ("Son of Hall of Famer ..."), and what a father's card says about his sons
-function legacyInfo(p) {
-  const l = p && p.leg; if (!l || !S) return null;
-  const r = (S.retired || []).find(x => x.id === l.rid), hof = (S.hof || []).some(h => h.id === l.rid);
-  const first = r && (r.stats && Object.keys(r.stats).sort()[0] || (r.draft ? r.draft.season : null));
-  return { rid: r ? l.rid : null, name: `${l.fn} ${l.ln}`, pos: l.pos, hof, yrs: r ? (first ? `${first}–${r.s}` : `retired ${r.s}`) : '', text: `Son of ${hof ? 'Hall of Famer' : 'former ' + l.pos} ${l.fn} ${l.ln}` };
-}
-function legacySons(rid) {
-  return (S && S.legacy || []).filter(l => l.rid === rid).map(l => {
-    if (!l.son) return { due: l.due, age: clamp(17 - (l.due - S.season), 0, 17) };
-    const s = l.son, pro = s.pid != null && S.players[s.pid], col = !pro && s.cid != null && typeof COLLEGE !== 'undefined' && COLLEGE.S && COLLEGE.S.players[s.cid];
-    return { ...s, pro: pro || null, col: col || null };
-  });
 }
 // ---------- deadline week: the trade market in the days before the deadline ----------
 // Contenders shop for a need, and the longer it goes unfilled the more they pay. Sellers drop their price on players in the last year
@@ -10737,6 +10682,7 @@ function genRecruitGen() {
   return r;
 }
 function newCollege() {
+  PAR_C.clear();
   CS = { mode: 'college', v: 2, confs: FBS.map(c => c[0]), cgames: FBS.map(c => c[1]), cbase: FBS.map(c => c[2]), season: 2026, phase: 'season', week: 1, userTid: null, teams: [], players: {}, nextPid: 1, nextGid: 1, games: {}, sched: [], news: [], hist: [], polls: [], po: null, bowls: [], classes: {}, heis: {}, recPts: REC_PTS, visits: VISITS, portal: null };
   RC = null; CNAMES = new Set(); LIVE = null; PRE = null;
   FBS.forEach(([cn, , , list], conf) => { for (const [name, abbr, color, reg, pr] of list) { const t = { tid: CS.teams.length, name, mascot: '', abbr, key: abbr, color, conf, reg, pres: clamp(Math.round(pr + gauss(0, 2)), 10, 99), rec: cblank(), hist: [], rsv: {} }; t.nilB = nilFor(t); CS.teams.push(t); } });
@@ -11457,7 +11403,7 @@ function projectedClass() {
 }
 function draftEntry(p, declared) {
   const car = {}; for (const y in p.st) for (const k in p.st[y]) if (k !== 'tid') inc(car, k, p.st[y][k]);
-  return { fn: p.fn, ln: p.ln, pos: p.pos, age: p.age + 1, a: { ...p.a }, ovr: p.ovr, pot: p.pot, col: cteam(p.tid).name, stars: p.stars || null, car, hon: (p.hon || []).map(h => h.t + ' ' + h.s), gen: !!p.gen, declared, mine: isMe(p.tid), pers: p.pers || null, cid: p.id, me: p.car ? true : undefined, leg: p.leg || undefined };
+  return { fn: p.fn, ln: p.ln, pos: p.pos, age: p.age + 1, a: { ...p.a }, ovr: p.ovr, pot: p.pot, col: cteam(p.tid).name, stars: p.stars || null, car, hon: (p.hon || []).map(h => h.t + ' ' + h.s), gen: !!p.gen, declared, mine: isMe(p.tid), pers: p.pers || null, cid: p.id, me: p.car ? true : undefined };
 }
 function nextSeason() {
   if (CS.phase !== 'offseason') return 'Finish the offseason first.';
@@ -11477,7 +11423,7 @@ function nextSeason() {
   for (const t of CS.teams) { t.rec = cblank(); fillRoster(t, false); const r = croster(t.tid); if (r.length > COL_MAX) r.sort((a, b) => a.ovr - b.ovr).slice(0, r.length - COL_MAX).forEach(p => { stArchive(p, true); delete CS.players[p.id]; }); touchC(); if (!isMe(t.tid)) autoRedshirt(t); }
   walkOnScholarships();
   for (const g of Object.values(CS.games)) if (g.s < CS.season) delete CS.games[g.gid];
-  for (let i = 0, n = CS.teams.length * 20; i < n; i++) genRecruit(); const legs = legacyRecruits(); starRecruits(); legacyEdge(legs); if (rnd() < 0.3) genRecruitGen();
+  for (let i = 0, n = CS.teams.length * 20; i < n; i++) genRecruit(); starRecruits(); if (rnd() < 0.3) genRecruitGen();
   makeColSchedule(); updatePoll();
   cnews(`The ${CS.season} season is here. Your preseason ranking: ${rankOf(CS.userTid) ? '#' + rankOf(CS.userTid) : 'unranked'}.`, true);
   try { progReportCol(); } catch (e) { /* the report is extra */ }
@@ -12165,6 +12111,7 @@ function colGameFinish(X) {
 }
 function colGame(h, a, opt = {}) {
   if (PRE && PRE.h === h && PRE.a === a) { const g = PRE; PRE = null; g.wk = opt.wk || g.wk; if (opt.name) g.name = opt.name; return g; }
+  if (PAR_C.size && !PAR_W) { const g = parTakeC(h, a, opt); if (g) return g; }
   const X = colGameInit(h, a, opt);
   let guard = 0; while (X.phase !== 'end' && guard++ < 900) cStep(X);
   return colGameFinish(X);
@@ -12230,14 +12177,19 @@ function advAdd(a, b) { for (const k in b) { const v = b[k]; if (typeof v === 'n
 const advLite = a => { const o = { ...a }; delete o.cm; delete o.rc; return o; };
 // season totals per team: offense and defense (the other side's offense). Route-vs-coverage detail is kept for your team only.
 function advStore(X) {
-  const g = X.g, s = g.s ?? CS.season; if (!CS.adv) CS.adv = {}; const S = CS.adv[s] || (CS.adv[s] = {});
+  const g = X.g;
+  if (X.log) g.adv = [advLite(X.adv[0]), advLite(X.adv[1])];
+  if (PAR_W) { g._adv = X.adv; return; } // (played ahead in a worker: the tally travels with the game and is booked when it's taken)
+  advMerge(g, X.adv);
+}
+function advMerge(g, adv) {
+  const s = g.s ?? CS.season; if (!CS.adv) CS.adv = {}; const S = CS.adv[s] || (CS.adv[s] = {});
   for (const side of [0, 1]) {
     const tid = side === 0 ? g.h : g.a, e = S[tid] || (S[tid] = { o: advNew(), d: advNew() }), keepRc = tid === CS.userTid;
-    const o = keepRc ? X.adv[side] : { ...X.adv[side], rc: {} }, d = keepRc ? X.adv[1 - side] : { ...X.adv[1 - side], rc: {} };
+    const o = keepRc ? adv[side] : { ...adv[side], rc: {} }, d = keepRc ? adv[1 - side] : { ...adv[1 - side], rc: {} };
     advAdd(e.o, o); advAdd(e.d, d); e.o.gp++; e.d.gp++;
   }
   for (const k of Object.keys(CS.adv)) if (+k < s - 1) delete CS.adv[k];
-  if (X.log) g.adv = [advLite(X.adv[0]), advLite(X.adv[1])];
 }
 
 // ---------- highlights: the plays worth watching again ----------
@@ -12823,32 +12775,6 @@ function fxRewrite(pairs) {
   if (CS.car && typeof carRenameText === 'function') carRenameText(fix);
   CS.fxFix = null;
   return fix;
-}
-// ---------- legacy families, college side: a retired pro's son joins the recruiting class (95c-legacy rolls him) ----------
-// Built like any recruit (genRecruit), a little ahead on talent, and the services know the name. His father's school
-// starts with a head start on his interest. In a college-only game there's no pro league, so no fathers.
-function legacyRecruits() {
-  const out = []; if (typeof uniOn !== 'function' || !uniOn() || !S || !S.legacy) return out;
-  for (const l of S.legacy) {
-    if (l.son || l.due > CS.season) continue;
-    const base = gauss(46 + legacyQ(l), 3), r = colPlayer(legacyPos(l), gauss(base, 3.5), 4, -2);
-    r.pot = clamp(Math.round(r.ovr + gauss(19, 5) + (base - 45) * 0.5), r.ovr + 4, 99);
-    legacyMake(r, l, calcOvr); l.son.cid = r.id;
-    r.stars = 2; r.int = {}; r.off = []; r.commit = null; r.age = 17;
-    r.sv = r.pot + r.ovr * 0.3 + gauss(0, 7) + 4 - (r.pos === 'K' || r.pos === 'P' ? 25 : 0); // (the services know the name)
-    out.push([r, l]);
-  }
-  if (out.length) touchC();
-  return out;
-}
-// after the services rank the class: his father's school gets a head start, and the news
-function legacyEdge(list) {
-  for (const [r, l] of list) {
-    const t = l.col && CS.teams.find(x => x.name === l.col); if (t) r.int[t.tid] = Math.min(60, (r.int[t.tid] || 0) + 15);
-    const mine = isMe(t ? t.tid : -9) || r.int[CS.userTid] != null || !!l.car;
-    cnews(`Legacy recruit: ${r.stars}-star ${r.pos} ${r.fn} ${r.ln}, son of ${legFather(l)}${t ? `, who played at ${t.name}` : ''}.`, mine && (r.stars >= 4 || isMe(t ? t.tid : -9) || !!l.car));
-    if (l.car && S.car) carLog(`Your son ${r.fn} ${r.ln} is a ${r.stars}-star ${r.pos} in the ${CS.season} recruiting class.`, 'fam');
-  }
 }
 // ---------- coached games: you make the calls, snap by snap ----------
 // The snap engine (98-college-1b-snap) runs the game; this layer stops it whenever a decision belongs to you:
@@ -13636,8 +13562,7 @@ function recThread(r) {
   const vx = cvxS(); let th = vx.th.find(x => x.k === 'rec' && x.who.rid === r.id);
   if (!th) {
     th = vxThread(vx, 'rec', { name: `${r.fn} ${r.ln}`, sub: `${r.stars}-star ${r.pos} recruit, ${r.reg}`, rid: r.id });
-    const ex = CS.me && CS.me.ex && exPull(CS.me) >= 4 ? CS.me.ex : null; // a famous former player as head coach: recruits grew up watching him
-    vxMsg(vx, th, ex ? `Hey Coach. ${pick(['My dad and I used to watch you play.', 'I grew up watching your highlights.', `Not gonna lie, it's crazy getting a DM from ${CS.me.fn} ${CS.me.ln}.`])} What makes ${cteam(CS.userTid).name} the place for me?` : `Hey Coach. What makes ${cteam(CS.userTid).name} the place for me?`, `You are a ${r.stars}-star recruit and this school is recruiting you.${ex ? ` The head coach is ${CS.me.fn} ${CS.me.ln}, a famous former ${ex.pos} you grew up watching; mention it, a little starstruck.` : ''} Ask the coach, casually, why you should pick his school.`, 0.3);
+    vxMsg(vx, th, `Hey Coach. What makes ${cteam(CS.userTid).name} the place for me?`, `You are a ${r.stars}-star recruit and this school is recruiting you. Ask the coach, casually, why you should pick his school.`, 0.3);
   }
   return th;
 }
@@ -13802,6 +13727,59 @@ function colPitchPrompt(ans) {
   const user = `The head coach asked: "${String(ans.text).slice(0, 300)}"\n\nFor each player, write a one or two sentence pitch to the coach, in a recruiting coordinator's voice, using only that player's facts. Never add skills, traits, stats or roles his facts don't name. No numbers except the ones in his facts.\n\n${ans.rows.map((r, i) => `${i + 1}. ${r.facts}`).join('\n')}\n\nAnswer with JSON: {"pitches": ["pitch 1", ...]} with exactly ${ans.rows.length} pitches in that order.`;
   return { system: 'You work for the head coach of a college football program in a video game, as his recruiting coordinator. Be brief and concrete. Never invent stats, injuries, ratings or offers. No em dashes.', user, schema: { type: 'object', properties: { pitches: { type: 'array', items: { type: 'string', maxLength: 260 }, minItems: ans.rows.length, maxItems: ans.rows.length } }, required: ['pitches'] }, maxTokens: 70 * ans.rows.length + 30, temperature: 0.6 };
 }
+// ---------- games played ahead on other cores (the UI's worker pool, src/ui/00b-par.js; the pro half is 98-z-par.js) ----------
+// A week's games go to Web Workers, each holding a copy of the save, and what comes back waits here until colGame asks for
+// that game. It's used only if both teams still look exactly as they did when it was sent (players, injuries, depth, staff);
+// otherwise the game is played live as before. In a worker (PAR_W) a game books nothing league-wide: its advanced-stat tally
+// and the changes to its players travel back with it and are booked when it's taken. Nothing here is saved.
+let PAR_C = new Map(), PAR_W = false;
+const parStat = { hit: 0, miss: 0 };
+const parKeyC = (s, wk, h, a, opt) => `${s}|${wk}|${h}|${a}|${opt.neutral ? 1 : 0}|${opt.riv ?? ''}`;
+// what a game depends on: both teams and their players, as they are now
+const parFpC = (h, a) => [h, a].map(t => JSON.stringify(cteam(t)) + JSON.stringify(croster(t).sort((x, y) => x.id - y.id))).join('#');
+// a cached game only for the plain week games colPlayMatch plays (not title games, bowls or playoffs, which carry a name)
+const parPlain = opt => opt && !opt.name && !opt.log && Object.keys(opt).every(k => k === 'wk' || k === 'neutral' || k === 'riv');
+function parTakeC(h, a, opt) {
+  if (!parPlain(opt)) return null;
+  const k = parKeyC(CS.season, opt.wk || CS.week, h, a, opt), e = PAR_C.get(k); if (!e) return null;
+  PAR_C.delete(k);
+  if (e.fp !== parFpC(h, a)) { parStat.miss++; return null; }
+  parStat.hit++; parFx(e.fx);
+  const g = e.g; g.gid = CS.nextGid++;
+  if (g._adv) { advMerge(g, g._adv); delete g._adv; }
+  return g;
+}
+// changes a game made to its players (injuries, a new jersey number), as [set, deleted keys] by player id
+function parFx(fx) {
+  for (const id in fx || {}) { const p = CS.players[id]; if (!p) continue; const [set, del] = fx[id]; Object.assign(p, set); for (const k of del) delete p[k]; if ('tid' in set) RC = null; }
+}
+// the week's games that can be played ahead: this week's, not the user's own (it may be watched or coached)
+function parPlanC() {
+  if (!CS || CS.phase !== 'season') return [];
+  for (const k of PAR_C.keys()) { const [s, wk] = k.split('|').map(Number); if (s !== CS.season || wk < CS.week) PAR_C.delete(k); }
+  const wk = CS.week, lg = LIVE && LIVE.X && LIVE.X.g, out = [];
+  for (const m of CS.sched[wk - 1] || []) {
+    if (m.gid || isMe(m.h) || isMe(m.a) || (lg && (lg.h === m.h || lg.h === m.a))) continue;
+    if (PRE && PRE.h === m.h && PRE.a === m.a) continue;
+    const opt = { wk, neutral: !!m.neutral, riv: m.riv }, key = parKeyC(CS.season, wk, m.h, m.a, opt), fp = parFpC(m.h, m.a), e = PAR_C.get(key);
+    if (e && e.fp === fp) continue;
+    out.push({ w: 'c', key, h: m.h, a: m.a, opt, fp });
+  }
+  return out;
+}
+// in a worker: play these games and send back each result with what it changed
+function parPlayC(items) {
+  PAR_W = true;
+  try {
+    return items.map(it => {
+      const list = [...croster(it.h), ...croster(it.a)], before = new Map(list.map(p => [p.id, JSON.stringify(p)]));
+      const g = colGame(it.h, it.a, it.opt);
+      return { w: 'c', key: it.key, fp: it.fp, g, fx: parDiff(before, list) };
+    });
+  } finally { PAR_W = false; }
+}
+function parPutC(r) { PAR_C.set(r.key, { fp: r.fp, g: r.g, fx: r.fx }); }
+const parClearC = () => { PAR_C.clear(); };
 // ---------- setup, saves ----------
 function setUserC(tid) { CS.userTid = tid; CS.bg = false; if (CS.phase === 'season' && CS.week === 1) CS.recPts = recHours(tid); ensureCoaches(); cteam(tid).coach = null; CS.me = null; initMe(); autoRedshirtAll(); for (const r of recruits()) { if (r.int[tid] == null) { const f = recFit(r, cteam(tid)); if (f > 8) r.int[tid] = f; } } cnews(`You took over as head coach of ${cteam(tid).name}.`, true); }
 function autoRedshirtAll() { for (const t of CS.teams) autoRedshirt(t); }
@@ -13823,14 +13801,14 @@ function carRecruit(o) {
 }
 return {
   get S() { return CS; }, get COL_CONFS() { return confNames(); }, isInd, percentiles: colPercentiles, CLS, COL_ROS, COL_MAX, REC_PTS, PO_NAMES_C, STAR_PTS,
-  newCollege, setUser: setUserC, save: () => JSON.stringify(CS), load: j => { const d = typeof j === 'string' ? JSON.parse(j) : j; if (!d || d.mode !== 'college') throw new Error('Not a college save.'); CS = d; RC = null; CNAMES = null; LIVE = null; PRE = null; persAll(); if (CS.teams.some(t => t.chem == null)) chemAll(); fxUpgrade(); return CS; },
+  newCollege, setUser: setUserC, save: () => JSON.stringify(CS), load: j => { const d = typeof j === 'string' ? JSON.parse(j) : j; if (!d || d.mode !== 'college') throw new Error('Not a college save.'); CS = d; RC = null; CNAMES = null; LIVE = null; PRE = null; PAR_C.clear(); persAll(); if (CS.teams.some(t => t.chem == null)) chemAll(); fxUpgrade(); return CS; },
   news: cnews, flipOdds, signingBoard, cfpRankOf, PRIOS, REC_ACTS, BOARD_MAX, recView, recEst, boardOf, boardOpen, homeWeeks, scheduleVisit, stageOf, gradeLetter, setAutoRec: on => { CS.auto = !!on; }, get autoLog() { return CS.autoLog || null; }, get autoTot() { return CS.autoTot && CS.autoTot.s === CS.season ? CS.autoTot : null; }, get autoRec() { return CS.auto !== false; }, poGameName, projectedClass, isMe, RIV, rivalryTable, rivalsOf: rivalsOfC, coachInfo, acceptJob, declineJobs, seatLabel, genCoach: genCoachC, coachChange, TRAIN, setTraining, trainOf, springGame, POS_MOVES: COL_POS_MOVES, posChangePreview, changePos, POS_AWARDS, AA_SLOTS,
   weekBgStep, liveStart, liveState, playTxt: colPlayTxt, liveCall, live4th, liveSim, liveFinish, liveAbandon, liveIce, livePat, liveKick, liveHalf, liveTimeout, liveTempo, liveAuto, userNext, OFF_C, DEF_C, CALL_TIPS, ROUTE_NM: C_ROUTE_NM, COVS: C_COVS, colGame, gameStep: cStep, gameInit: colGameInit, get live() { return LIVE; }, awardsOf: s => (CS.awards || {})[s] || null, confSize,
   programInfo, recordBook, RB_KEYS, OFF_SCH, DEF_SCH, schemeFit, fitWord, hireCoord, fireCoord, coordCands, setPlan, filmStudy, scoutReport, ccOn, ccCoach, ccRank, ccOpenings, ccJob, ccLeave, ccScheme, ccHoldRelease, ccHcTake, carEnd: () => { if (CS) CS.car = null; }, exPull: () => (CS && CS.me ? exPull(CS.me) : 0), get cc() { return CS.cc || null; }, get plan() { return CS.plan || { off: 'bal', def: 'bal' }; }, get film() { return CS.film && CS.film.s === CS.season && CS.film.wk === CS.week ? CS.film : null; }, setDepth: (pos, ids) => { CS.udepth = CS.udepth || {}; if (ids) CS.udepth[pos] = ids.slice(); else delete CS.udepth[pos]; return null; },
-  legacyRecruits, legacyEdge,
   setFict: () => null, editTeam: editTeamC, renameConf: renameConfC, editPlayer: editPlayerC, packC, applyPackC, rosterCsv: rosterCsvC, importRoster: importRosterC, get edited() { return !!(CS && CS.edited); }, reviews: () => (CS && CS.reviews) || {}, lbl, rivName, rivTrophy, get fict() { return !!(CS && CS.fict); }, carRecruit, gradeVal, recFit, colDepth, COL_START, cplayer: id => CS.players[id], cplayers: () => cplayers(), heisList: () => (CS.hw && CS.hw.list) || [], get front() { return CS.front || null; }, adv: season => ((CS.adv || {})[season ?? CS.season]) || {}, advSeasons: () => Object.keys(CS.adv || {}).map(Number).sort((a, b) => b - a), get asks() { return (CS.asks || []).filter(x => x.s === CS.season); }, answerDemand, nilWant, PERS_C, PERS_TIP, chemWord, teamChem: tid => cteam(tid).chem ?? 60, get fronts() { return CS.fronts || []; },
   playWeek, playCCG, playPlayoffRound, holdSigningDay, portalDay, portalOffer, retainPlayer, talkStay, portalPlayers, portalLog, scholarships, recFitToday, portalAsk, progRep: () => CS.progRep || null, progSeen: () => { if (CS.progRep) CS.progRep.seen = true; }, recHours: tid => recHours(tid ?? CS.userTid), portalOffers: () => (CS.portal ? { ...CS.portal.offers } : {}), portalChance, nextSeason, simToEnd,
   team: cteam, roster: croster, recruits, commitsOf, classNeeds, recAction, nilLeft, nilUsed, colPower, rankOf, confStandings, clsOf, setRedshirt, phaseLabel: colPhase, poPairs: () => (CS.po && CS.phase === 'playoff' ? poPairsC() : []),
+  par: { plan: parPlanC, play: parPlayC, put: parPutC, clear: parClearC, stat: parStat, get size() { return PAR_C.size; } },
   PITCH_BTN, PITCH_COST, recDm, recPitch, cvxView, cvxSeen, cvxQueue, cvxPrompt, cvxWrite, cvxBadge, colAsk, colPitchPrompt,
 };
 })();
@@ -13900,7 +13878,6 @@ function colEntryToProspect(e, year, combined) {
   p.colOvr = cOvr; p.hist = [{ s: S.season, age: p.age, ovr: p.ovr, pot: p.pot }];
   p.tid = -2; p.cls = year; p.since = year; p.colCar = e.car || null; p.colHon = e.hon || []; p.colHonB = honB(e.hon); p.colStars = e.stars || null; if (e.gen) p.gen = true; rollArc(p, !!e.gen);
   if (e.cid != null) p.cid = e.cid; if (e.mine) p.colMine = true; if (e.me) p.car = true; if (e.declared) p.declared = true; if (e.pers) p.pers = e.pers;
-  if (e.leg) { p.leg = e.leg; const l = (S.legacy || []).find(x => x.rid === e.leg.rid && x.son && x.son.cid === e.cid); if (l) l.son.pid = p.id; }
   const sdO = p.colHonB ? 2.5 : 3.5; p.sc = { ovr: clamp(p.ovr + Math.round(gauss(0, sdO)), 20, 99), pot: clamp(p.pot + Math.round(gauss(0, 5.5)), 30, 99) }; p.se = { o: gauss(0, 1), p: gauss(0, 1) };
   if (combined) p.comb = { skip: true };
   if (p.gen) genAnnounce(p, year);
@@ -14636,7 +14613,6 @@ function carRetire() {
   if (c.stage === 'hs' || c.stage === 'col') return 'Finish your college career first.';
   if (p) { carSnapPro(); const car = careerTotals(p); c.ret = { s: S.season, age: p.age, car, hs: hofScore(p, car), hon: (p.hon || []).slice(), pos: p.pos, why: (() => { const n = Object.keys(p.stats).length; return n ? `Walked away after ${n} pro season${n > 1 ? 's' : ''} and ${car.gp || 0} games.` : 'Walked away before playing a regular-season snap in the pros.'; })() }; retirePlayer(p); }
   c.stage = 'ret'; carLog(`Retired at ${c.ret && c.ret.age ? c.ret.age : 'the end of the season'}.`, 'ret');
-  socAbout('retired', c.ret && c.ret.why || '', null, true);
   carFrontOffice();
   if (!carCanCoach()) { const L = carCoachOffers(); if (L.length) carLog(`${L.map(o => COLLEGE.team(o.tid).name).join(', ')} called about joining ${L.length === 1 ? 'its' : 'their'} staff as ${carCoachSide(c) === 'o' ? 'offensive' : 'defensive'} coordinator.`, 'coach'); }
   return null;
@@ -14797,7 +14773,6 @@ function carTakeCoachJob(i) {
   c.stage = 'coach'; c.ccOff = null; S.uni.fg = 'college';
   const t = COLLEGE.team(o.tid), role = k.side === 'o' ? 'offensive coordinator' : 'defensive coordinator';
   carLog(from != null ? `Left ${COLLEGE.team(from).name} to become ${role} at ${t.name}.` : `Went into coaching: hired as ${role} at ${t.name}${o.alma ? ', where you played' : ''}.`, 'move');
-  socAbout('coachHire', role, null, true);
   return null;
 }
 function carCoachNext() {
@@ -14818,11 +14793,9 @@ function carCoachStep() {
   carLog(`${t.name} went ${L.w}-${L.l}. Your ${off ? 'offense' : 'defense'} ranked ${ccOrd(L.rank)} of ${L.n} in ${off ? 'scoring' : 'scoring defense'} (${L.ppg} points a game${off ? '' : ' allowed'}).`, 'coach');
   const top = L.rank <= L.n * 0.1, good = L.rank <= L.n * 0.35, bad = L.rank > L.n * 0.8;
   carFame(top ? 3 : good ? 1 : bad ? -2 : 0);
-  { const ev = `${off ? 'offense' : 'defense'} finished ${ccOrd(L.rank)} in the country in ${off ? 'scoring' : 'points allowed'}`; if (good && rnd() < (top ? 0.9 : 0.5)) socAbout('coachGood', ev, null, true); else if (bad && rnd() < 0.6) socAbout('coachBad', ev, null, true); }
   // two bad years in a row and the head coach makes a change
   const prev = k.hist.length >= 2 ? k.hist[k.hist.length - 2] : null;
   if (bad && prev && prev.tid === k.tid && prev.rank > prev.n * 0.75) {
-    socAbout('coachFired', `${off ? 'offensive' : 'defensive'} coordinator`, null, true);
     COLLEGE.ccLeave(); k.tid = null; c.ccOff = null;
     carLog(`${t.name} fired you after two bad years. Other programs may still call.`, 'move');
     COLLEGE.news(`${t.name} fired ${off ? 'offensive' : 'defensive'} coordinator ${c.fn} ${c.ln}.`, true);
@@ -14995,8 +14968,7 @@ function socCtx() {
   const o = { me: `${c.fn} ${c.ln}`, fn: c.fn, ln: c.ln, pos: c.pos, stage: c.stage, fame: Math.round(c.fame), trust: Math.round(c.trust), season: carSeason(), names: [] };
   if (c.stage === 'hs') { o.team = `${c.hs.team} High`; o.short = c.hs.team; o.rec = `${c.hs.w}-${c.hs.l}`; o.level = 'high school'; }
   else if (t) { o.team = inCol ? t.name : `${t.city} ${t.name}`; o.short = t.name; o.rec = inCol ? `${t.rec.w}-${t.rec.l}` : `${t.rec.w}-${t.rec.l}${t.rec.t ? '-' + t.rec.t : ''}`; o.level = inCol ? 'college' : 'pro'; o.tid = t.tid; }
-  else if (c.stage === 'coach' && c.coach && c.coach.tid != null) { const ct = COLLEGE.team(c.coach.tid); o.team = ct.name; o.short = ct.name; o.rec = `${ct.rec.w}-${ct.rec.l}`; o.level = 'college'; o.tid = ct.tid; o.role = `${c.coach.side === 'o' ? 'offensive' : 'defensive'} coordinator`; if (ct.coach) o.coach = `${ct.coach.fn} ${ct.coach.ln}`; }
-  else { o.team = null; o.short = null; o.rec = null; o.level = c.stage === 'coach' ? 'a retired player looking for a coaching job' : c.stage === 'ret' ? 'retired' : c.stage === 'draft' ? 'draft prospect' : 'free agent'; }
+  else { o.team = null; o.short = null; o.rec = null; o.level = c.stage === 'coach' ? (c.coach && c.coach.tid != null ? `${c.coach.side === 'o' ? 'offensive' : 'defensive'} coordinator at ${COLLEGE.team(c.coach.tid).name}` : 'a retired player looking for a coaching job') : c.stage === 'ret' ? 'retired' : c.stage === 'draft' ? 'draft prospect' : 'free agent'; }
   // the coach, the depth chart, the teammates the replies can name
   if (t && inCol && t.coach) o.coach = `${t.coach.fn} ${t.coach.ln}`;
   if (t && !inCol) { const hc = coachOf(t.tid, 'HC'); if (hc) o.coach = `${hc.fn} ${hc.ln}`; }
@@ -15219,12 +15191,6 @@ const SOC_ABOUT = {
   drafted: { who: ['beat', 'fan'], sit: 'hype', t: { beat: ['The {team} select {fn} {me}, {pos}, {ev}.', 'Pick is in: {me} to the {team} ({ev}).'], fan: ['welcome to the {team} {me}!!', 'love this pick. {me} 🔥'] } },
   signed: { who: ['beat', 'fan'], sit: 'hype', t: { beat: ['{me} signs with the {team}: {ev}.', 'Done deal: {me} to the {team}, {ev}.'], fan: ['huge signing. welcome {me}', '{me} is a {team} now 🙌'] } },
   traded: { who: ['beat', 'fan'], sit: 'neutral', t: { beat: ['Trade: {me} is headed to the {team}.', '{me} has been traded to the {team}.'], fan: ['wait we got {me}??', 'welcome to the {team} {me}'] } },
-  // after his playing days: retiring, and the coaching life ({ev}: his job, or how his unit did)
-  retired: { who: ['beat', 'fan'], sit: 'sad', t: { beat: ['{fn} {me} has retired. {ev}', '{me} is hanging it up. {ev}'], fan: ['thank you {me} 🙏', 'end of an era. happy retirement {me}'] } },
-  coachHire: { who: ['beat', 'fan', 'troll'], sit: 'hype', t: { beat: ['{team} hires former {pos} {fn} {me} as {ev}.', 'Coaching news: {me} is the new {ev} at {team}.'], fan: ['{me} coaching at {team}?? love this', 'can\'t wait to see what {me} does on the sideline'], troll: ['couldn\'t play so now he coaches lol', '{me} calling plays. what could go wrong 🤡'] } },
-  coachGood: { who: ['beat', 'fan'], sit: 'win', t: { beat: ['Coordinators to watch: {me} at {team}. His {ev}.', '{team}\'s {ev}. {me} will be a head coach somewhere soon.'], fan: ['{me} cooked as a coordinator too 🔥', 'give {me} a raise. his {ev}'] } },
-  coachBad: { who: ['beat', 'troll'], sit: 'loss', t: { beat: ['A tough year for {me} at {team}: his {ev}.', '{team}\'s {ev}. Questions for {me} this offseason.'], troll: ['{me} can\'t coach either lmao', 'turns out playing and coaching are different things 🤡'] } },
-  coachFired: { who: ['beat', 'troll'], sit: 'sad', t: { beat: ['{team} has fired {ev} {fn} {me}.', '{me} is out as {ev} at {team}.'], troll: ['fired lol. saw that coming', 'back to the broadcast booth {me}'] } },
   released: { who: ['beat', 'troll'], sit: 'sad', t: { beat: ['The {ev} have released {me}.', '{me} has been released by the {ev}.'], troll: ['saw this coming a mile away', 'free agent {me} lmao. who\'s next'] } },
 };
 const SOC_CLAP = {
@@ -15238,7 +15204,7 @@ function socFill(tpl, ctx, extra) {
   const x = extra || {};
   const inc = ctx.inc && ctx.inc.length ? ` (${ctx.inc[0].s})` : '';
   return tpl.replace(/\{(\w+)\}/g, (m, k) => {
-    const v = { me: ctx.ln, fn: ctx.fn, team: ctx.short || 'the team', opp: (ctx.last && ctx.last.oppShort) || (ctx.next && ctx.next.oppShort) || 'them', next: (ctx.next && ctx.next.oppShort) || (ctx.last && ctx.last.oppShort) || 'next week', line: (ctx.last && ctx.last.line) || 'nothing', rec: ctx.rec || '0-0', coach: ctx.coach ? 'Coach ' + ctx.coach.split(' ').pop() : 'the coach', mate: x.mate || ((ctx.mates || [])[0] || {}).name || 'his teammate', pos: ctx.pos, side: ctx.role ? (/^offensive/.test(ctx.role) ? 'offense' : 'defense') : 'team', school: x.school || (ctx.schools || [])[0] || 'State', inc, ev: x.ev || '' }[k];
+    const v = { me: ctx.ln, fn: ctx.fn, team: ctx.short || 'the team', opp: (ctx.last && ctx.last.oppShort) || (ctx.next && ctx.next.oppShort) || 'them', next: (ctx.next && ctx.next.oppShort) || (ctx.last && ctx.last.oppShort) || 'next week', line: (ctx.last && ctx.last.line) || 'nothing', rec: ctx.rec || '0-0', coach: ctx.coach ? 'Coach ' + ctx.coach.split(' ').pop() : 'the coach', mate: x.mate || ((ctx.mates || [])[0] || {}).name || 'his teammate', pos: ctx.pos, school: x.school || (ctx.schools || [])[0] || 'State', inc, ev: x.ev || '' }[k];
     return v == null ? m : v;
   });
 }
@@ -15598,7 +15564,7 @@ const SOC_GAME = { A: 'a great game', B: 'a good game', C: 'an ordinary game', D
 function socFame(f) { return f >= 75 ? 'a household name' : f >= 50 ? 'well known around the sport' : f >= 25 ? 'known around his league' : 'not well known yet'; }
 // his stat line only goes in when a reply is meant to talk about it; given the numbers, the model quotes them in every reply
 function socFacts(ctx, school, line) {
-  const L = [ctx.role ? `Coach: ${ctx.me}, a former ${ctx.pos} who retired from playing, now the ${ctx.role} at ${ctx.team}; ${socFame(ctx.fame)}.` : `Player: ${ctx.me}, ${ctx.pos}, ${ctx.level}${ctx.team ? ` for ${ctx.team}` : ''}; ${socFame(ctx.fame)}.`];
+  const L = [`Player: ${ctx.me}, ${ctx.pos}, ${ctx.level}${ctx.team ? ` for ${ctx.team}` : ''}; ${socFame(ctx.fame)}.`];
   if (ctx.status) L.push(ctx.status);
   if (ctx.rec) L.push(`Team record: ${ctx.rec}.`);
   if (ctx.coach) L.push(`Head coach: ${ctx.coach}.`);
@@ -15759,7 +15725,6 @@ const MX_Q1 = {
   drafted: { t: 'Draft night', q: 'What does it mean to be a {team}?', o: [['It\'s a dream come true. I can\'t wait to get to work.', mxL('grateful')], ['They got a steal tonight. I\'m going to show everybody.', mxL('hype', 0, 'none', { ego: 1 })], ['Some teams passed on me. They\'re going to regret it.', mxL('trash', 1, 'opp')]] },
   signed: { t: 'Introductory press conference', q: 'Why did you choose the {team}?', o: [['They believed in me, and I want to repay that.', mxL('grateful')], ['I\'m here to win now. That\'s it.', mxL('hype')], ['They paid me what I\'m worth. Simple as that.', mxL('neutral', 0, 'none', { ego: 1 })]] },
   traded: { t: 'Introductory press conference', q: 'How did you take the news of the trade?', o: [['I\'m thankful for my time there. Now I\'m ready to work here.', mxL('grateful')], ['It\'s a business. You learn that fast.', mxL('neutral')], ['Circle that game on the calendar. They\'ll see me twice.', mxL('trash', 1, 'opp')]] },
-  coachHire: { t: 'Introductory press conference', q: 'You never coached a down before this. Why coaching, and why {team}?', o: [['I love this game, and I want to give back what it gave me. {team} gave me the chance.', mxL('grateful')], ['I know what it takes to win at the highest level. Now I get to teach it.', mxL('hype')], ['I played the game better than most people coaching it. This is easy.', mxL('hype', 0, 'none', { ego: 1 })]] },
   opener: { t: 'Media day', q: 'What are your goals this season?', o: [['Get better every day and help us win games.', mxL('humble')], ['Championship or bust.', mxL('hype')], ['Be the best {pos} in the country. Nothing less.', mxL('hype', 0, 'none', { ego: 1 })]] },
 };
 // the second and third questions: whatever the room wants to know about
@@ -15784,7 +15749,6 @@ const MX_POOL2 = {
   drafted: [{ q: 'Where do you see yourself fitting in?', o: [['Wherever they need me. I\'m here to learn.', mxL('humble')], ['I\'m coming to compete for a starting job right away.', mxL('hype')], ['I\'m the best {pos} in this class, and it isn\'t close.', mxL('hype', 0, 'none', { ego: 1 })]] }, { q: 'Did you expect to go higher?', o: [['I\'m just blessed to be here.', mxL('grateful')], ['It doesn\'t matter where you start. It matters where you finish.', mxL('neutral')], ['Yeah. And I won\'t forget it.', mxL('trash', 1, 'opp')]] }],
   signed: [{ q: 'What do you bring to this team?', o: [['Whatever they ask of me. I\'m a team guy.', mxL('humble')], ['A winner. That\'s what I bring.', mxL('hype')], ['They\'re getting the best player on the field.', mxL('hype', 0, 'none', { ego: 1 })]] }, { q: 'What\'s your message to the fans here?', o: [['I can\'t wait to play for you. Let\'s go win.', mxL('grateful')], ['Come early and be loud.', mxL('hype')], ['Buy my jersey now, before it sells out.', mxL('joke', 0, 'none', { ego: 1 })]] }],
 };
-MX_POOL2.coachHire = [{ q: 'What will your {side} look like?', o: [['Whatever fits our players. We\'ll build it around them.', mxL('humble')], ['Fast and physical. People are going to notice.', mxL('hype')], ['Like mine did when I played: the best in the country.', mxL('hype', 0, 'none', { ego: 1 })]] }, { q: 'How do you get through to players who never saw you play?', o: [['Respect has to be earned in the meeting room, not on a highlight tape.', mxL('humble')], ['I show them the film. Then I show them how.', mxL('neutral')], ['Look it up. They\'ll figure it out fast.', mxL('hype', 0, 'none', { ego: 1 })]] }];
 MX_POOL2.traded = MX_POOL2.signed;
 // a follow-up when an answer gave the room something
 const MX_FOLLOW = [
@@ -16025,7 +15989,7 @@ function mxStep() {
   const ctx = socCtx(), CS = carC();
   if (mx.pend.length) {
     const L = mx.pend; mx.pend = [];
-    const order = ['coachHire', 'drafted', 'signed', 'traded', 'commit', 'game'], x = L.slice().sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind))[0];
+    const order = ['drafted', 'signed', 'traded', 'commit', 'game'], x = L.slice().sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind))[0];
     mxPressMake(x.kind, x.ev, x.x);
   }
   // media day: the first week of each season
@@ -16361,6 +16325,87 @@ function stForce(kind) {
 }
 function carStoryView() { const c = S.car; if (!c) return null; const st = stS(); return { list: st.list, seen: st.seen }; }
 function carStorySeen(t) { stS().seen = t || Date.now(); }
+// ---------- games played ahead on other cores (the pro half; the college half is 98-college-8d-par.js) ----------
+// HM.par is what the UI's worker pool (src/ui/00b-par.js) and tests/par-pool.js use:
+//   plan(o)   this week's games that can be played ahead, in both worlds, with a fingerprint of each pair of teams
+//             (o.college: a college-only game; o.pre: the week's setup is run first, as the next sim is about to)
+//   snap(o)   the save a worker loads; work({ snap, items }) runs in the worker and returns the results; put(results)
+// simGame and colGame take a cached game only while both teams still match their fingerprint; any other game is played live.
+let PAR_P = new Map(), PAR_PW = false;
+const parStatP = { hit: 0, miss: 0 };
+const parKeyP = (s, wk, h, a, pbp) => `${s}|${wk}|${h}|${a}|${pbp ? 1 : 0}`;
+const parFpP = (h, a) => [h, a].map(t => JSON.stringify(team(t)) + JSON.stringify(roster(t))).join('#');
+function parTakeP(ht, at, opt) {
+  if (!Object.keys(opt).every(k => k === 'week' || k === 'pbp')) return null;
+  const k = parKeyP(S.season, opt.week, ht.tid, at.tid, opt.pbp), e = PAR_P.get(k); if (!e) return null;
+  PAR_P.delete(k);
+  const wx = e.fx.wx || {};
+  if (e.fp !== parFpP(ht.tid, at.tid) || Object.keys(wx).some(w => S.wx && S.wx[w] && JSON.stringify(S.wx[w]) !== JSON.stringify(wx[w]))) { parStatP.miss++; return null; }
+  parStatP.hit++;
+  let moved = false;
+  for (const id in e.fx.p) { const p = S.players[id]; if (!p) continue; const [set, del] = e.fx.p[id]; Object.assign(p, set); for (const k of del) delete p[k]; if ('tid' in set) moved = true; }
+  if (moved) touchPlayers();
+  S.wx = S.wx || {}; Object.assign(S.wx, wx);
+  const g = e.g; g.gid = S.nextGid++; return g;
+}
+// each player's changed top-level fields, as [set, deleted keys] by id (before: id -> JSON as it was)
+function parDiff(before, list) {
+  const fx = {};
+  for (const p of list) {
+    const b = before.get(p.id); if (b == null) continue; const old = JSON.parse(b), now = JSON.parse(JSON.stringify(p)), set = {}, del = [];
+    for (const k in now) if (JSON.stringify(now[k]) !== JSON.stringify(old[k])) set[k] = now[k];
+    for (const k in old) if (!(k in now)) del.push(k);
+    if (del.length || Object.keys(set).length) fx[p.id] = [set, del];
+  }
+  return fx;
+}
+function parPlanP() {
+  if (!S || !S.teams || S.phase !== 'regular' || inCamp() || fdOn() || !S.schedule[S.week - 1]) return [];
+  for (const k of PAR_P.keys()) { const [s, wk] = k.split('|').map(Number); if (s !== S.season || wk < S.week) PAR_P.delete(k); }
+  const wk = S.week, ct = carTidPro(), out = [];
+  for (const m of S.schedule[wk - 1]) {
+    if (m.gid || m.h === S.userTid || m.a === S.userTid) continue; // (the user's game is played by weekBegin, watched or not)
+    const pbp = ct != null && (m.h === ct || m.a === ct), key = parKeyP(S.season, wk, m.h, m.a, pbp), fp = parFpP(m.h, m.a), e = PAR_P.get(key);
+    if (e && e.fp === fp) continue;
+    out.push({ w: 'p', key, h: m.h, a: m.a, opt: { week: wk, pbp }, fp });
+  }
+  return out;
+}
+function parPlayP(items) {
+  PAR_PW = true;
+  try {
+    return items.map(it => {
+      const list = [...roster(it.h), ...roster(it.a)], before = new Map(list.map(p => [p.id, JSON.stringify(p)])), wx0 = new Set(Object.keys(S.wx || {}));
+      const g = simGame(team(it.h), team(it.a), it.opt), wx = {};
+      for (const k in S.wx || {}) if (!wx0.has(k)) wx[k] = S.wx[k];
+      return { w: 'p', key: it.key, fp: it.fp, g, fx: { p: parDiff(before, list), wx } };
+    });
+  } finally { PAR_PW = false; }
+}
+const parPreAhead = () => { const CS = COLLEGE.S; return uniOn() && S.uni.fg === 'college' && !UNI_BUSY && CS.phase === 'season' && S.season === CS.season && S.phase === 'regular' && !inCamp() && !fdOn() && proDone() === PRO_FOR_COL(CS.week) - 1 && S.weekPre !== S.season * 100 + S.week; };
+const proWorld = o => !(o && o.college) && !!(S && S.teams);
+const parApi = {
+  plan(o = {}) {
+    const out = [];
+    if (proWorld(o)) {
+      if (o.pre && S.phase === 'regular' && !inCamp() && !fdOn()) weekPre();
+      else if (parPreAhead()) { autoFixRoster(); weekPre(); } // (as uniBgStep would: the college world leads, so the pro week's setup can run ahead)
+      out.push(...parPlanP());
+    }
+    if ((o.college || uniOn()) && COLLEGE.S) out.push(...COLLEGE.par.plan());
+    // a career player's own team plays live: his ratings get the week's boost just before (carBoost), so a copy would never match
+    const cp = S && S.car ? carPlayer() : null, w = cp && cp.tid >= 0 ? (S.car.stage === 'pro' ? 'p' : 'c') : null;
+    return w ? out.filter(it => it.w !== w || (it.h !== cp.tid && it.a !== cp.tid)) : out;
+  },
+  snap: (o = {}) => (proWorld(o) ? { k: 'pro', j: JSON.stringify(S) } : { k: 'col', j: JSON.stringify(COLLEGE.S) }),
+  work(m) {
+    if (m.snap) { if (m.snap.k === 'pro') load(m.snap.j); else COLLEGE.load(m.snap.j); }
+    return [...parPlayP(m.items.filter(x => x.w === 'p')), ...COLLEGE.par.play(m.items.filter(x => x.w === 'c'))];
+  },
+  put(rs) { for (const r of rs) if (r.w === 'p') PAR_P.set(r.key, { fp: r.fp, g: r.g, fx: r.fx }); else COLLEGE.par.put(r); },
+  clear() { PAR_P.clear(); COLLEGE.par.clear(); },
+  get stat() { const c = COLLEGE.par.stat; return { hit: parStatP.hit + c.hit, miss: parStatP.miss + c.miss, cached: PAR_P.size + COLLEGE.par.size }; },
+};
 // ---------- stats helpers ----------
 function careerTotals(p) { const t = {}; for (const s in p.stats) for (const k in p.stats[s]) if (k !== 'tid') { if (['rl', 'rcl', 'fgl', 'pl'].includes(k)) t[k] = Math.max(t[k] || 0, p.stats[s][k]); else inc(t, k, p.stats[s][k]); } return t; }
 
@@ -16392,7 +16437,7 @@ function saveBreakdown() {
   const out = { players: kb(S.players), games: kb(S.games), history: kb([S.history, S.retired, S.hof, S.honors, S.recs, S.hofBallots]), other: 0 };
   out.total = kb(S); out.other = Math.max(0, out.total - out.players - out.games - out.history); return out;
 }
-function load(json) { const d = typeof json === 'string' ? JSON.parse(json) : json; if (!d || !d.teams || !d.players) throw new Error('That is not a Hash Marks save.'); S = d; touchPlayers(); if (d.uni && d.col) COLLEGE.load(d.col);
+function load(json) { const d = typeof json === 'string' ? JSON.parse(json) : json; if (!d || !d.teams || !d.players) throw new Error('That is not a Hash Marks save.'); S = d; PAR_P.clear(); touchPlayers(); if (d.uni && d.col) COLLEGE.load(d.col);
   for (const p of allPlayers()) if (!p.hist) p.hist = [{ s: S.season, age: p.age, ovr: p.ovr, pot: p.pot }];
   if (S.phase !== 'draft') ensurePicks();
   for (const p of allPlayers()) if (p.tid >= 0 && p.contract.gtd == null) p.contract.gtd = r1(gtdFor(p.contract.sal, p.contract.yrs) * 0.6);
@@ -16448,7 +16493,7 @@ function setAiPlans() {
 
 return {
   get S() { return S; }, LEAGUE, CONFS, confName, setConfNames, setStartRules, setLeagueSize, packPro, applyPackPro, fdStart, fdView, fdUserPick, fdAutoPick, fdAutoRest, fdAdvance, fdAfford, progRep: () => S.progRep || null, progSeen: () => { if (S.progRep) S.progRep.seen = true; }, autoPlayStep, scoutProfile, userScout, SCOUT_SPEC, SCOUT_LEAN, devRep: () => S.devRep || null, devRepSeen: () => { if (S.devRep) S.devRep.seen = true; }, get fdOn() { return fdOn(); }, rosterCsv, importRoster, parseTable, rosterRows, PACK_RULE_KEYS, cleanLogo, DIVS, POS, POS_ORDER, ATTR, ROSTER_MIN, ROSTER_MAX, WEEKS, get TRADE_DEADLINE() { return tradeDeadline(); }, PO_ROUNDS,
-  newLeague, setUser, save, load, simWeek, simToEndOfRegular, simPlayoffRound, reSign, toFreeAgency, faNextDay, toDraft, draftPlayer, aiDraftPick,
+  par: parApi, newLeague, setUser, save, load, simWeek, simToEndOfRegular, simPlayoffRound, reSign, toFreeAgency, faNextDay, toDraft, draftPlayer, aiDraftPick,
   simDraftToUser, simDraftToEnd, autoPickUser, startSeason, signPlayer, release, evaluateTrade, executeTrade, ensureDepth, teamRatings, roster, payroll, capRoom,
   team, freeAgents, prospects, marketValue, tradeValue, userRosterIssue, confSeeds, divStandings, pct, phaseLabel, fullName, nm, careerTotals, formerStatRows,
   compactState, saveBreakdown, TV, GRADE_PTS, restructurePreview, restructure, payCutPreview, askPayCut, appealSuspension, mentorOf, menteeOf, canMentor, setMentor, endMentor, marketSize, MARKET_NAME, fanMood, merchLeaders, starMerch, rsFuture, GM_STYLES, GM_PHIL, rivalGm, relLabel, gmPremium, gmValue, gmPickValue, gmInterest, gmRead, GM_READS, dlMarket, dlNext, DL_DAYS, shopAround, shopTake, SHOP_WANTS, setDifficulty, DIFF, inCamp, rosterMax, CAMP_MAX, playPreseasonGame, finishCamp, cutCandidates, resolveBattles, treatInjury, rushBack, PRACTICE, practiceOf, setPractice, practiceEffects, setReturner, returnerScore, autoReturner, returnersFor, discLabel, AGGR_NAME, tendText, hcTend, coachProfile, coachTree, disputeAction, visitFA, marketInfo, onMarket, stEdge, SET_OPTS, SET_DEFAULT, setSimSetting, h2hFor, franchiseSeasonLeaders, SEASON_LEAD_KEYS, proComparison, GRADE_CURVE, OFF_CALLS, DEF_CALLS, CALL_TIPS, offScore, defScore, lineup, r1, draftScore, picksOf, pickValue, pickLabel, projSlot, deadFor, deadIfCut, capYear, passerRating, autoFixRoster, minSalary, seasonPayroll,
@@ -16473,10 +16518,11 @@ return {
   retireTalk, payrollFloor, simSmart, inboxItems, inboxAct, inboxCount, legacy, retireGM, unretireGM, SCENARIOS, startScenario, scenarioCard,
   SITS, callProfile, tendencyReport, TWO_CALLS, TWO_TIPS, tIdx, importCollegeClass, college: COLLEGE, genGenerational, PB_PLAYS, PB_FORMS, pbDiagram, pbTypForm, PB_FAM,
   fieldPlay, fxCard, fxUncard, fxDec, FLD_V, FX_DBG, filmRoom, applyFilmFix, filmFixDone, filmPending, filmMark,
-  legacyRoll, legacyProspects, legacyInfo, legacySons,
 };
 })();
 if (typeof module !== 'undefined') module.exports = HM;
+</script>
+<script>
 /* Hash Marks — football front-office UI */
 (() => {
 'use strict';
@@ -16554,7 +16600,7 @@ async function unpackSave(code) { if (code.startsWith('HMZ2:')) { const st = new
 function readIdx() { try { return JSON.parse(lsGet(IDX_KEY) || '[]'); } catch (e) { return []; } }
 function writeIdx(a) { try { lsSet(IDX_KEY, JSON.stringify(a)); } catch (e) {} }
 const newSlotId = () => 's' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
-function persist() { if (saving) { saveAgain = true; return; } saving = doSave().catch(() => {}).finally(() => { saving = null; if (saveAgain) { saveAgain = false; persist(); } }); }
+function persist() { parBg(true); if (saving) { saveAgain = true; return; } saving = doSave().catch(() => {}).finally(() => { saving = null; if (saveAgain) { saveAgain = false; persist(); } }); }
 async function doSave() {
   if (ui.mode === 'college' && !(S() && S().uni)) return doSaveCol();
   const s = S(); if (!s || s.userTid == null) return;
@@ -16576,7 +16622,7 @@ async function doSave() {
   }
 }
 function openSave(d) { if (d.mode === 'college') { HM.college.load(d); ui.mode = 'college'; ui.cView = 'home'; } else { HM.load(d); ui.mode = d.car ? 'career' : d.uni && d.uni.fg === 'college' ? 'college' : null; ui.cView = 'home'; ui.carView = 'home'; } }
-async function loadSlot(id) { const code = SLOTS.get(id); if (!code) throw new Error('missing'); openSave(JSON.parse(await unpackSave(code))); slotId = id; try { lsSet(CUR_KEY, id); } catch (e) {} }
+async function loadSlot(id) { const code = SLOTS.get(id); if (!code) throw new Error('missing'); openSave(JSON.parse(await unpackSave(code))); slotId = id; try { lsSet(CUR_KEY, id); } catch (e) {} parBg(); }
 // tests/ui.test.py and tests/shot.py open a saved game (a repro save or a test checkpoint) without going through a slot
 window.HMtest = { load: j => { openSave(typeof j === 'string' ? JSON.parse(j) : j); slotId = newSlotId(); ui.view = 'dashboard'; ui.modal = null; render(); } };
 async function migrateOld() { const old = lsGet(KEY); if (!old || readIdx().length) return; try { HM.load(old); slotId = newSlotId(); await doSave(); lsDel(KEY); } catch (e) {} }
@@ -16587,7 +16633,7 @@ function toast(t) { ui.toast = t; clearTimeout(toast.h); toast.h = setTimeout(()
 // ---------- small components ----------
 const chip = (t, lg) => (lg ? `<span class="tc lg logo" data-tid="${t.tid}" style="--tc:${t.color}">${teamLogo(t, 56, `${t.city} ${t.name}`)}</span>` : `<span class="tcl" data-tid="${t.tid}">${teamLogo(t, 20)}<span class="tc" style="--tc:${t.color}">${E(t.abbr)}</span></span>`);
 const tlink = (t, full) => `<button class="tlink" data-act="team" data-id="${t.tid}">${chip(t)}<span class="tn">${E(full ? t.city + ' ' + t.name : t.name)}</span></button>`;
-const genB = p => (p && p.gen ? ' <span class="genb" title="Generational talent">GEN</span>' : '') + (p && p.leg ? legB(p) : '');
+const genB = p => (p && p.gen ? ' <span class="genb" title="Generational talent">GEN</span>' : '');
 const plink = p => p ? `<button class="plink" data-act="player" data-id="${p.id}">${E(p.fn + ' ' + p.ln)}</button>${genB(p)}` : '<span class="muted">—</span>';
 // ratings are shown on the display scale (see HM.dispR): rv for pro players, rt for pro team ratings, rcv/rct for college
 const rv = x => HM.dispR(x), rt = x => HM.dispT(x), rcv = x => HM.dispRC(x), rct = x => HM.dispTC(x);
@@ -16894,11 +16940,17 @@ const WEEK_BG_OK = new Set(['liveKick', 'liveToggle', 'liveSpeed', 'liveJump', '
 function weekBg() {
   clearTimeout(ui.weekBgT); ui.weekBgT = null;
   if (!HM.weekPending || !HM.weekPending()) return;
-  if (HM.weekRestStep()) { ui.weekBgT = setTimeout(weekBg, 40); return; }
+  if (parBusy()) { ui.weekBgT = setTimeout(weekBg, 60); return; }
+  // (games the workers already played take a moment each, so a tick books several of them)
+  const t0 = performance.now(); let more; while ((more = HM.weekRestStep()) && performance.now() - t0 < 25) ;
+  if (more) { ui.weekBgT = setTimeout(weekBg, 40); return; }
   if (!HM.weekPending()) persist();
 }
 function weekBgFlush() { if (!ui.weekBgT && !(HM.weekPending && HM.weekPending())) return; clearTimeout(ui.weekBgT); ui.weekBgT = null; const watched = HM.weekPending() && !(ui.live && ui.live.coach); HM.weekFlush(); if (watched && !HM.weekPending()) persist(); }
 function runAct(name, d) {
+  if (PAR.wait) { (PAR.queue || (PAR.queue = [])).push([name, { ...d }]); return 'norender'; } // (the week's games are still coming back from the workers)
+  if (PAR_WAIT.has(name) && !(d && d.parOk)) return parGate(() => { const r = runAct(name, { ...d, parOk: '1' }); if (r !== 'norender') render(); }, true);
+  if (PAR_SIDE.has(name)) parSide();
   if (!WEEK_BG_OK.has(name)) weekBgFlush();
   let snap = null;
   if (UNDOABLE[name] && S() && S().userTid != null) { try { snap = HM.save(); } catch (e) {} }
@@ -16906,6 +16958,7 @@ function runAct(name, d) {
   const r = actions[name](d);
   if (snap) { let changed = true; try { changed = HM.save() !== snap; } catch (e) {} if (changed) ui.undo = { label: UNDOABLE[name], snap }; }
   if (UNDO_CLEARS.includes(name)) ui.undo = null;
+  if (UNDO_CLEARS.includes(name) || PAR_ACTS.has(name) || PAR_NEW.has(name)) parBg();
   return r;
 }
 // ---------- top bar ----------
@@ -16949,6 +17002,99 @@ function nav() {
   return navGroups(NAV_GROUPS, ui.view, 'nav', badge, '', `<button class="nav-search" data-act="searchOpen">${ICON.search} Find a player</button>`);
 }
 
+// ---------- the week's games on other cores ----------
+// Web Workers, each running this page's own engine script (<script id="hm-engine">) with a copy of the save, play the week's
+// games ahead; the engine takes each one when the sim reaches it, if both teams are unchanged, and plays anything else live
+// (HM.par). A sim that shows your game first (watch, coach, quick sim) starts at once and the workers play the rest alongside:
+// the loops that book the rest of the week (weekBg, cQuick, cBg) wait for them (parBusy). A sim with nothing to show first
+// (career Next, each step of a multi-week sim) waits for them (parGate). After a sim the next week's games start in the
+// background (parBg), so the next click usually finds them done. Without workers everything plays on the page as before.
+const PAR = window.HMpar = { ws: null, n: 0, run: null, wait: false, off: false, seq: 0, bgT: null, idleT: null };
+// the actions that play games: the ones that show your game first, and the ones that wait (multi-week sims go through
+// runSim, which waits before every step)
+const PAR_SIDE = new Set(['week', 'quickWeek', 'coachWeek', 'cWeek', 'cWatch', 'carWatch']), PAR_WAIT = new Set(['carNext']);
+const PAR_ACTS = new Set([...PAR_SIDE, ...PAR_WAIT]);
+// and the ones that start or open a game, after which the first week's games can start in the background
+const PAR_NEW = new Set(['cBegin', 'carBegin', 'openSlot', 'importSave']);
+function parWorkers() {
+  if (PAR.ws || PAR.off) return PAR.ws;
+  try {
+    const eng = document.getElementById('hm-engine');
+    if (!eng || typeof Worker === 'undefined') { PAR.off = true; return null; }
+    const src = eng.textContent + '\nself.onmessage = e => { const m = e.data; try { postMessage({ id: m.id, res: HM.par.work(m) }); } catch (err) { postMessage({ id: m.id, err: String(err && err.stack || err) }); } };';
+    const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+    PAR.n = Math.max(1, Math.min(6, (navigator.hardwareConcurrency || 4) - 2));
+    PAR.ws = Array.from({ length: PAR.n }, () => { const w = new Worker(url); w.cb = new Map(); w.onmessage = e => { const f = w.cb.get(e.data.id); if (f) { w.cb.delete(e.data.id); f(e.data); } }; w.onerror = () => parDown(); return w; });
+  } catch (e) { console.warn('worker pool off:', e); PAR.off = true; PAR.ws = null; }
+  return PAR.ws;
+}
+// a worker failed: stop using them (everything still plays on the page)
+function parDown() { PAR.off = true; if (PAR.ws) for (const w of PAR.ws) { for (const f of w.cb.values()) f({ err: 'worker stopped' }); w.terminate(); } PAR.ws = null; try { HM.par.clear(); } catch (e) {} }
+const parAsk = (w, msg) => new Promise((res, rej) => { const id = ++PAR.seq; w.cb.set(id, r => (r.err ? rej(new Error(r.err)) : res(r.res))); w.postMessage({ ...msg, id }); });
+const parOpt = pre => ({ pre, college: ui.mode === 'college' && !HM.uniOn() });
+function parPlan(pre) { try { return HM.par.plan(parOpt(pre)); } catch (e) { console.warn(e); return []; } }
+// the games go out two at a time, each worker coming back for more when it's done: on a laptop with fast and slow cores the
+// fast ones end up playing most of them. A worker gets the save with its first pair (later pairs are other teams' games, so
+// what the earlier ones changed in its copy doesn't matter); each result is cached as soon as it's back.
+function parSend(items) {
+  const t0 = performance.now(), snap = HM.par.snap(parOpt(false)), q = items.slice(), CH = 2;
+  const one = async w => { let first = true; while (q.length) { const x = q.splice(0, CH); HM.par.put(await parAsk(w, first ? { snap, items: x } : { items: x })); first = false; } };
+  const p = Promise.all(PAR.ws.map(one))
+    .then(() => { PAR.last = { n: items.length, ms: Math.round(performance.now() - t0) }; }, e => console.warn('games played ahead were dropped:', e))
+    .finally(() => { if (PAR.run === p) PAR.run = null; parIdle(); });
+  PAR.run = p; return p;
+}
+// everything the next sim needs, sent and back (the week's setup runs first, as the sim is about to)
+async function parReady() {
+  for (let i = 0; i < 3; i++) {
+    if (PAR.run) { await PAR.run; continue; }
+    if (!PAR.ws) return;
+    const items = parPlan(true); if (!items.length) return;
+    await parSend(items);
+  }
+}
+// run fn once the workers have played what it will need; fn runs at once when there's nothing to wait for
+function parGate(fn, show) {
+  if (!parWorkers()) return fn();
+  if (!PAR.run) { const items = parPlan(true); if (!items.length) return fn(); parSend(items); }
+  if (show) { PAR.wait = true; parWaitShow(true); } // (a multi-week sim shows its own progress and keeps its Cancel button)
+  const t0 = performance.now();
+  parReady().catch(e => console.warn(e)).finally(() => {
+    PAR.waited = Math.round(performance.now() - t0); if (show) { PAR.wait = false; parWaitShow(false); }
+    try { fn(); } finally { parBg(); }
+    // clicks made while it waited run now, in order, as they did when a sim held the page (a second Next plays a second week)
+    const q = (PAR.queue || []).splice(0);
+    (function next() { while (q.length && !PAR.wait) { const [name, d] = q.shift(); const r = runAct(name, d); if (r !== 'norender') render(); } if (q.length) (PAR.queue || (PAR.queue = [])).unshift(...q); })();
+  });
+  return 'norender';
+}
+// a sim that shows your game first: the workers start on the rest, and the sim goes ahead at once
+function parSide() { if (!parWorkers()) return; parReady().catch(e => console.warn(e)).finally(() => parBg()); }
+// a loop booking the rest of a week asks first: true while games are still coming back (check again shortly)
+const parBusy = () => !!PAR.run;
+function parWaitShow(on) {
+  let el = document.querySelector('.par-wait');
+  if (on && !el) { el = document.createElement('div'); el.className = 'toast par-wait'; el.textContent = "Playing this week's games…"; document.body.appendChild(el); }
+  else if (!on && el) el.remove();
+}
+// the next week's games, in the background, once things settle (not while a sim is running or the page is waiting).
+// persist() asks after every save; it only looks again once the calendar has moved (a click on a sim checks everything anyway)
+const parClock = () => { const s = HM.S, c = HM.college.S; return [s && s.teams ? `${s.season}|${s.phase}|${s.week}|${s.weekLazy ? 1 : 0}` : '', c ? `${c.season}|${c.phase}|${c.week}` : '', ui.mode].join('/'); };
+function parBg(fromSave) {
+  clearTimeout(PAR.bgT);
+  PAR.bgT = setTimeout(() => {
+    if (PAR.wait || PAR.run || (ui.sim && !ui.sim.done) || PAR.off) return;
+    let k = ''; try { k = parClock(); } catch (e) { return; }
+    if (fromSave && k === PAR.clock) return;
+    if (!parWorkers()) return;
+    PAR.clock = k; const items = parPlan(false); if (items.length) parSend(items);
+  }, 300);
+}
+// the workers hold a copy of the league each (about 150 MB): let them go after a few idle minutes
+function parIdle() {
+  clearTimeout(PAR.idleT);
+  PAR.idleT = setTimeout(() => { if (PAR.run || !PAR.ws) return; for (const w of PAR.ws) w.terminate(); PAR.ws = null; }, 180000);
+}
 // ---------- clickable names in free text ----------
 // News, headlines, mail, stories and play-by-play are plain sentences. LN(text) escapes the text and turns every
 // player name it recognises into the same clickable link plink() makes. Names are matched against the pro league
@@ -18143,7 +18289,7 @@ function playerModal(p) {
   if (isP && !p.deep) acts.push(`<button class="btn" data-act="scout" data-id="${p.id}" ${(s.scoutPts ?? 0) > 0 ? '' : 'disabled'}>Scout closely (${s.scoutPts ?? 0} left)</button>`);
   const contract = p.tid >= 0 ? `${money(p.contract.sal)} × ${p.contract.yrs} yr${p.contract.yrs === 1 ? '' : 's'}${p.contract.gtd ? `, ${money(p.contract.gtd)} guaranteed` : ''}${clauseText(p.contract) ? `<div class="muted" style="font-size:11.5px;font-family:var(--fb)">${E(clauseText(p.contract))}</div>` : ''}` : p.tid === -1 ? `Asking ${money(p.ask.sal)} × ${p.ask.yrs}` : 'Rookie deal after the draft';
   const draft = p.draft ? `${p.draft.season} round ${p.draft.rd}, pick ${p.draft.pk}${p.draft.comp ? ' (comp.)' : ''} (${T(p.draft.tid)?.abbr || ''})` : p.undrafted ? 'Undrafted' : isP ? 'Not yet drafted' : 'Veteran';
-  return `<div class="mh${t ? ' tmh' : ''}"${t ? ` style="--tc:${t.color}"` : ''}>${faceOf(p, 76)}<div><div class="lbl" style="display:flex;gap:6px;align-items:center">${t ? chip(t) : ''}${E(p.pos)} · ${E(where)} ${archPill(p)}${p.gen ? ' <span class="pill gen">Generational talent</span>' : ''}${p.injLbl ? ' <span class="pill l" title="A history of injuries. Teams pay him less and he is more likely to get hurt again.">Injury prone</span>' : ''}</div><h2 style="font-size:28px">${p.num && p.tid >= 0 ? `<span class="muted" style="font-size:22px">#${p.num}</span> ` : ''}${E(p.fn + ' ' + p.ln)}</h2>${legLine(p)}</div><button class="btn sm x" data-act="close" aria-label="Close">Close</button></div>
+  return `<div class="mh${t ? ' tmh' : ''}"${t ? ` style="--tc:${t.color}"` : ''}>${faceOf(p, 76)}<div><div class="lbl" style="display:flex;gap:6px;align-items:center">${t ? chip(t) : ''}${E(p.pos)} · ${E(where)} ${archPill(p)}${p.gen ? ' <span class="pill gen">Generational talent</span>' : ''}${p.injLbl ? ' <span class="pill l" title="A history of injuries. Teams pay him less and he is more likely to get hurt again.">Injury prone</span>' : ''}</div><h2 style="font-size:28px">${p.num && p.tid >= 0 ? `<span class="muted" style="font-size:22px">#${p.num}</span> ` : ''}${E(p.fn + ' ' + p.ln)}</h2></div><button class="btn sm x" data-act="close" aria-label="Close">Close</button></div>
   <div class="mb">
     <div class="row" style="gap:22px;align-items:flex-end"><div><div class="lbl">${isP ? 'Scouted OVR' : 'Overall'}</div><div class="big ${rTier(ovr) && 'rtg ' + rTier(ovr)}">${ovr}${isP ? `<span class="muted" style="font-size:18px"> ±${Math.round(view.sdO)}</span>` : ''}</div></div><div><div class="lbl">Potential</div><div class="big rtg ${rTier(pot)}" style="opacity:.85">${pot}${isP ? `<span style="font-size:18px"> ±${Math.round(view.sdP)}</span>` : ''}</div></div>${status(p)}</div>
     ${honorBadges(p)}
@@ -20317,7 +20463,6 @@ function retiredModal(r) {
     ${(() => { const c = r.coach != null && S().coaches[r.coach]; return c ? `<div class="note"><b>Coaching now:</b> ${clink(c)}, ${E(HM.ROLE_NAME[c.role].toLowerCase())}${c.tid >= 0 && T(c.tid) ? ` of the ${chip(T(c.tid))} ${E(T(c.tid).city + ' ' + T(c.tid).name)}` : ', looking for a job'} (rating ${c.rat}).</div>` : ''; })()}
     ${awardsSection(r.hon, r.stats)}
     <section class="panel"><h3>Career stats</h3>${stTable}</section>
-    ${legFamily(r)}
   </div>`;
 }
 function hofView() {
@@ -20360,23 +20505,6 @@ function hofView() {
 }
 
 
-// ---------- legacy families: the badge by a son's name, the line on his card, and the family on his father's card ----------
-const legB = p => { const i = HM.legacyInfo(p); return i ? ` <span class="legb" title="${E(i.text + (i.yrs ? ` (${i.pos}, ${i.yrs})` : ''))}">Legacy</span>` : ''; };
-function legLine(p) {
-  const i = HM.legacyInfo(p); if (!i) return '';
-  const who = i.rid != null ? rlink(i.rid, i.name) : E(i.name);
-  return `<p class="legl">Son of ${i.hof ? 'Hall of Famer ' : 'former ' + E(i.pos) + ' '}${who}${i.yrs ? ` <span class="muted">(${E(i.yrs)})</span>` : ''}.</p>`;
-}
-function legFamily(r) {
-  const L = HM.legacySons(r.id); if (!L.length) return '';
-  const row = s => {
-    if (s.due != null && !s.fn) return `<div>A son, ${s.age ? `${s.age} years old` : 'not born yet'}. He'll be in the ${s.due} recruiting class.</div>`;
-    if (s.pro) { const t = s.pro.tid >= 0 ? T(s.pro.tid) : null; return `<div>${plink({ ...s.pro, leg: null })}, ${E(s.pro.pos)}: ${t ? `${chip(t)} ${E(t.city + ' ' + t.name)}` : s.pro.tid === -2 ? `${s.pro.cls} draft prospect` : 'free agent'}</div>`; }
-    if (s.col) { const C = HM.college, t = s.col.tid >= 0 ? C.team(s.col.tid) : null; return `<div>${cplink({ ...s.col, leg: null })}, ${E(s.col.pos)}: ${t ? E(t.name) : s.col.tid === -2 ? `${s.col.stars ? s.col.stars + '-star ' : ''}recruit, class of ${C.S.season + 1}` : 'in the transfer portal'}</div>`; }
-    return `<div>${E(s.fn + ' ' + s.ln)}, ${E(s.pos)} <span class="muted">(no longer playing)</span></div>`;
-  };
-  return `<section class="panel"><h3>Family</h3><div class="stack" style="gap:6px;font-size:13px">${L.map(row).join('')}</div></section>`;
-}
 // ---------- play diagrams on the play-calling screens (pro and college) ----------
 // HM.pbDiagram lines the play up the way the field engine runs it; this draws it: the line of scrimmage, the offense
 // (linemen as squares), each route with an arrow where it keeps going, the quarterback's drop or fake, and on a run the
@@ -21915,7 +22043,9 @@ function cQuick() {
   const Q = ui.cq; clearTimeout(ui.cqT); ui.cqT = null; if (!Q) return;
   if (Q.cs !== CSx() || ui.mode !== 'college') { ui.cq = null; return; } // (another save or mode was opened: what's played stays)
   if (FV.raf) { ui.cqT = setTimeout(cQuick, 120); return; }
-  let more = false; try { more = HM.uniBgStep(true); } catch (e) { console.error(e); more = false; }
+  if (parBusy() && Q.shown) { ui.cqT = setTimeout(cQuick, 60); return; } // (your game first, then the rest once the workers are back)
+  // (games the workers already played take a moment each, so a tick books several of them)
+  let more = false; const t0 = performance.now(); try { do more = HM.uniBgStep(true); while (more && performance.now() - t0 < 25); } catch (e) { console.error(e); more = false; }
   const c = CSx(), ms = c.sched[Q.wk - 1] || [], m = ms.find(x => x.h === c.userTid || x.a === c.userTid);
   if (!Q.shown && m && m.gid) { Q.shown = true; if (!ui.modal) ui.modal = { type: 'cbox', id: m.gid }; render(); }
   if (more) {
@@ -22243,7 +22373,7 @@ function cPlayerModal(p) {
   const est = isR && !p.car ? HC().recEst(p) : null, hide = !!est, rv0 = isR ? HC().recView(p) : null;
   const attrs = HM.POS[p.pos].attrs.map(k => { const v = est ? est.attrs[k] : rcv(p.a[k]); return `<div class="attr"><span>${E(HM.ATTR[k])}</span><div class="bar ${est ? '' : rTier(v, true)}"><i style="width:${v == null ? 0 : clamp((v - 20) / 79 * 100, 2, 100)}%"></i></div><span class="num">${v == null ? '?' : est ? '~' + v : rtg(v, true)}</span></div>`; }).join('');
   const seasons = Object.keys(p.st || {}).sort();
-  return `<div class="mh"><div><div class="lbl" style="display:flex;gap:6px;align-items:center">${t ? cchip(t) : ''}${E(p.pos)} · ${E(where)}${p.gen ? ' <span class="pill gen">Generational talent</span>' : ''}</div><h2 style="font-size:26px">${E(p.fn + ' ' + p.ln)}</h2>${legLine(p)}</div><button class="btn sm x" data-act="close" aria-label="Close">Close</button></div>
+  return `<div class="mh"><div><div class="lbl" style="display:flex;gap:6px;align-items:center">${t ? cchip(t) : ''}${E(p.pos)} · ${E(where)}${p.gen ? ' <span class="pill gen">Generational talent</span>' : ''}</div><h2 style="font-size:26px">${E(p.fn + ' ' + p.ln)}</h2></div><button class="btn sm x" data-act="close" aria-label="Close">Close</button></div>
   <div class="mb stack">${cPersLine(p)}${cAdvLine(p)}<div class="kv"><div><span class="lbl">Overall</span><b class="num">${est ? est.text : rcv(p.ovr)}</b></div><div><span class="lbl">Potential</span><b class="num">${isR ? stars(p.stars) : rcv(p.pot)}</b></div>${isR ? '' : `<div><span class="lbl">Class</span><b>${HC().clsOf(p)}</b></div>`}<div><span class="lbl">Home</span><b>${E(p.reg)}</b></div>${p.nil ? `<div><span class="lbl">NIL</span><b class="num">$${p.nil}M</b></div>` : ''}${p.xfer ? `<div><span class="lbl">Transferred from</span><b>${E(CT(p.xfer.from).name)}</b></div>` : ''}</div>
   ${isR ? `<p class="muted" style="margin:0;font-size:12.5px">${p.car ? '' : p.scouted ? 'Scouted: your staff\'s estimate is much tighter now, but it\'s still an estimate. Ratings with ~ are their read; you\'ll see the truth once he\'s on campus.' : 'Before you scout him (5 hours), your staff has only a rough read, shown as a wide range. The stars are the services\' opinion, and they miss: some 3-stars are better than some 5-stars.'}${p.rk ? ` National rank #${p.rk}.` : ''}</p>
   ${p.pos !== 'K' && p.pos !== 'P' ? `<p style="margin:0;font-size:13px">Scheme fit at ${E(CT(c.userTid).name)}: ${fitTag(p, CT(c.userTid))}</p>` : ''}
@@ -22305,8 +22435,8 @@ Object.assign(actions, {
 // never while a play is being drawn, so finishing the game only has the wrap-up left
 function cBg() {
   clearTimeout(ui.cBgT); ui.cBgT = null; if (!HC().live) return;
-  if (FV.raf) { ui.cBgT = setTimeout(cBg, 120); return; }
-  let more = false; try { more = HM.uniBgStep(); } catch (e) { more = false; }
+  if (FV.raf || parBusy()) { ui.cBgT = setTimeout(cBg, FV.raf ? 120 : 60); return; }
+  let more = false; const t0 = performance.now(); try { do more = HM.uniBgStep(); while (more && performance.now() - t0 < 12); } catch (e) { more = false; }
   if (more) ui.cBgT = setTimeout(cBg, 30);
 }
 // ---------- your job ----------
@@ -23100,7 +23230,7 @@ function carCareer(v) {
   <section class="panel"><h3>Trophy case</h3>${cases || '<p class="muted" style="margin:0">Nothing yet. Keep going.</p>'}</section>
   <section class="panel"><h3>Season by season</h3><div class="tw"><table class="t"><thead><tr><th>Season</th><th>Level</th><th>Team</th><th class="n">GP</th>${cols.map(([l]) => `<th class="n">${E(l)}</th>`).join('')}<th>Honors</th></tr></thead><tbody>${rows.map(r => `<tr><td class="num">${r.s}</td><td>${E(r.lvl)}</td><td>${E(r.team)}</td><td class="num">${r.gp || 0}</td>${cols.map(([, k]) => `<td class="num">${Math.round(r.st[k] || 0).toLocaleString()}</td>`).join('')}<td style="font-size:12px">${E((r.hon || []).filter(h => h !== 'POTW' && h !== 'MS').map(h => nice[h] || h).join(', '))}</td></tr>`).join('')}
     ${['College', 'Pro'].filter(l => rows.some(r => r.lvl === l)).map(l => { const t = tot(l); return `<tr class="sub"><td colspan="3"><b>${l} total</b></td><td class="num">${rows.filter(r => r.lvl === l).reduce((a, r) => a + (r.gp || 0), 0)}</td>${cols.map(([, k]) => `<td class="num"><b>${Math.round(t[k] || 0).toLocaleString()}</b></td>`).join('')}<td></td></tr>`; }).join('')}</tbody></table></div></section>
-  <section class="panel"><h3>Milestones</h3><div class="stack" style="gap:5px;font-size:13px">${c.log.filter(x => ['start', 'commit', 'move', 'draft', 'money', 'ret', 'rec', 'fam'].includes(x.k)).slice(0, 40).map(x => `<div><span class="num muted" style="margin-right:6px">${x.s}</span>${LN(x.text)}</div>`).join('')}</div></section>`;
+  <section class="panel"><h3>Milestones</h3><div class="stack" style="gap:5px;font-size:13px">${c.log.filter(x => ['start', 'commit', 'move', 'draft', 'money', 'ret', 'rec'].includes(x.k)).slice(0, 40).map(x => `<div><span class="num muted" style="margin-right:6px">${x.s}</span>${LN(x.text)}</div>`).join('')}</div></section>`;
 }
 function carNews(v) {
   const c = v.c;
@@ -23927,8 +24057,13 @@ function runSim(o) {
   if (simBusy()) return;
   const st = ui.sim = { title: o.title, unit: o.unit, rows: [], n: 0, sub: '', head: '', done: null, cancel: false };
   const upd = () => { try { if (o.head) st.head = o.head(); if (o.sub) st.sub = o.sub(); } catch (e) {} };
-  const finish = (msg, err) => { st.done = msg; st.err = !!err; upd(); persist(); try { if (o.after) o.after(st); } catch (e) {} render(); };
+  const finish = (msg, err) => { st.done = msg; st.err = !!err; upd(); persist(); try { if (o.after) o.after(st); } catch (e) {} render(); parBg(); };
   const tick = () => {
+    if (ui.sim !== st) return;
+    if (st.cancel) return finish('Stopped. Everything played so far is saved.');
+    parGate(() => tick2(), false);
+  };
+  const tick2 = () => {
     if (ui.sim !== st) return;
     if (st.cancel) return finish('Stopped. Everything played so far is saved.');
     let r;
