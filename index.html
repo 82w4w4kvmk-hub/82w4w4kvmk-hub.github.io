@@ -635,7 +635,9 @@ html.dense h2{font-size:22px}
 .kv.adv{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
 .pctg{margin-top:10px}.pctg>.lbl{margin-bottom:2px}
 .pctr{display:grid;grid-template-columns:minmax(110px,190px) 62px 1fr;gap:12px;align-items:center;font-size:12.5px;padding:4px 0}
-.pctr>b{text-align:right}.pctr.nq{opacity:.5}
+.pctr>b{text-align:right}.pctr.nq>b,.pctr.nq .pctb{opacity:.6}.pctr.nq .pctb b{background:var(--panel2)!important;color:var(--ink2);border:2px dashed var(--line);text-shadow:none}
+.pctr .nqt{display:block;font-size:11px;color:var(--ink2);margin-top:1px}.pctr .nqt i{font:700 9.5px/15px var(--fb);font-style:normal;letter-spacing:.06em;padding:0 5px;border-radius:4px;margin-right:5px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+.pctl .ph h3 .pill{margin-left:8px;vertical-align:middle}
 .pctb{position:relative;height:6px;border-radius:3px;background:var(--panel2);margin-right:12px}
 .pctb::after{content:'';position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--line2,var(--line))}
 .pctb i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;opacity:.55}
@@ -8868,6 +8870,15 @@ const PCT_SETS = {
   CB: [['Coverage', [...PCT_COV, ...PCT_TRK_COV]], ['Tackling', PCT_TKL]], S: [['Coverage', [...PCT_COV, ...PCT_TRK_COV]], ['Tackling', PCT_TKL]],
   K: [['Kicking', PCT_K]], P: [['Punting', PCT_P]],
 };
+// what each metric's volume counts, so the card can say how far a player is from qualifying ("48 of 70 dropbacks")
+const PCT_UNIT = {
+  epa: 'dropbacks', sr: 'dropbacks', sk: 'dropbacks', cpoe: 'charted throws', adot: 'charted throws', ypa: 'attempts', td: 'attempts', int: 'attempts',
+  prs: 'pressured attempts', cln: 'clean attempts', tt: 'timed throws', repa: 'carries', rsr: 'carries', ypc: 'carries', yco: 'carries', ybc: 'carries',
+  btk: 'touches', fum: 'touches', yprr: 'routes', tprr: 'routes', tepa: 'targets', ctch: 'targets', drop: 'targets', sep: 'targets', croe: 'targets',
+  tadot: 'targets', ypr: 'catches', yac: 'catches', cypt: 'targets', ccmp: 'targets', crtg: 'targets', cepa: 'targets', finc: 'targets', csep: 'targets',
+  tkl: 'games', prg: 'games', skg: 'games', peng: 'games', mtk: 'tackle attempts', prr: 'pass-rush snaps', conv: 'pressures', ttp: 'pressures',
+  pbe: 'pass-block snaps', sar: 'pass-block snaps', fg: 'field goal tries', lng: 'field goal tries', xp: 'extra point tries', pavg: 'punts',
+};
 // whose stats a card ranks against: the pro league here, the college game (98-college-5d-pct) its own players.
 // A source gives the players at a position with a line that season, each line in the pro shape.
 const PCT_PRO = {
@@ -8917,7 +8928,8 @@ function percentiles(p, season, src = PCT_PRO) {
       const v = m[2](s), vol = m[3](s); if (v == null || !isFinite(v) || !vol) continue;
       const vals = pctValues(pool, m); if (vals.length < 8 || vals[0] === vals[vals.length - 1]) continue; // too few qualified players to rank against, or nothing tells them apart
       const q = vol >= m[4] * pool.G;
-      rows.push({ k: m[0], l: m[1], v: PCT_FMT[m[6]](v), pct: pctRank(vals, v, m[5] === 1, q), q, lo: m[5] === 1, nt: m[5] === 2, n: vals.length, d: m[7] || '' });
+      // (vol, need, u: his volume, the floor he has to reach, and what it counts)
+      rows.push({ k: m[0], l: m[1], v: PCT_FMT[m[6]](v), pct: pctRank(vals, v, m[5] === 1, q), q, lo: m[5] === 1, nt: m[5] === 2, n: vals.length, d: m[7] || '', vol, need: Math.ceil(m[4] * pool.G - 1e-9), u: PCT_UNIT[m[0]] || 'plays' });
     }
     if (rows.length) groups.push({ l: label, rows });
   }
@@ -20656,9 +20668,13 @@ function pctPanel(p, col) {
   const pos = { QB: 'quarterbacks', RB: 'running backs', WR: 'wide receivers', TE: 'tight ends', OL: 'offensive linemen', DL: 'defensive linemen', LB: 'linebackers', CB: 'cornerbacks', S: 'safeties', K: 'kickers', P: 'punters' }[P.pos] || 'players';
   const yrs = P.seasons.slice().reverse(), anyNq = P.groups.some(g => g.rows.some(r => !r.q)), anyNt = P.groups.some(g => g.rows.some(r => r.nt));
   const col0 = r => r.nt ? 'hsl(220,8%,60%)' : pctColor(r.pct);
-  const row = r => `<div class="pctr${r.q ? '' : ' nq'}" title="${E((r.d ? r.d + ' ' : '') + (r.lo ? 'Lower is better, so the ranking is flipped. ' : r.nt ? 'Neither better nor worse, a style: ranked from lowest to highest. ' : '') + `Ranked against ${r.n} qualified ${pos}.` + (r.q ? '' : ' Not enough volume to qualify yet.'))}"><span>${E(r.l)}</span><b class="num">${E(r.v)}</b><div class="pctb"><i style="width:${r.pct}%;background:${col0(r)}"></i><b style="left:${r.pct}%;background:${col0(r)}">${r.pct}</b></div></div>`;
-  return `<section class="panel pctl"><div class="ph"><h3>Percentile rankings</h3>${yrs.length > 1 ? `<label class="row" style="gap:6px"><span class="lbl">Season</span><select data-pct-pid="${key}" aria-label="Season for percentile rankings">${yrs.map(y => `<option ${y === P.season ? 'selected' : ''}>${y}</option>`).join('')}</select></label>` : `<span class="lbl">${P.season}</span>`}</div>
-    <p class="muted" style="font-size:12.5px;margin:0 0 8px">Where he ranks among qualified ${pos}${lg}${P.season === cur ? ' this season' : ` in ${P.season}`}: 100 is the best${col ? '' : ' in the league'}, 1 the worst. Stats where lower is better are flipped.${anyNt ? ' Grey bars are styles, neither good nor bad: ranked lowest to highest.' : ''}${anyNq ? ' Faded rows: not enough volume to qualify yet.' : ''}</p>
+  // qualified or not, said outright: a tag on each short row with how far he is from the floor, and a count in the header
+  const past = P.season !== cur, nqt = r => `${r.vol} of ${r.need} ${r.u}`;
+  const row = r => `<div class="pctr${r.q ? '' : ' nq'}" title="${E((r.d ? r.d + ' ' : '') + (r.lo ? 'Lower is better, so the ranking is flipped. ' : r.nt ? 'Neither better nor worse, a style: ranked from lowest to highest. ' : '') + `Ranked against ${r.n} qualified ${pos}.` + (r.q ? ` Qualified: ${r.vol} ${r.u}, ${r.need} needed.` : ` Not qualified: ${nqt(r)} needed${past ? '' : ' so far'}. Placed among the qualified players, but not counted in the ranking.`))}"><span>${E(r.l)}${r.q ? '' : `<small class="nqt"><i>NQ</i>${E(nqt(r))}</small>`}</span><b class="num">${E(r.v)}</b><div class="pctb"><i style="width:${r.pct}%;background:${col0(r)}"></i><b style="left:${r.pct}%;background:${col0(r)}">${r.pct}</b></div></div>`;
+  const all = P.groups.flatMap(g => g.rows), nq = all.filter(r => !r.q).length;
+  const qchip = !nq ? '<span class="pill w" title="Enough volume to qualify in every stat on the card">Qualified</span>' : nq === all.length ? `<span class="pill l" title="Short of the volume floor in every stat on the card">Not qualified${past ? '' : ' yet'}</span>` : `<span class="pill exp" title="${E(`Short of the volume floor in ${nq} of ${all.length} stats (tagged NQ)`)}">Qualified in ${all.length - nq} of ${all.length}</span>`;
+  return `<section class="panel pctl"><div class="ph"><h3>Percentile rankings ${qchip}</h3>${yrs.length > 1 ? `<label class="row" style="gap:6px"><span class="lbl">Season</span><select data-pct-pid="${key}" aria-label="Season for percentile rankings">${yrs.map(y => `<option ${y === P.season ? 'selected' : ''}>${y}</option>`).join('')}</select></label>` : `<span class="lbl">${P.season}</span>`}</div>
+    <p class="muted" style="font-size:12.5px;margin:0 0 8px">Where he ranks among qualified ${pos}${lg}${P.season === cur ? ' this season' : ` in ${P.season}`}: 100 is the best${col ? '' : ' in the league'}, 1 the worst. Stats where lower is better are flipped.${anyNt ? ' Grey bars are styles, neither good nor bad: ranked lowest to highest.' : ''}${anyNq ? ` Rows tagged NQ are short of the volume floor${past ? '' : ' so far'} (his volume of what's needed), so they aren't ranked against the field.` : ''}</p>
     ${P.groups.map(g => `<div class="pctg"><div class="lbl">${E(g.l)}</div>${g.rows.map(row).join('')}</div>`).join('')}</section>`;
 }
 app.addEventListener('change', e => { const pid = e.target.dataset && e.target.dataset.pctPid; if (pid == null) return; (ui.pctS || (ui.pctS = {}))[pid] = e.target.value; render(); });
