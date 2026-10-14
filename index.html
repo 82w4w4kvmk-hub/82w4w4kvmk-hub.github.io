@@ -1121,6 +1121,43 @@ ul.dlog li.sep{background:none;text-align:center;font-weight:700}
 .war .w-deck .w-bar{flex:1;margin-left:8px}
 .war .w-btn[disabled]{opacity:.45;cursor:default}
 .war .mono{font-family:var(--fm)}
+/* championship window planner (src/ui/97zn-window.js) */
+.war.wn{padding-bottom:4px}
+.wn .wn-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr);gap:14px;align-items:start;margin-bottom:14px}
+.wn .wn-ch{width:100%;display:block;overflow:visible}
+.wn .wn-bc{fill:rgba(61,214,140,.1)}.wn .wn-bb{fill:rgba(245,184,46,.08)}
+.wn .wn-lc{fill:none;stroke:var(--wok);stroke-width:1;stroke-dasharray:4 4;opacity:.7}.wn .wn-lb{fill:none;stroke:var(--wwarn);stroke-width:1;stroke-dasharray:4 4;opacity:.7}
+.wn .wn-lk{fill:none;stroke:var(--wa);stroke-width:3;stroke-linejoin:round}
+.wn .wn-ls{fill:none;stroke:var(--wa2);stroke-width:2;stroke-dasharray:6 5;opacity:.85}
+.wn .wn-dk{fill:var(--wa);stroke:var(--bg2);stroke-width:2}.wn .wn-ds{fill:var(--wa2)}
+.wn .wn-rk{fill:var(--wtx);font:600 11px var(--fm)}
+.wn .wn-bl{font:500 10px var(--fm);fill:var(--wdim);letter-spacing:.06em;text-transform:uppercase}
+.wn .wn-key{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:8px;font:500 11px var(--fm);color:var(--wdim)}
+.wn .wn-key i{display:inline-block;width:18px;height:0;vertical-align:middle;margin-right:6px;border-top:3px solid var(--wa)}
+.wn .wn-key i.s{border-top:2px dashed var(--wa2)}.wn .wn-key i.c{height:10px;border:0;background:rgba(61,214,140,.25)}.wn .wn-key i.b{height:10px;border:0;background:rgba(245,184,46,.22)}
+.wn .wn-mv{display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;padding:8px 0;border-bottom:1px solid var(--wline);font-size:12.5px;line-height:1.45}
+.wn .wn-mv:last-child{border-bottom:0}
+.wn .wn-mv b{font:700 14px var(--fm);color:var(--wa);text-align:center}
+.wn .wn-mv.k-window{font-size:13.5px;font-weight:600}.wn .wn-mv.k-sell b,.wn .wn-mv.k-cap b{color:var(--whot)}.wn .wn-mv.k-extend b{color:var(--wok)}.wn .wn-mv.k-ride b,.wn .wn-mv.k-hole b{color:var(--wwarn)}
+.wn .wn-yrs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:14px}
+.wn .wn-yr{background:var(--wpan);border:1px solid var(--wline);border-radius:14px;padding:12px;backdrop-filter:blur(10px)}
+.war-holo .wn .wn-yr{border-radius:0}
+.wn .wn-y{font:900 24px/1 var(--fd)}
+.wn .wn-tier{font:600 11px var(--fm);text-transform:uppercase;letter-spacing:.1em;margin:4px 0 8px}
+.wn .w-warn{color:var(--wwarn)}
+.wn .wn-kv{display:flex;justify-content:space-between;gap:6px;font-size:11.5px;padding:2px 0;color:var(--wdim)}.wn .wn-kv b{font:600 12px var(--fm);color:var(--wtx)}.wn .wn-kv b.w-hot{color:var(--whot)}
+.wn .wn-tw{overflow-x:auto}
+.wn .wn-t{width:100%;border-collapse:collapse;font-size:12.5px}
+.wn .wn-t th{font:600 11px var(--fm);color:var(--wdim);text-align:center;padding:4px 6px;border-bottom:1px solid var(--wline)}.wn .wn-t th:first-child{text-align:left}
+.wn .wn-t td{padding:3px 6px;border-bottom:1px solid rgba(var(--wr),.08)}
+.wn .wn-nm{white-space:nowrap}.wn .wn-nm i,.wn .wn-sal i{font:normal 500 10.5px var(--fm);color:var(--wdim)}
+.wn .wn-c{text-align:center}
+.wn .wn-v{display:inline-flex;align-items:baseline;gap:3px;min-width:46px;justify-content:center;padding:3px 6px;border-radius:8px;font:700 12.5px var(--fm);border:1px solid transparent}
+.wn .wn-v small{font:500 9.5px var(--fm);opacity:.65}
+.wn .wn-v.a{background:rgba(61,214,140,.22)}.wn .wn-v.b{background:rgba(var(--wr),.2)}.wn .wn-v.c{background:rgba(245,184,46,.16)}.wn .wn-v.d{background:rgba(255,92,108,.14)}
+.wn .wn-v.fa{background:transparent;border:1px dashed var(--wdim);opacity:.8}
+.wn .wn-gone{color:var(--wdim)}
+.wn .wn-sal{font:500 11.5px var(--fm);white-space:nowrap;text-align:right}
 /* franchise museum (src/ui/97zm-museum.js): an old museum, the same in both themes */
 .mu{--brass:#C9A24A;--brass2:#8C6A2A;--cream:#F1E7CF;--mink:#2B2118;--mink2:#6B5A45;--mser:Georgia,"Times New Roman",Times,serif;
   position:relative;border-radius:6px;padding:26px 28px 30px;color:#EFE4CC;font-family:var(--mser);border:10px solid #4A2E1E;box-shadow:inset 0 0 0 2px var(--brass2),inset 0 0 80px rgba(0,0,0,.55),0 14px 40px rgba(0,0,0,.35);
@@ -10253,6 +10290,91 @@ function negPatience(pid, kind) {
   const n = negotiation(pid, kind), used = p.neg && p.neg.key === negKey() ? p.neg.tries || 0 : 0;
   return { used, max: n.maxTries, left: Math.max(0, n.maxTries - used), low: p.neg && p.neg.key === negKey() ? p.neg.low || 0 : 0 };
 }
+// ---------- championship window planner: how strong the roster projects to be over the next five seasons ----------
+// Each player ages along the same curve the offseason uses (devBase, without the random swings), contracts run out,
+// and holes are filled at the level of a low-end starter. Two lines per season: the players you have signed, and
+// everyone kept (re-signed at about his market price). Read-only: it never changes the save.
+const WIN_N = 5;
+// what an open starting job gets filled with: the 24th-best starter at the position across the league that season
+function winFill(pools) {
+  const out = {};
+  for (const pos of POS_ORDER) {
+    const st = [];
+    for (const pool of pools) { const a = pool.filter(p => p.pos === pos).map(p => p.ovr).sort((x, y) => y - x).slice(0, LINEUP_N[pos]); st.push(...a); }
+    st.sort((x, y) => y - x);
+    out[pos] = st.length ? st[Math.min(st.length - 1, Math.round(st.length * 0.75))] : 50;
+  }
+  return out;
+}
+// a lineup's overall rating from {pos, ovr} entries, the same weights as teamRatings
+function winRate(pool, fill) {
+  const by = {}; for (const p of pool) (by[p.pos] || (by[p.pos] = [])).push(p.ovr);
+  const L = {}, holes = {};
+  for (const pos of POS_ORDER) { const a = (by[pos] || []).sort((x, y) => y - x).slice(0, LINEUP_N[pos]); if (a.length < LINEUP_N[pos]) holes[pos] = LINEUP_N[pos] - a.length; while (a.length < LINEUP_N[pos]) a.push(fill[pos]); L[pos] = a; }
+  const o = a => a.reduce((s, v) => s + v, 0) / a.length;
+  const off = 0.32 * L.QB[0] + 0.22 * o(L.WR.slice(0, 3)) + 0.1 * L.RB[0] + 0.07 * L.TE[0] + 0.29 * o(L.OL);
+  const def = 0.34 * o(L.DL.slice(0, 4)) + 0.2 * o(L.LB) + 0.3 * o(L.CB.slice(0, 3)) + 0.16 * o(L.S);
+  return { r: off * 0.5 + def * 0.44 + (L.K[0] + L.P[0]) / 2 * 0.06, holes };
+}
+// his expected rating n offseasons from now (the youngest grow a little slower than the curve says)
+function winProj(p, n) {
+  let o = p.ovr, age = p.age;
+  for (let i = 0; i < n; i++) {
+    age++; let b = devBase({ ...p, age, ovr: o }, age); if (b > 0 && age <= 23) b *= 0.8;
+    o = b > 0 ? Math.min(o + b, Math.max(p.pot, o)) : Math.max(30, o + b);
+  }
+  return { ovr: Math.round(o * 10) / 10, age };
+}
+const winOff = () => S.phase !== 'regular' && S.phase !== 'playoffs';
+// seasons from capYear() he's under contract (a fifth-year option counts)
+function winSigned(p) { if (winOff() && p.expiring) return 0; const c = p.contract || {}; return (c.yrs || 0) + (c.next ? c.next.yrs || 1 : 0); }
+function winHit(p, k) { const c = p.contract; if (k < c.yrs) return c.cap ?? c.sal; if (c.next && k < c.yrs + (c.next.yrs || 1)) return c.next.sal; return 0; }
+function windowPlan(tid) {
+  tid = tid ?? S.userTid;
+  const y0 = capYear(), step0 = y0 - S.season, ros = roster(tid).filter(p => !p.ps);
+  // every team aged the same way, so a season is measured against the league as it will be: the 6th-best team is a
+  // contender, the 14th is on the playoff line (nobody's future draft classes or signings are counted, yours or theirs)
+  const proj = new Map(), all = S.teams.map(t => roster(t.tid).filter(p => !p.ps));
+  for (const pool of all) for (const p of pool) proj.set(p.id, [...Array(WIN_N)].map((_, k) => winProj(p, step0 + k)));
+  const atK = (p, k) => ({ pos: p.pos, ovr: proj.get(p.id)[k].ovr }), aliveK = (p, k) => proj.get(p.id)[k].age <= 36;
+  const lg = [...Array(WIN_N)].map((_, k) => { const pools = all.map(pool => pool.filter(p => aliveK(p, k)).map(p => atK(p, k))), fill = winFill(pools); return { fill, ref: pools.map(pl => winRate(pl, fill).r).sort((a, b) => b - a) }; });
+  const dc = draftCost(tid), dk = dc.year - y0;
+  const years = [];
+  for (let k = 0; k < WIN_N; k++) {
+    const y = y0 + k, alive = p => aliveK(p, k), { fill, ref } = lg[k], lineC = ref[5], lineB = ref[13], rankOf = r => Math.min(ref.length, ref.filter(x => x > r).length + 1);
+    const signed = ros.filter(p => k < winSigned(p) && alive(p)), kept = ros.filter(alive);
+    const at = p => atK(p, k);
+    const S1 = winRate(signed.map(at), fill), K1 = winRate(kept.map(at), fill);
+    const committed = ros.reduce((a, p) => a + (k < winSigned(p) ? winHit(p, k) : 0), 0);
+    const dead = (S.dead || []).filter(d => d.tid === tid && d.s === y).reduce((a, d) => a + d.amt, 0);
+    const draft = k === dk && dc.n ? dc.total : 0, space = S.cap - committed - dead - draft;
+    const keepCost = kept.filter(p => k >= winSigned(p)).reduce((a, p) => a + marketValue({ ...p, ovr: proj.get(p.id)[k].ovr, age: proj.get(p.id)[k].age }), 0);
+    const tier = r => r >= lineC ? 'contender' : r >= lineB ? 'bubble' : 'rebuild';
+    years.push({ y, lineC: r1(lineC), lineB: r1(lineB), top: r1(ref[0]), signed: r1(S1.r), kept: r1(K1.r), rkS: rankOf(S1.r), rkK: rankOf(K1.r), tier: tier(K1.r), tierS: tier(S1.r), holes: S1.holes,
+      space: r1(space), keepSpace: r1(space - keepCost), committed: r1(committed), dead: r1(dead), draft: r1(draft) });
+  }
+  // the core: the players who matter most over the window
+  const core = ros.filter(p => p.pos !== 'K' && p.pos !== 'P').map(p => ({ p, v: Math.max(...proj.get(p.id).map(x => x.ovr)) })).sort((a, b) => b.v - a.v).slice(0, 22).map(({ p }) => ({
+    id: p.id, name: fullName(p), pos: p.pos, age: p.age, ovr: p.ovr, signed: winSigned(p), sal: p.contract.sal, yrs: proj.get(p.id).map(x => ({ ovr: Math.round(x.ovr), age: x.age })) }));
+  // moves worth making
+  const moves = [], nm = p => `${p.pos} ${fullName(p)}`;
+  const open = years.filter(x => x.tier === 'contender').map(x => x.y), best = years.slice().sort((a, b) => b.kept - a.kept)[0];
+  if (open.length) moves.push({ k: 'window', txt: open.length === WIN_N ? `You project as a contender in every season through ${years[WIN_N - 1].y}.` : `Your window: ${open.length === 1 ? open[0] : open[0] + '–' + open[open.length - 1]}${open.length < WIN_N && open[0] === y0 && open[open.length - 1] < years[WIN_N - 1].y ? `, then the roster ages out` : ''}.` });
+  else moves.push({ k: 'window', txt: `No contender season in sight. The roster peaks in ${best.y}, about ${ordW(best.rkK)} in the league, if you keep everyone.` });
+  const nowOpen = years[0].tier === 'contender' || years[1].tier === 'contender';
+  const ext = ros.filter(p => p.age <= 27 && p.ovr >= 68 && winSigned(p) <= 2 && proj.get(p.id)[Math.min(2, WIN_N - 1)].ovr >= p.ovr + 2 && marketValue({ ...p, ovr: proj.get(p.id)[2].ovr, age: proj.get(p.id)[2].age }) >= marketValue(p) * 1.1).sort((a, b) => b.ovr - a.ovr).slice(0, 3);
+  for (const p of ext) { const pr = proj.get(p.id)[2]; moves.push({ k: 'extend', id: p.id, txt: `Extend ${nm(p)} early: he projects to go from ${dispR(p.ovr)} to ${dispR(pr.ovr)} by ${y0 + 2}, and his price rises with him (about ${money2(marketValue(p))} a year now, ${money2(marketValue({ ...p, ovr: pr.ovr, age: pr.age }))} then).` }); }
+  const old = ros.filter(p => p.ovr >= 72 && proj.get(p.id)[Math.min(2, WIN_N - 1)].ovr <= p.ovr - 4).sort((a, b) => b.ovr - a.ovr).slice(0, 3);
+  for (const p of old) { const pr = proj.get(p.id)[2]; moves.push(nowOpen ? { k: 'ride', id: p.id, txt: `${nm(p)} (${p.age}) is in the window now but projects to drop from ${dispR(p.ovr)} to ${dispR(pr.ovr)} by ${y0 + 2}. Plan his replacement; don't extend him long.` } : { k: 'sell', id: p.id, txt: `Sell high on ${nm(p)} (${p.age}): he projects to drop from ${dispR(p.ovr)} to ${dispR(pr.ovr)} by ${y0 + 2}, and your window isn't open before then.` }); }
+  if (!nowOpen && years[0].keepSpace > S.cap * 0.25) moves.push({ k: 'cap', txt: `You'll have about ${money2(years[0].keepSpace)} of room in ${y0} even after keeping everyone. Spend it on players young enough to be good when the window opens, or take on a bad contract to get picks for it.` });
+  const crunch = years.find(x => x.keepSpace < 0);
+  if (crunch) { const k = crunch.y - y0, due = ros.filter(p => winSigned(p) <= k && p.ovr >= 70 && p.pos !== 'K' && p.pos !== 'P').sort((a, b) => b.ovr - a.ovr).slice(0, 3); moves.push({ k: 'cap', txt: `Cap crunch in ${crunch.y}: keeping everyone runs about ${money2(-crunch.keepSpace)} over the cap.${due.length ? ` Choose among ${due.map(p => fullName(p)).join(', ')}.` : ''}` }); }
+  const h1 = years[1] && Object.entries(years[1].holes).filter(([pos]) => pos !== 'K' && pos !== 'P' && (['QB', 'OL', 'DL', 'CB', 'WR'].includes(pos) || years[1].holes[pos] >= LINEUP_N[pos]));
+  if (h1 && h1.length) moves.push({ k: 'hole', txt: `Open starting jobs in ${years[1].y} with nobody signed: ${h1.map(([pos, n]) => n > 1 ? `${n} ${pos}` : pos).join(', ')}. Draft or sign for them a year early.` });
+  return { tid, y0, years, core, moves };
+}
+const ordW = n => n + (n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th');
+const money2 = v => '$' + (Math.round(v * 10) / 10).toFixed(1) + 'M';
 // =====================================================================
 // VOICES: the people who message a GM or a head coach. Rival GMs talk trades (every offer arrives as a message from
 // the GM who made it, and you can push for more, counter, take it or tell him what you think), the owner checks in
@@ -16731,7 +16853,7 @@ return {
   ROLES, ROLE_NAME, coachOf, coachRat, staffBudget, staffSpend, hireCoach, fireCoach, userStaffGaps, trainerMult,
   userView, deepScout, scoutSd, scoutPointsFor,
   negotiation, scoreOffer, makeOffer, tagPrice, franchiseTag,
-  pruneOffers, acceptOffer, declineOffer, takeJob, teamRank, draftForecast, draftOddsFor, museum, warNextPick, teamNeeds, ratingWith, playoffOdds, tradeOdds, faSignRead, contractComps, negPatience, ODDS_SIMS,
+  pruneOffers, acceptOffer, declineOffer, takeJob, teamRank, draftForecast, draftOddsFor, museum, windowPlan, winProj, warNextPick, teamNeeds, ratingWith, playoffOdds, tradeOdds, faSignRead, contractComps, negPatience, ODDS_SIMS,
   careerRecords, franchiseLeaders, REC_KEYS, REC_LABEL, hofScore, hofOutlook, hofWatch, LEAD_KEYS, mainTeam,
   weekBegin, weekEnd, watchWeek, uniBgStep, weekRestStep, weekFlush, weekPending: () => !!(S && S.weekLazy), poBegin, poEnd, poPairs, coachStart, coachFinish, runGen, scoutingReport, setGamePlan, OFF_PLANS, DEF_PLANS, gamePlanFor,
   vxView, vxSeen, vxAct, vxSend, vxCall, vxPrompt, vxWrite, vxQueuePro, vxBadgePro, vxSync,
@@ -17217,7 +17339,7 @@ function topbar() {
     meta: [`<span>${E(seasonLbl)} · <strong>${E(HM.phaseLabel())}</strong></span>`, `<span>Record <strong class="num">${recStr(t.rec)}</strong> · ${ord(place)} ${HM.confName(t.conf)} ${HM.DIVS[t.div % 4]}</span>`, `<span>Cap space <strong class="num">${money(HM.capRoom(s.userTid))}</strong></span>`, `<span>Roster <strong class="num">${HM.roster(s.userTid).length}/${HM.rosterMax()}</strong></span>`],
     undo: ui.undo ? `<button class="btn tb-undo" data-act="undo" title="Undo ${E(ui.undo.label)} (Ctrl/Cmd + Z)">↶ <span>Undo ${E(ui.undo.label)}</span></button>` : '', acts: topActs() });
 }
-const NAV = [['dashboard', 'Front office'], ['todo', 'To-do'], ['roster', 'Roster'], ['depth', 'Game plan'], ['schedule', 'Schedule & scores'], ['standings', 'Standings'], ['stats', 'League stats'], ['fa', 'Free agents'], ['trade', 'Trades'], ['draft', 'Draft'], ['inbox', 'Inbox'], ['vox', 'Messages'], ['asst', 'Assistant'], ['staff', 'Coaching staff'], ['dev', 'Player development'], ['pulse', 'League pulse'], ['finance', 'Finances'], ['history', 'History'], ['museum', 'Franchise museum'], ['hof', 'Hall of Fame'], ['gm', 'GM career'], ['editor', 'League editor'], ['health', 'League health'], ['league', 'League & saves'], ['help', 'Help']];
+const NAV = [['dashboard', 'Front office'], ['todo', 'To-do'], ['roster', 'Roster'], ['depth', 'Game plan'], ['schedule', 'Schedule & scores'], ['standings', 'Standings'], ['stats', 'League stats'], ['fa', 'Free agents'], ['trade', 'Trades'], ['draft', 'Draft'], ['window', 'Title window'], ['inbox', 'Inbox'], ['vox', 'Messages'], ['asst', 'Assistant'], ['staff', 'Coaching staff'], ['dev', 'Player development'], ['pulse', 'League pulse'], ['finance', 'Finances'], ['history', 'History'], ['museum', 'Franchise museum'], ['hof', 'Hall of Fame'], ['gm', 'GM career'], ['editor', 'League editor'], ['health', 'League health'], ['league', 'League & saves'], ['help', 'Help']];
 function nav() {
   const s = S();
   const badge = v => {
@@ -17550,6 +17672,7 @@ const NAV_ICO = {
 };
 NAV_ICO.dashboard = NAV_ICO.home;
 // career mode names its sections differently
+NAV_ICO.window = '<path d="M3 20h18M5 20V12M10 20V8M15 20V11M20 20V5"/><path d="M4 9l5-4 5 3 6-5"/>';
 NAV_ICO.museum = '<path d="M3 9l9-5 9 5M5 10v8M9.7 10v8M14.3 10v8M19 10v8M3 20h18"/>';
 Object.assign(NAV_ICO, { team: NAV_ICO.roster, career: NAV_ICO.hof, news: NAV_ICO.history, lawards: NAV_ICO.awards, lfront: NAV_ICO.front, lhist: NAV_ICO.history, phist: NAV_ICO.history, lpo: NAV_ICO.playoff, lpolls: NAV_ICO.polls, lrivals: NAV_ICO.rivals, lsched: NAV_ICO.schedule, psched: NAV_ICO.schedule, lstand: NAV_ICO.standings, pstand: NAV_ICO.standings, phof: NAV_ICO.hof, ppulse: NAV_ICO.pulse });
 const navIco = k => `<svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${NAV_ICO[k] || NAV_ICO._}</svg>`;
@@ -17587,7 +17710,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && (ui.simMen
 const NAV_GROUPS = [
   { t: null, items: [['dashboard', 'Front office'], ['todo', 'To-do'], ['inbox', 'Inbox'], ['vox', 'Messages']] },
   { t: 'Team', items: [['roster', 'Roster'], ['dchart', 'Depth chart'], ['depth', 'Game plan'], ['staff', 'Coaching staff'], ['dev', 'Player development'], ['finance', 'Finances']] },
-  { t: 'Front office', items: [['fa', 'Free agents'], ['trade', 'Trades'], ['asst', 'Assistant'], ['draft', 'Draft'], ['gm', 'GM career']] },
+  { t: 'Front office', items: [['fa', 'Free agents'], ['trade', 'Trades'], ['asst', 'Assistant'], ['draft', 'Draft'], ['window', 'Title window'], ['gm', 'GM career']] },
   { t: 'League', items: [['schedule', 'Schedule & scores'], ['standings', 'Standings'], ['stats', 'League stats'], ['pulse', 'League pulse'], ['college', 'College football'], ['history', 'History'], ['museum', 'Franchise museum'], ['hof', 'Hall of Fame']] },
   { t: 'More', more: true, items: [['health', 'League health'], ['editor', 'League editor'], ['league', 'League & saves'], ['help', 'Help']] },
 ];
@@ -25526,6 +25649,53 @@ Object.assign(actions, {
   musAll: () => { ui.musAll = !ui.musAll; },
   musDraft: d => { ui.musDraft = ui.musDraft === +d.v ? null : +d.v; },
 });
+// ---------- championship window planner: the next five seasons at a glance, in the war room's look ----------
+// The forecast (HM.windowPlan): projected team strength against the league aged the same way, cap space with and
+// without re-signing everyone, the core's ratings season by season, and the moves that fit the window.
+const WIN_TIER = { contender: ['Contender', 'w-up'], bubble: ['Bubble', 'w-warn'], rebuild: ['Rebuild', 'w-hot'] };
+function winChart(w) {
+  const Y = w.years, n = Y.length, W = 640, H = 230, L = 44, R = 16, T = 14, B = 30;
+  const vals = Y.flatMap(y => [y.signed, y.kept, y.lineC, y.lineB, y.top]), lo = Math.floor(Math.min(...vals) - 1), hi = Math.ceil(Math.max(...vals) + 1);
+  const x = i => L + (W - L - R) * (n === 1 ? 0.5 : i / (n - 1)), yv = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+  const band = (a, b, cls) => `<path class="${cls}" d="M${Y.map((y, i) => `${x(i)},${yv(a(y))}`).join(' L')} L${Y.map((y, i) => `${x(n - 1 - i)},${yv(b(Y[n - 1 - i]))}`).join(' L')} Z"/>`;
+  const line = (f, cls) => `<polyline class="${cls}" points="${Y.map((y, i) => `${x(i)},${yv(f(y))}`).join(' ')}"/>`;
+  const ticks = [...Array(5)].map((_, k) => lo + (hi - lo) * k / 4);
+  return `<svg class="wn-ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="Projected team rating by season">
+    ${ticks.map(v => `<line class="w-rg" x1="${L}" x2="${W - R}" y1="${yv(v)}" y2="${yv(v)}"/><text class="w-rl" x="${L - 6}" y="${yv(v) + 3}" text-anchor="end">${rt(v)}</text>`).join('')}
+    ${band(y => y.top + 0.5, y => y.lineC, 'wn-bc')}${band(y => y.lineC, y => y.lineB, 'wn-bb')}
+    ${line(y => y.lineC, 'wn-lc')}${line(y => y.lineB, 'wn-lb')}
+    ${line(y => y.signed, 'wn-ls')}${line(y => y.kept, 'wn-lk')}
+    ${Y.map((y, i) => `<circle class="wn-dk" cx="${x(i)}" cy="${yv(y.kept)}" r="5"><title>${y.y}: ${rt(y.kept)} if you keep everyone, about ${ordW(y.rkK)} in the league</title></circle><text class="wn-rk" x="${x(i)}" y="${yv(y.kept) - 10}" text-anchor="middle">#${y.rkK}</text>
+      <circle class="wn-ds" cx="${x(i)}" cy="${yv(y.signed)}" r="3.5"><title>${y.y}: ${rt(y.signed)} with only the players signed</title></circle><text class="w-rv" x="${x(i)}" y="${H - 10}" text-anchor="middle">${y.y}</text>`).join('')}
+    <text class="wn-bl" x="${W - R - 4}" y="${yv(Y[n - 1].lineC) - 5}" text-anchor="end">contender</text><text class="wn-bl" x="${W - R - 4}" y="${yv(Y[n - 1].lineB) - 5}" text-anchor="end">playoff line</text></svg>
+  <div class="wn-key"><span><i class="k"></i>Keep everyone (re-sign your free agents)</span><span><i class="s"></i>Only the players signed</span><span><i class="c"></i>Contender range</span><span><i class="b"></i>Bubble</span></div>`;
+}
+const ordW = n => n + (n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th');
+function winCore(w) {
+  const lvl = o => o >= 80 ? 'a' : o >= 72 ? 'b' : o >= 64 ? 'c' : 'd';
+  const rows = w.core.map(c => { const p = P(c.id);
+    return `<tr><td class="wn-nm">${p ? plink(p) : E(c.name)} <i>${E(c.pos)}</i></td>${c.yrs.map((x, k) => x.age > 36 ? '<td class="wn-c"><span class="wn-gone">—</span></td>' : `<td class="wn-c"><span class="wn-v ${lvl(x.ovr)}${k < c.signed ? '' : ' fa'}" title="${w.y0 + k}: age ${x.age}, ${k < c.signed ? 'signed' : 'not signed, needs a new deal'}">${rv(x.ovr)}<small>${x.age}</small></span></td>`).join('')}<td class="wn-sal">${money(c.sal)}${c.signed ? ` <i>thru ${w.y0 + c.signed - 1}</i>` : ' <i>expiring</i>'}</td></tr>`; }).join('');
+  return `<div class="wn-tw"><table class="wn-t"><thead><tr><th>Player</th>${w.years.map(y => `<th>${y.y}</th>`).join('')}<th>Contract</th></tr></thead><tbody>${rows}</tbody></table></div>
+  <p class="w-mut" style="margin-top:8px">Projected rating, with his age in small type. A dashed box means he isn't signed for that season. Projections follow the league's age curve without the year-to-year surprises.</p>`;
+}
+function windowView() {
+  const s = S(), t = T(s.userTid), w = HM.windowPlan(s.userTid), look = warLook();
+  const open = w.years.filter(y => y.tier === 'contender').map(y => y.y), win = open.length ? (open.length === 1 ? String(open[0]) : `${open[0]}–${String(open[open.length - 1]).slice(2)}`) : 'Closed';
+  const ico = { window: '◎', extend: '↗', sell: '↘', ride: '⏳', cap: '$', hole: '○' };
+  const moves = w.moves.map(m => `<div class="wn-mv k-${m.k}"><b>${ico[m.k] || '•'}</b><span>${E(m.txt)}</span></div>`).join('');
+  const tiles = `<div class="wn-yrs">${w.years.map(y => { const [l, c] = WIN_TIER[y.tier]; const holes = Object.entries(y.holes).filter(([pos]) => pos !== 'K' && pos !== 'P').reduce((a, [, n]) => a + n, 0);
+    return `<div class="wn-yr"><div class="wn-y">${y.y}</div><div class="wn-tier ${c}">${l}</div><div class="wn-kv"><span>League rank</span><b>#${y.rkK}</b></div><div class="wn-kv"><span>Cap space</span><b>${money(y.space)}</b></div><div class="wn-kv"><span>Keeping everyone</span><b class="${y.keepSpace < 0 ? 'w-hot' : ''}">${money(y.keepSpace)}</b></div><div class="wn-kv"><span>Starting jobs open</span><b>${holes}</b></div></div>`; }).join('')}</div>`;
+  return `<div class="war war-${look} wn">
+  ${rmHead('Championship window', [E(t.city + ' ' + t.name), `${w.y0}–${w.y0 + w.years.length - 1}`], 'Window', win, look)}
+  <div class="wn-grid">
+    ${rmPanel('Projected strength', 'team rating against the league, aged the same way', winChart(w))}
+    ${rmPanel('The read', '', moves)}
+  </div>
+  ${tiles}
+  ${rmPanel('Your core, season by season', `${w.core.length} players`, winCore(w))}
+  <p class="w-mut" style="margin:10px 0 14px">Nobody's future draft picks or free-agent signings are counted, yours or the other teams', so read it as where each roster is headed if nothing changes. Open starting jobs are filled at the level of a low-end starter. "Keeping everyone" re-signs your expiring players at about their market price.</p>
+</div>`;
+}
 // =====================================================================
 // LEAGUE EDITOR: a team designer with a live logo preview (pro and college), conference names,
 // college player and recruit editing, league packs (share a custom league as a file) and
@@ -25892,7 +26062,7 @@ function render() {
   if (ui.live) { app.innerHTML = liveShell() + toastHtml(); liveUpdate(true); return; }
   if (s.fired) { app.innerHTML = topbar() + `<div class="shell">${nav()}<main class="main">${dashboard()}</main></div>` + firedScreen() + toastHtml(); return; }
   if (HM.fdOn) ui.view = 'fdraft';
-  const views = { dchart: () => depthBoard('pro'), pl: playerPage, tm: teamPage, fdraft: fdRoomView, seasonreview: () => reviewPage(ui.rvSeason ?? S().season), dashboard, inbox: inboxView, vox: voxView, staff: staffView, roster: rosterView, depth: depthView, dev: devView, schedule: scheduleView, standings: standingsView, stats: statsView, fa: faView, trade: tradeView, asst: asstView, draft: draftView, history: historyView, museum: museumView, league: leagueView, pulse: pulseView, hof: hofView, todo: todoView, gm: gmView, finance: financeView, editor: editorView, health: healthView, help: helpView, college: collegeOutlookView };
+  const views = { dchart: () => depthBoard('pro'), pl: playerPage, tm: teamPage, fdraft: fdRoomView, seasonreview: () => reviewPage(ui.rvSeason ?? S().season), dashboard, inbox: inboxView, vox: voxView, staff: staffView, roster: rosterView, depth: depthView, dev: devView, schedule: scheduleView, standings: standingsView, stats: statsView, fa: faView, trade: tradeView, asst: asstView, draft: draftView, history: historyView, museum: museumView, window: windowView, league: leagueView, pulse: pulseView, hof: hofView, todo: todoView, gm: gmView, finance: financeView, editor: editorView, health: healthView, help: helpView, college: collegeOutlookView };
   tourMark();
   let modal = '';
   if (!HM.fdOn && !s.car && !ui.sim) { mqCollect([['devRep', () => { const dr = HM.devRep(); return dr && !dr.seen; }, () => HM.devRepSeen()], ['progRep', () => { const pr = HM.progRep(); return pr && !pr.seen; }, () => HM.progSeen()]]); mqOpen(); } // reports wait their turn
