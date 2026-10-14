@@ -3884,7 +3884,7 @@ function healWeek() {
 
 function aiInSeason() {
   for (const t of S.teams) {
-    if (t.tid === S.userTid) continue;
+    if (t.tid === S.userTid && !bgUser()) continue;
     aiRosterHealth(t);
     if (S.week >= 4 && t.qbBench !== S.season) {
       const qb = depthPlayers(t, 'QB', 1)[0], st = qb && qb.id != null ? qb.stats[S.season] : null;
@@ -3911,7 +3911,7 @@ function aiInSeason() {
 }
 // no AI team ever takes the field without a player at a position (a trade, an expansion draft or a cap cut can empty one)
 function aiPosGuard(t) {
-  if (!t || t.tid === S.userTid) return;
+  if (!t || (t.tid === S.userTid && !bgUser())) return;
   let act = active(t.tid); // looked up once, and again only after the roster changes
   for (const pos of POS_ORDER) {
     let guard = 0;
@@ -4749,7 +4749,7 @@ function coachOffseason() {
   // AI firings: bad teams move on from head coaches; contracts run out; vacancies filled with the best available
   for (const t of S.teams) {
     for (const role of ROLES) { const c = coachOf(t.tid, role); if (c) { c.yrs--; c.rec.seasons++; if (role === 'HC') { c.rec.w += t.rec.w; c.rec.l += t.rec.l; c.rec.t += t.rec.t; if (S.po && S.po.champ === t.tid) c.rec.titles++; } } }
-    if (t.tid === S.userTid) { for (const role of ROLES) { const c = coachOf(t.tid, role); if (c && c.yrs <= 0) c.yrs = 2; } continue; }
+    if (t.tid === S.userTid && !bgUser()) { for (const role of ROLES) { const c = coachOf(t.tid, role); if (c && c.yrs <= 0) c.yrs = 2; } continue; }
     const hc = coachOf(t.tid, 'HC');
     if (hc && (pct(t.rec) < 0.3 && rnd() < 0.65 || pct(t.rec) < 0.42 && hc.rec.seasons >= 3 && rnd() < 0.35)) fireCoach(t.tid, 'HC');
     for (const role of ['OC', 'DC']) { const c = coachOf(t.tid, role); if (c && pct(t.rec) < 0.4 && rnd() < 0.3) fireCoach(t.tid, role, true); }
@@ -4766,7 +4766,7 @@ function coachOffseason() {
 }
 function aiFillStaff() {
   for (const t of shuffle(S.teams.slice())) {
-    if (t.tid === S.userTid) continue;
+    if (t.tid === S.userTid && !bgUser()) continue;
     for (const role of ROLES) {
       if (coachOf(t.tid, role)) continue;
       const pool = Object.values(S.coaches).filter(c => c.tid === -1 && c.role === role).sort((a, b) => b.rat - a.rat);
@@ -5002,7 +5002,7 @@ function franchiseTag(pid) {
 }
 function aiTags() {
   for (const t of S.teams) {
-    if (t.tid === S.userTid) continue;
+    if (t.tid === S.userTid && !bgUser()) continue;
     const cand = roster(t.tid).filter(p => p.expiring && p.ovr >= 80 && p.age <= 30).sort((a, b) => b.ovr - a.ovr)[0];
     if (cand && rnd() < 0.5) { const price = tagPrice(cand); if (price <= capRoom(t.tid) + cand.contract.sal) { cand.contract = { sal: price, yrs: 1, gtd: price, tag: true }; delete cand.expiring; delete cand.reAsk; logDeal(cand, 'tag', t.tid); news(`${t.abbr} franchise-tagged ${cand.pos} ${fullName(cand)} ($${price}M).`); } }
   }
@@ -5128,10 +5128,12 @@ function judgeSeason() {
   if (o.vow === S.season) d += d >= 0 ? 3 : -4;
   d *= ownerMoodMult(); if (o.pers === 'cheap') { if (fin.profit < 60 * (S.capScale || 1)) d -= 4; if (seasonPayroll(S.userTid) > S.cap * 0.97) d -= 2; }
   const before = o.mood; o.mood = clamp(Math.round(o.mood + d), 0, 100);
+  // auto-play: your staff made the calls, so the owner can't fire you for them; job security bottoms out at the firing line
+  const fireAt = o.pers === 'patient' ? 12 : 20; if (S.auto) o.mood = Math.max(o.mood, fireAt);
   verdict = d >= 10 ? 'thrilled with' : d >= 0 ? 'satisfied with' : d > -15 ? 'disappointed in' : 'furious about';
   o.log.push({ s: S.season, goal: o.goal.text, rec: `${t.rec.w}-${t.rec.l}${t.rec.t ? '-' + t.rec.t : ''}`, d, mood: o.mood });
   news(`Owner ${o.name} is ${verdict} the ${S.season} season (${o.goal.text.toLowerCase()}). Job security: ${o.mood}/100.`, true);
-  if (o.mood < (o.pers === 'patient' ? 12 : 20) && S.season - o.since >= 1) {
+  if (o.mood < fireAt && S.season - o.since >= 1) {
     const openings = S.teams.filter(x => x.tid !== S.userTid).sort((a, b) => pct(a.rec) - pct(b.rec)).slice(0, 8);
     S.fired = { s: S.season, from: S.userTid, options: shuffle(openings.map(x => x.tid)).slice(0, 3) };
     news(`You have been fired as general manager of the ${t.city} ${t.name}.`, true);
@@ -5454,7 +5456,7 @@ function exerciseOption(pid) {
   return null;
 }
 function declineOption(pid) { const p = S.players[pid]; if (!p || !optionEligible(p)) return 'That option is not available.'; p.opt5 = 'no'; if (p.tid === S.userTid) news(`Declined the fifth-year option on ${fullName(p)} (${p.pos}). He'll be a free agent after next season.`, true); return null; }
-function aiOptions() { for (const p of allPlayers()) if (p.tid >= 0 && p.tid !== S.userTid && optionEligible(p)) { if (p.ovr >= 70 || (p.pot >= 78 && p.age <= 24)) exerciseOption(p.id); else declineOption(p.id); } }
+function aiOptions() { for (const p of allPlayers()) if (p.tid >= 0 && (p.tid !== S.userTid || bgUser()) && optionEligible(p)) { if (p.ovr >= 70 || (p.pot >= 78 && p.age <= 24)) exerciseOption(p.id); else declineOption(p.id); } }
 
 // ---------- waiver wire ----------
 function toWaivers(p, from) { p.tid = -3; p.waiver = { from, s: S.season }; (S.waivers || (S.waivers = [])).push(p.id); }
@@ -5610,7 +5612,7 @@ function closeFinanceYear() {
     const inPO = S.po && (S.po.seeds[0].includes(t.tid) || S.po.seeds[1].includes(t.tid));
     f.fans = clamp(f.fans + (champ ? 8 : inPO ? 4 : -2) + roster(t.tid).filter(p => p.ovr >= 85).length * 0.5, 5, 100);
     f.fac = clamp(f.fac - 2, 0, 100);
-    if (t.tid !== S.userTid) { if (f.cash > 60 * (S.capScale || 1) && f.fac < 70 && rnd() < 0.4) { f.fac = clamp(f.fac + 10, 0, 100); f.cash = r1(f.cash - facilityCost()); } }
+    if (t.tid !== S.userTid || bgUser()) { if (f.cash > 60 * (S.capScale || 1) && f.fac < 70 && rnd() < 0.4) { f.fac = clamp(f.fac + 10, 0, 100); f.cash = r1(f.cash - facilityCost()); } }
   }
 }
 const facilityCost = () => r1(40 * (S.capScale || 1));
@@ -7378,7 +7380,7 @@ function initFaMarket() {
   const pool = freeAgents().filter(p => p.ovr >= 69).sort((a, b) => marketValue(b) - marketValue(a)).slice(0, 36);
   for (const p of pool) {
     const mv = marketValue(p);
-    const suit = S.teams.filter(t => t.tid !== S.userTid && capRoom(t.tid) >= mv * 1.05).map(t => ({ t, v: faNeed(t, p) + rnd() * 2 })).filter(x => x.v >= 3).sort((a, b) => b.v - a.v).slice(0, randInt(1, 4));
+    const suit = S.teams.filter(t => (t.tid !== S.userTid || bgUser()) && capRoom(t.tid) >= mv * 1.05).map(t => ({ t, v: faNeed(t, p) + rnd() * 2 })).filter(x => x.v >= 3).sort((a, b) => b.v - a.v).slice(0, randInt(1, 4));
     p.mk = { s: S.season, min: r1(mv * 1.02), suit: suit.map(x => ({ tid: x.t.tid, day: randInt(1, 3), sal: 0, yrs: p.ask.yrs, gtd: 0 })), uv: false, uo: false, final: null };
   }
   const hot = pool.filter(p => p.mk.suit.length >= 2).slice(0, 5);
@@ -8510,7 +8512,7 @@ function unretireGM() { if (S.gm) delete S.gm.retired; }
 // ---------- auto-play: run the league for several seasons ----------
 // Like Football GM's auto play and OOTP's "sim X years": your staff makes every call for your team (re-signing, free
 // agency, the draft, camp cuts, injuries, the depth chart) the way an AI front office would, one step at a time so the UI
-// can show progress and stop cleanly. It stops early if you're fired.
+// can show progress and stop cleanly. The owner can't fire you while it runs (judgeSeason).
 // One step: a week, a playoff round, a day of free agency, the draft, or the start of a new season.
 function autoPlayStep() {
   if (S.car) return { stop: 'Auto-play is for GM leagues.' };
@@ -23546,7 +23548,7 @@ function autoPlayModal() {
   <div class="mb">
     <p style="margin:0">Your staff runs the ${E(T(s.userTid).name)} and plays the league forward: every game, re-signing, free agency, the draft and camp cuts, the way an AI front office would. Trades other teams propose are handled for you too.</p>
     <div><div class="lbl" style="margin-bottom:6px">How many seasons?</div>${seg('autoN', n, AUTO_N.map(v => [v, String(v)]))}</div>
-    <p class="muted" style="margin:0;font-size:12.5px">It stops at the start of the ${autoTarget(n)} season with training camp open, or earlier if the owner fires you. You can cancel at any time; everything played so far is kept. Your owner still judges every season.</p>
+    <p class="muted" style="margin:0;font-size:12.5px">It stops at the start of the ${autoTarget(n)} season with training camp open. You can cancel at any time; everything played so far is kept. Your owner still judges every season, but can't fire you while your staff is making the calls.</p>
     <div class="row" style="gap:8px"><button class="btn primary" data-act="autoPlay" data-v="${n}">Play ${n} season${n > 1 ? 's' : ''}</button><button class="btn" data-act="close">Cancel</button></div>
   </div>`;
 }
