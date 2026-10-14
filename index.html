@@ -13174,7 +13174,7 @@ function coordSeasonEnd() {
   const offR = rankBy(t => t.rec.pf / Math.max(1, t.rec.w + t.rec.l)), defR = rankBy(t => -t.rec.pa / Math.max(1, t.rec.w + t.rec.l)), n = CS.teams.length;
   for (const t of CS.teams) for (const [k, R] of [['oc', offR], ['dc', defR]]) {
     const c = t[k]; if (!c) continue;
-    if (c.me) { c.yrs++; c.age++; const per = (k === 'oc' ? t.rec.pf : t.rec.pa) / Math.max(1, t.rec.w + t.rec.l); c.last = { s: CS.season, rank: R[t.tid] + 1, n, ppg: r1(per), w: t.rec.w, l: t.rec.l }; c.rat = clamp(Math.round(c.rat + (0.5 - R[t.tid] / n) * 4 + Math.max(0, (c.pot || c.rat) - c.rat) * 0.15 + gauss(0, 1)), 25, 95); continue; }
+    if (c.me) { c.yrs++; c.age++; const per = (k === 'oc' ? t.rec.pf : t.rec.pa) / Math.max(1, t.rec.w + t.rec.l); c.last = { s: CS.season, rank: R[t.tid] + 1, n, ppg: r1(per), w: t.rec.w, l: t.rec.l }; c.rat = clamp(Math.round(c.rat + (0.5 - R[t.tid] / n) * 4 + Math.max(0, (c.pot || c.rat) - c.rat) * (R[t.tid] / n < 0.5 ? 0.15 : 0.05) + gauss(0, 1)), 25, 95); continue; } // (a struggling unit teaches him less)
     c.yrs++; c.age++; c.rat = clamp(Math.round(c.rat + (0.5 - R[t.tid] / n) * 3 + gauss(0, 1.2) - (c.age > 62 ? 1.5 : 0)), 25, 95);
     if (c.age >= 67 || rnd() < 0.02) { if (isMe(t.tid)) cnews(`Your ${k === 'oc' ? 'offensive' : 'defensive'} coordinator ${c.fn} ${c.ln} retired. Hire a replacement on your job page.`, true); t[k] = null; }
   }
@@ -14896,10 +14896,11 @@ function carCoachOffers() {
   if (carCoachTid() != null) return [];
   return carCoachMakeOffers(null);
 }
-function carCoachMakeOffers(fromTid) {
+// (cap: after a firing, the calls come from schools no bigger than the one that let him go)
+function carCoachMakeOffers(fromTid, cap) {
   const c = S.car, CS = carC(), k = c.coach, side = k ? k.side : carCoachSide(c);
   const rat = k ? k.rat : (c.ccStart || (c.ccStart = carCoachStart(c))).rat, last = k && k.hist.length ? k.hist[k.hist.length - 1] : null;
-  const reach = clamp(Math.round(40 + c.fame * 0.45 + (k ? (rat - 50) * 1.2 : 0) + (last ? (0.5 - last.rank / last.n) * 30 : 0)), 35, 99);
+  const reach = clamp(Math.min(cap ?? 99, Math.round(35 + c.fame * 0.35 + (k ? (rat - 50) * 1.2 : 0) + (last ? (0.5 - last.rank / last.n) * 30 : 0))), 30, 99);
   const alma = (c.colTeams || []).map(x => x.tid), floor = fromTid != null ? COLLEGE.team(fromTid).pres + 5 : 0;
   const tids = COLLEGE.ccOpenings(side, rat, reach, alma, fromTid != null ? [fromTid] : []).filter(tid => COLLEGE.team(tid).pres >= floor);
   c.ccOff = { s: CS.season, list: tids.map(tid => ({ tid, side, alma: alma.includes(tid) || undefined })) };
@@ -14950,7 +14951,7 @@ function carCoachStep() {
     COLLEGE.ccLeave(); k.tid = null; c.ccOff = null;
     carLog(`${t.name} fired you after two bad years. Other programs may still call.`, 'move');
     COLLEGE.news(`${t.name} fired ${off ? 'offensive' : 'defensive'} coordinator ${c.fn} ${c.ln}.`, true);
-    carCoachMakeOffers(null); return;
+    carCoachMakeOffers(null, t.pres + 3); return;
   }
   // a good year gets bigger programs on the phone
   if (good && rnd() < (top ? 0.9 : 0.55)) { const list = carCoachMakeOffers(k.tid); if (list.length) carLog(`${list.map(o => COLLEGE.team(o.tid).name).join(', ')} want${list.length === 1 ? 's' : ''} to talk to you about running ${list.length === 1 ? 'its' : 'their'} ${off ? 'offense' : 'defense'}.`, 'coach'); }
@@ -14968,7 +14969,7 @@ function carCoachView() {
   v.offers = carCoachOffers().map(o => { const t = COLLEGE.team(o.tid), cur = t[o.side === 'o' ? 'oc' : 'dc']; return { ...o, t, rank: COLLEGE.rankOf(o.tid), cur: cur ? { name: `${cur.fn} ${cur.ln}`, rat: cur.rat } : null, last: t.hist && t.hist.length ? t.hist[t.hist.length - 1] : null }; });
   const alma = (c.colTeams || []).map(x => x.tid);
   v.hc = carHcPending() ? c.hcOff.list.map(tid => { const t = COLLEGE.team(tid); return { tid, t, rank: COLLEGE.rankOf(tid), last: t.hist && t.hist.length ? t.hist[t.hist.length - 1] : null, own: k && tid === k.tid, alma: alma.includes(tid) }; }) : null;
-  v.hcRat = CC_HC_RAT;
+  v.hcRat = CC_HC_RAT; v.hcYrs = CC_HC_YRS;
   const fo = carFrontOffice(); v.fo = fo ? { ...fo, t: team(fo.tid) } : null;
   if (k && k.tid != null) {
     const t = COLLEGE.team(k.tid), me = COLLEGE.ccCoach(), nx = ['season', 'ccg', 'playoff'].includes(CS.phase) ? COLLEGE.userNext(k.tid) : null, opp = nx ? (nx.h === k.tid ? nx.a : nx.h) : null;
@@ -14977,18 +14978,21 @@ function carCoachView() {
   return v;
 }
 // ---------- head coach: the jump from coordinator, and the save becomes a coach's game ----------
-// After a good season (top 40% of the country) a coordinator rated 60 or better can get up to two head-coaching
-// offers from that year's openings: the smaller the program, the likelier, with a stretch for his own school and the
-// schools he played for. The jobs wait until signing day for his answer. Taking one ends career mode: the save
+// After three or more seasons coordinating, a coordinator rated 62 or better (the bar the AI uses to promote one)
+// whose unit finished in the top quarter of the country, or in the top 40% two years running, can get up to two
+// head-coaching offers from that year's openings: smaller programs first (a famous name reaches a little higher), with
+// a stretch for his own school and the schools he played for. Tuned against long runs (tests/coach-pace.js): about
+// three to six seasons for a good coordinator, longer or never for one whose units struggle. The jobs wait until signing day for his answer. Taking one ends career mode: the save
 // becomes a college universe with him as the head coach (S.car moves to S.uni.exCar, kept for the record).
-const CC_HC_RAT = 60;
+const CC_HC_RAT = 62, CC_HC_YRS = 3;
 function carCoachHcOffers(open) {
   const c = S.car, k = c && c.coach, me = COLLEGE.ccCoach(); if (!c || c.stage !== 'coach' || !k || !me || !me.last) return null;
-  const L = me.last, top = L.rank <= L.n * 0.1;
-  if (me.rat < CC_HC_RAT || L.rank > L.n * 0.4) return null;
-  const reach = clamp(Math.round(25 + (me.rat - 50) * 2.2 + c.fame * 0.2 + (top ? 10 : 0)), 20, 95), alma = (c.colTeams || []).map(x => x.tid);
+  const L = me.last, top = L.rank <= L.n * 0.1, prev = k.hist.length ? k.hist[k.hist.length - 1] : null; // (this season isn't in hist yet)
+  if (me.rat < CC_HC_RAT || k.hist.length + 1 < CC_HC_YRS) return null;
+  if (!(L.rank <= L.n * 0.25 || (L.rank <= L.n * 0.4 && prev && prev.rank <= prev.n * 0.4))) return null;
+  const reach = clamp(Math.round(20 + (me.rat - 50) * 1.8 + c.fame * 0.15 + (top ? 8 : 0)), 20, 90), alma = (c.colTeams || []).map(x => x.tid);
   const list = open.map(tid => COLLEGE.team(tid)).filter(t => t && !t.coach && (t.pres <= reach || (t.tid === k.tid && t.pres <= reach + 15) || (alma.includes(t.tid) && t.pres <= reach + 8)))
-    .sort((a, b) => b.pres - a.pres).filter(() => rnd() < (top ? 0.8 : 0.55)).slice(0, 2).map(t => t.tid);
+    .sort((a, b) => b.pres - a.pres).filter(() => rnd() < (top ? 0.75 : 0.5)).slice(0, 2).map(t => t.tid);
   if (!list.length) return null;
   c.hcOff = { s: COLLEGE.S.season, list };
   carLog(`Head-coaching offers: ${list.map(tid => COLLEGE.team(tid).name).join(' and ')} want${list.length === 1 ? 's' : ''} you to run the program. Decide before signing day.`, 'coach');
@@ -23655,7 +23659,7 @@ function carCoachPage(v) {
   const K = k.k, sch = K ? (k.job && k.job.me ? k.job.me.sch : K.sch) : k.sch, canSch = k.job && k.job.canSch;
   const schemes = Object.entries(k.schemes).map(([key, s]) => `<div class="row" style="gap:10px;align-items:flex-start"><button class="btn sm${key === sch ? ' primary' : ''}" data-act="ccSch" data-v="${key}" ${!canSch || key === sch ? 'disabled' : ''}>${key === sch ? 'Your scheme' : 'Switch'}</button><div style="font-size:13px"><b>${E(s[0])}</b>: ${E(s[1])}</div></div>`).join('');
   const hist = K && K.hist.length ? `<section class="panel"><h3>Season by season</h3><div class="tw"><table class="t" data-nosort><thead><tr><th>Season</th><th>School</th><th>Job</th><th>Record</th><th class="n">Rank</th><th class="n">Points a game</th><th class="n">Coaching</th></tr></thead><tbody>${K.hist.slice().reverse().map(h => `<tr><td class="num">${h.s}</td><td>${cchip(CT(h.tid))} ${E(CT(h.tid).name)}</td><td>${h.side === 'o' ? 'OC' : 'DC'}</td><td>${h.w}-${h.l}</td><td class="num">${h.rank} of ${h.n}</td><td class="num">${h.ppg}</td><td class="num">${h.rat}</td></tr>`).join('')}</tbody></table></div></section>` : '';
-  return `<div class="pagehead"><div><h2>Coaching</h2><p>${K && K.tid != null ? `${ccRole(K.side)} at ${E(CT(K.tid).name)}.` : 'Your next coaching job.'} Your ${ccSideWord(k.side)}'s rank in scoring decides who calls next: a top-third unit gets bigger programs on the phone, a top-40% unit and a coaching rating of ${k.hcRat} or better can bring head-coaching offers, and two bad years in a row can cost you the job.</p></div></div>
+  return `<div class="pagehead"><div><h2>Coaching</h2><p>${K && K.tid != null ? `${ccRole(K.side)} at ${E(CT(K.tid).name)}.` : 'Your next coaching job.'} Your ${ccSideWord(k.side)}'s rank in scoring decides who calls next: a top-third unit gets bigger programs on the phone, after ${k.hcYrs} seasons, a coaching rating of ${k.hcRat} or better and a top-quarter unit (or top 40% two years running) can bring head-coaching offers, and two bad years in a row can cost you the job.</p></div></div>
   ${carFoPanel(v)}${carHcPanel(v)}${carCoachOffersPanel(v)}
   <section class="panel stack" style="gap:8px"><h3 style="margin:0">Your scheme</h3><p class="muted" style="margin:0;font-size:12.5px">${canSch ? 'You can change it before the season starts.' : K && K.tid != null ? 'You can change it in the offseason.' : 'You bring it to your next job.'}</p>${schemes}</section>
   ${hist}`;
