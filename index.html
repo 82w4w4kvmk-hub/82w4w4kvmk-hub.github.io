@@ -906,6 +906,7 @@ select[data-focus]{max-width:210px}
 details.panel summary{cursor:pointer}
 .genb{display:inline-block;margin-left:4px;padding:0 5px;border-radius:4px;font:800 9.5px/16px var(--fb,sans-serif);letter-spacing:.06em;background:linear-gradient(135deg,#d4a017,#f5d76e);color:#3a2a00;vertical-align:1px}
 .legb{display:inline-block;margin-left:4px;padding:0 5px;border-radius:4px;font:800 9.5px/16px var(--fb,sans-serif);letter-spacing:.06em;text-transform:uppercase;border:1px solid color-mix(in srgb,var(--accent) 55%,transparent);color:var(--accent);vertical-align:1px}
+.legt,.legt ul{list-style:none;margin:0;padding:0}.legt ul{margin-left:9px;padding-left:14px;border-left:1px solid var(--line)}.legt li{padding:3px 0;font-size:13px}.legt ul>li{position:relative}.legt ul>li::before{content:'';position:absolute;left:-14px;top:12px;width:10px;border-top:1px solid var(--line)}.legt li.me>.legn{font-weight:700}
 .legl{margin:2px 0 0;font-size:13px}.legl .plink{color:inherit;text-decoration:underline;text-underline-offset:2px}.mh .legl .muted{color:inherit;opacity:.7}
 .pill.gen{background:linear-gradient(135deg,#d4a017,#f5d76e);color:#3a2a00;border-color:transparent}
 .grid2>*,.grid3>*{min-width:0}
@@ -4541,7 +4542,7 @@ function draftPlayer(pid) {
   p.tid = tid; p.draft = { season: S.season + 1, rd, pk: inRd, ovrPick: pk, tid, comp: !!(d.pid && d.pid[d.idx] != null && S.picks.find(x => x.id === d.pid[d.idx])?.comp), pkid: d.pid && d.pid[d.idx] != null ? d.pid[d.idx] : undefined };
   p.contract = mkContract(rookieScale(pk), 4, rd === 1 ? 'r1' : rd === 2 ? 'r2' : 'rk'); p.contract.rk = rd;
   p.draft.ds = r1(draftScore(p)); if (d.br && d.br[p.id]) p.draft.br = d.br[p.id];
-  delete p.sc; p.mor = 65; assignNumber(p);
+  delete p.sc; p.mor = 65; assignNumber(p); if (p.leg) legacyDrafted(p);
   const t = team(tid); (t.depth[p.pos] || (t.depth[p.pos] = [])).push(p.id);
   d.log.push({ idx: d.idx, tid, pid });
   if (d.pid && d.pid[d.idx] != null) { const used = d.pid[d.idx]; S.picks = S.picks.filter(x => x.id !== used); }
@@ -6263,6 +6264,7 @@ function settlePositions() { for (const p of allPlayers()) if (p.posLearn && p.p
 // ---------- jersey numbers ----------
 const NUM_RANGES = { QB: [[1, 19]], RB: [[20, 49], [1, 9]], WR: [[10, 19], [80, 89], [1, 9]], TE: [[80, 89], [40, 49]], OL: [[60, 79], [50, 59]], DL: [[90, 99], [50, 79]], LB: [[40, 59], [90, 99]], CB: [[20, 39], [1, 9]], S: [[20, 49]], K: [[1, 19]], P: [[1, 19]] };
 function assignNumber(p) {
+  if (p.leg && legacyNum(p)) return; // (a son in his father's number)
   const used = new Set(); if (p.tid >= 0) { for (const q of roster(p.tid)) if (q !== p && q.num) used.add(q.num); for (const r of team(p.tid).retNums || []) used.add(r.num); }
   if (p.num && !used.has(p.num) && NUM_RANGES[p.pos].some(([a, b]) => p.num >= a && p.num <= b)) return;
   const pool = []; for (const [a, b] of NUM_RANGES[p.pos]) for (let n = a; n <= b; n++) if (!used.has(n)) pool.push(n);
@@ -8646,7 +8648,7 @@ function formerStatRows(season) {
 function retirePlayer(p) {
   const car = careerTotals(p); let notable = false;
   if (car.gp >= 40 || p.ovr >= 75 || (car.gp || 0) + preLeagueGp(p) >= 40) { // (a veteran from before the league began: few box scores, a long career)
-    S.retired.push({ id: p.id, colMine: p.colMine || undefined, name: fullName(p), fn: p.fn, ln: p.ln, pos: p.pos, age: p.age, s: S.season, car, teamLast: p.tid >= 0 ? team(p.tid).abbr : 'FA', byTeam: byTeamTotals(p), hon: (p.hon || []).slice(), stats: p.stats, hist: p.hist, draft: p.draft, col: p.col, peak: Math.max(p.ovr, ...(p.hist || []).map(h => h.ovr)), hofScore: hofScore(p, car), faceSeed: p.faceSeed, num: p.num });
+    S.retired.push({ id: p.id, colMine: p.colMine || undefined, name: fullName(p), fn: p.fn, ln: p.ln, pos: p.pos, age: p.age, s: S.season, car, teamLast: p.tid >= 0 ? team(p.tid).abbr : 'FA', byTeam: byTeamTotals(p), hon: (p.hon || []).slice(), stats: p.stats, hist: p.hist, draft: p.draft, col: p.col, peak: Math.max(p.ovr, ...(p.hist || []).map(h => h.ovr)), hofScore: hofScore(p, car), faceSeed: p.faceSeed, num: p.num, leg: p.leg || undefined });
     const rr = S.retired[S.retired.length - 1]; honorFranchise(rr); if (rr.hofScore < 34) { stArchivePro(p); delete rr.stats; delete rr.hist; }
     notable = p.ovr >= 78 || car.gp >= 150; considerHof(p, car); maybeCoachCareer(p, car, rr); legacyRoll(rr, p);
     // some come back: keep a copy of good players who could still play
@@ -8882,54 +8884,112 @@ function autoSeasonLine() {
 // A notable retiree may have a son on the way: more often a star, and usually the career player. The son turns up the
 // year he's 17: in a shared universe as a college recruit (98-college-6c-legacy), otherwise in the draft class at 21.
 // He leans toward his father's position and strengths and is a little better on average. A lean, not a copy.
-// S.legacy: { rid, fn, ln, pos, peak, top (his two best ratings), col, due (the son's recruiting year), car, son }
+// Now and then a younger brother follows, or a nephew (cousin to the sons) with less of the family's game.
+// A son who has a notable career himself can leave sons of his own, so long saves grow family trees.
+// S.legacy: { rid, fn, ln, pos, num, peak, top (his two best ratings), col, due (the son's recruiting year), car, rel ('nephew'; a son has none), son }
 const LEG_NEAR = { QB: ['WR'], RB: ['WR', 'CB'], WR: ['CB', 'RB'], TE: ['WR', 'LB', 'OL'], OL: ['DL'], DL: ['OL', 'LB'], LB: ['DL', 'S'], CB: ['S', 'WR'], S: ['CB', 'LB'], K: ['P'], P: ['K'] };
 const legBase = ln => String(ln || '').replace(/\s+(Jr\.|Sr\.|II|III|IV)$/, '');
+const legNeph = l => !!l && l.rel === 'nephew';
 function legacyRoll(rr, p) {
   const peak = rr.peak || p.ovr || 60, ch = p.car ? 0.75 : 0.06 + 0.16 * clamp((peak - 70) / 20, 0, 1);
-  if (rnd() >= ch) return null;
-  // (the son is born when his father is 24 to 34; one already past high school isn't coming)
-  const age = (p.age || 30) - randInt(24, 34); if (age > 15) return null;
   const top = (POS[p.pos] ? POS[p.pos].attrs : []).slice().sort((a, b) => (p.a[b] || 0) - (p.a[a] || 0)).slice(0, 2);
-  const l = { rid: rr.id, fn: p.fn, ln: p.ln, pos: p.pos, peak, top, col: p.col || null, due: S.season + Math.max(2, 17 - age), car: p.car ? true : undefined, son: null };
-  (S.legacy || (S.legacy = [])).push(l); return l;
+  // (age: how old the boy is today; one already past high school isn't coming)
+  const add = (age, rel) => { const l = { rid: rr.id, fn: p.fn, ln: p.ln, pos: p.pos, num: rr.num || undefined, peak, top, col: p.col || null, due: S.season + Math.max(2, 17 - age), car: p.car ? true : undefined, rel, son: null }; (S.legacy || (S.legacy = [])).push(l); return l; };
+  let l = null;
+  if (rnd() < ch) {
+    // (the son is born when his father is 24 to 34)
+    const age = (p.age || 30) - randInt(24, 34);
+    if (age <= 15) { l = add(age); if (rnd() < 0.2) add(age - randInt(1, 4)); } // a younger brother
+  }
+  if (rnd() < ch * 0.3) add(randInt(-3, 15), 'nephew'); // a brother's boy: the family name, some of the family's game
+  return l;
 }
-// his position: usually his father's, sometimes a neighbor, now and then anything
-function legacyPos(l) { const r = rnd(); return !POS[l.pos] || r >= 0.88 ? pick(POS_ORDER) : r < 0.6 || !LEG_NEAR[l.pos] ? l.pos : pick(LEG_NEAR[l.pos]); }
-// talent: a star's son starts a little ahead (in rating points before the class's own spread)
-const legacyQ = l => clamp(((l.peak || 70) - 72) * 0.35, -2, 7);
-// name him (a quarter of them are juniors), give him his father's lean, and tie the two together
+// his position: usually his father's, sometimes a neighbor, now and then anything (a nephew less often follows)
+function legacyPos(l) { const r = rnd(), n = legNeph(l); return !POS[l.pos] || r >= (n ? 0.6 : 0.88) ? pick(POS_ORDER) : r < (n ? 0.35 : 0.6) || !LEG_NEAR[l.pos] ? l.pos : pick(LEG_NEAR[l.pos]); }
+// talent: a star's son starts a little ahead (in rating points before the class's own spread); a nephew half as much
+const legacyQ = l => clamp(((l.peak || 70) - 72) * 0.35, -2, 7) * (legNeph(l) ? 0.5 : 1);
+// name him (a quarter of the sons are juniors; most nephews share the surname), give him the family's lean, and tie them together
 function legacyMake(p, l, calc) {
-  const base = legBase(l.ln); if (rnd() < 0.25) { p.fn = l.fn; p.ln = base + ' Jr.'; } else p.ln = base;
-  if (p.pos === l.pos) for (const k of l.top || []) if (p.a[k] != null) p.a[k] = clamp(p.a[k] + randInt(2, 5), 20, 99);
+  const base = legBase(l.ln), n = legNeph(l);
+  if (!n && rnd() < 0.25) { p.fn = l.fn; p.ln = base + ' Jr.'; } else if (!n || rnd() < 0.7) p.ln = base;
+  if (p.pos === l.pos) for (const k of l.top || []) if (p.a[k] != null) p.a[k] = clamp(p.a[k] + (n ? randInt(1, 3) : randInt(2, 5)), 20, 99);
   const o = p.ovr; p.ovr = calc(p); p.pot = Math.max(p.pot + p.ovr - o, p.ovr);
-  p.leg = { rid: l.rid, fn: l.fn, ln: l.ln, pos: l.pos };
+  // most sons ask for their father's number
+  const num = !n && rnd() < 0.7 ? l.num ?? ((S.retired || []).find(x => x.id === l.rid) || {}).num : undefined;
+  p.leg = { rid: l.rid, fn: l.fn, ln: l.ln, pos: l.pos, rel: l.rel, num: num || undefined };
   l.son = { fn: p.fn, ln: p.ln, pos: p.pos, s: S.season };
   return p.ovr - o;
 }
-const legFather = l => `${S && (S.hof || []).some(h => h.id === l.rid) ? 'Hall of Famer' : 'former ' + l.pos} ${l.fn} ${l.ln}`;
+const legHof = rid => !!(S && (S.hof || []).some(h => h.id === rid));
+const legWho = l => `${legHof(l.rid) ? 'Hall of Famer' : 'former ' + l.pos} ${l.fn} ${l.ln}`;
+const legFather = l => `${legNeph(l) ? 'nephew' : 'son'} of ${legWho(l)}`;
+// the family entry for a player (pro, or college with col set)
+function legOf(p, col) { const k = col ? 'cid' : 'pid'; return (p && p.leg && (S && S.legacy || []).find(l => l.rid === p.leg.rid && l.son && l.son[k] === p.id)) || null; }
+// the career player's feed covers his own son: in the class, committed, drafted
+function legFeed(l, kind, ev, school) { if (l && l.car && !legNeph(l) && S.car && typeof socAbout === 'function') socAbout(kind, ev, school ? { school } : {}, true); }
 // a league with no college world: the son is in the draft class the year he turns 21
 function legacyProspects(year) {
   for (const l of S.legacy || []) {
     if (l.son || l.due + 4 > year) continue;
     const p = genProspect(year, legacyQ(l), legacyPos(l)), d = legacyMake(p, l, calcOvr);
-    p.age = randInt(21, 22); p.hist = [{ s: S.season, age: p.age, ovr: p.ovr, pot: p.pot }]; p.sc.ovr = clamp(p.sc.ovr + d, 20, 99); l.son.pid = p.id; if (l.col && rnd() < 0.4) p.col = l.col;
-    news(`Draft class: ${p.pos} ${fullName(p)}, son of ${legFather(l)}, is in the ${year} draft.`, l.peak >= 80 || !!l.car);
+    p.age = randInt(21, 22); p.hist = [{ s: S.season, age: p.age, ovr: p.ovr, pot: p.pot }]; p.sc.ovr = clamp(p.sc.ovr + d, 20, 99); l.son.pid = p.id; if (l.col && rnd() < (legNeph(l) ? 0.15 : 0.4)) p.col = l.col;
+    news(`Draft class: ${p.pos} ${fullName(p)}, ${legFather(l)}, is in the ${year} draft.`, l.peak >= 80 || !!l.car);
+    legFeed(l, 'sonClass', `${p.pos} ${fullName(p)}, a draft prospect from ${p.col}`);
   }
 }
-// what a card says about a son ("Son of Hall of Famer ..."), and what a father's card says about his sons
+// drafted: the news knows the name, and it's a story when he goes to a team his father played for
+function legacyDrafted(p) {
+  const l = legOf(p); if (!l) return; const t = team(p.tid), r = legRet(l.rid);
+  const gp = r && r.byTeam && r.byTeam[p.tid] ? r.byTeam[p.tid].gp || 0 : 0, yrs = r && r.stats ? Object.values(r.stats).filter(st => st.tid === p.tid).length : 0;
+  const rd = p.draft ? `round ${p.draft.rd}` : 'the draft';
+  if (gp >= 16) news(`Family business: the ${t.city} ${t.name} draft ${p.pos} ${fullName(p)} in ${rd}. His ${legNeph(l) ? 'uncle' : 'father'}, ${legWho(l)}, played ${yrs > 1 ? `${yrs} seasons` : 'for them'} in ${t.city}.`, true);
+  else if (l.peak >= 80 || l.car || p.tid === S.userTid) news(`The ${t.city} ${t.name} draft ${p.pos} ${fullName(p)}, ${legFather(l)}, in ${rd}.`, p.tid === S.userTid || !!l.car);
+  legFeed(l, 'sonDrafted', `the ${t.city} ${t.name} take ${p.pos} ${fullName(p)} in ${rd}`);
+}
+// his father's number, when it's free (a team that retired it for his father brings it back for him)
+function legacyNum(p) {
+  const n = p.leg && p.leg.num; if (!n || p.tid < 0 || !NUM_RANGES[p.pos]) return false;
+  if (p.pos !== p.leg.pos && !NUM_RANGES[p.pos].some(([a, b]) => n >= a && n <= b)) return false;
+  const t = team(p.tid), ret = (t.retNums || []).find(x => x.num === n);
+  if ((ret && ret.rid !== p.leg.rid) || roster(p.tid).some(q => q !== p && q.num === n)) return false;
+  if (p.num !== n) { p.num = n; news(`${p.pos} ${fullName(p)} will wear No. ${n} for the ${t.city} ${t.name}, his father's number${ret ? ', brought out of retirement for him' : ''}.`, p.tid === S.userTid || !!ret); }
+  return true;
+}
+// what a card says about a son ("Son of Hall of Famer ..."), his brothers and cousins, and a grandfather
+const legRet = id => (S && S.retired || []).find(x => x.id === id);
+const legYrs = r => { const first = r && ((r.stats && Object.keys(r.stats).sort()[0]) || (r.draft ? r.draft.season : null)); return r ? (first ? `${first}–${r.s}` : `retired ${r.s}`) : ''; };
 function legacyInfo(p) {
   const l = p && p.leg; if (!l || !S) return null;
-  const r = (S.retired || []).find(x => x.id === l.rid), hof = (S.hof || []).some(h => h.id === l.rid);
-  const first = r && (r.stats && Object.keys(r.stats).sort()[0] || (r.draft ? r.draft.season : null));
-  return { rid: r ? l.rid : null, name: `${l.fn} ${l.ln}`, pos: l.pos, hof, yrs: r ? (first ? `${first}–${r.s}` : `retired ${r.s}`) : '', text: `Son of ${hof ? 'Hall of Famer' : 'former ' + l.pos} ${l.fn} ${l.ln}` };
+  const r = legRet(l.rid), hof = legHof(l.rid), n = l.rel === 'nephew', kin = [];
+  for (const x of S.legacy || []) {
+    if (x.rid !== l.rid || !x.son || (x.son.fn === p.fn && x.son.ln === p.ln && x.son.pos === p.pos)) continue;
+    kin.push({ rel: !n && !legNeph(x) ? 'Brother' : 'Cousin', name: `${x.son.fn} ${x.son.ln}`, pos: x.son.pos });
+  }
+  if (r && r.leg && !n && r.leg.rel !== 'nephew') { const g = legRet(r.leg.rid); kin.push({ rel: 'Grandfather', name: `${r.leg.fn} ${r.leg.ln}`, pos: r.leg.pos, rid: g ? g.id : null, hof: legHof(r.leg.rid) }); }
+  return { rid: r ? l.rid : null, name: `${l.fn} ${l.ln}`, pos: l.pos, hof, rel: n ? 'Nephew' : 'Son', yrs: legYrs(r), kin, text: `${n ? 'Nephew' : 'Son'} of ${hof ? 'Hall of Famer' : 'former ' + l.pos} ${l.fn} ${l.ln}` };
 }
 function legacySons(rid) {
   return (S && S.legacy || []).filter(l => l.rid === rid).map(l => {
-    if (!l.son) return { due: l.due, age: clamp(17 - (l.due - S.season), 0, 17) };
+    if (!l.son) return { due: l.due, rel: l.rel, age: clamp(17 - (l.due - S.season), 0, 17) };
     const s = l.son, pro = s.pid != null && S.players[s.pid], col = !pro && s.cid != null && typeof COLLEGE !== 'undefined' && COLLEGE.S && COLLEGE.S.players[s.cid];
-    return { ...s, pro: pro || null, col: col || null };
+    return { ...s, rel: l.rel, pro: pro || null, col: col || null, ret: (!pro && s.pid != null && legRet(s.pid)) || null };
   });
+}
+// the whole family a retiree belongs to, from its oldest member down (sons who retired become branches of their own)
+function legRoot(rid) { let r = legRet(rid), i = 0; while (r && r.leg && r.leg.rel !== 'nephew' && legRet(r.leg.rid) && i++ < 8) r = legRet(r.leg.rid); return r ? r.id : rid; }
+function legacyTree(rid) {
+  const node = (id, d) => {
+    const r = legRet(id);
+    return { rid: id, name: r ? r.name : '', ln: r ? legBase(r.ln) : '', pos: r ? r.pos : '', yrs: legYrs(r), hof: legHof(id), kids: d > 5 ? [] : legacySons(id).map(s => (s.ret ? { ...node(s.ret.id, d + 1), rel: s.rel } : s)) };
+  };
+  return node(legRoot(rid), 0);
+}
+const legCount = n => 1 + (n.kids || []).reduce((a, k) => a + (k.rid != null ? legCount(k) : k.fn ? 1 : 0), 0);
+const legDepth = n => 1 + Math.max(0, ...(n.kids || []).map(k => (k.rid != null ? legDepth(k) : k.fn ? 1 : 0)));
+// every family with a son who has arrived, deepest and biggest first
+function legacyFamilies() {
+  const roots = new Set(); for (const l of S.legacy || []) if (l.son && legRet(l.rid)) roots.add(legRoot(l.rid));
+  return [...roots].map(id => { const t = legacyTree(id); return { ...t, n: legCount(t), gen: legDepth(t) }; }).sort((a, b) => b.gen - a.gen || b.n - a.n || b.hof - a.hof);
 }
 // ---------- deadline week: the trade market in the days before the deadline ----------
 // Contenders shop for a need, and the longer it goes unfilled the more they pay. Sellers drop their price on players in the last year
@@ -10350,7 +10410,7 @@ function windowPlan(tid) {
     const dead = (S.dead || []).filter(d => d.tid === tid && d.s === y).reduce((a, d) => a + d.amt, 0);
     const draft = k === dk && dc.n ? dc.total : 0, space = S.cap - committed - dead - draft;
     const keepCost = kept.filter(p => k >= winSigned(p)).reduce((a, p) => a + marketValue({ ...p, ovr: proj.get(p.id)[k].ovr, age: proj.get(p.id)[k].age }), 0);
-    const tier = r => r >= lineC ? 'contender' : r >= lineB ? 'bubble' : 'rebuild';
+    const tier = r => (r1(r) >= r1(lineC) ? 'contender' : r1(r) >= r1(lineB) ? 'bubble' : 'rebuild'); // (on the shown numbers, so a tie reads the same as it looks)
     years.push({ y, lineC: r1(lineC), lineB: r1(lineB), top: r1(ref[0]), signed: r1(S1.r), kept: r1(K1.r), rkS: rankOf(S1.r), rkK: rankOf(K1.r), tier: tier(K1.r), tierS: tier(S1.r), holes: S1.holes,
       space: r1(space), keepSpace: r1(space - keepCost), committed: r1(committed), dead: r1(dead), draft: r1(draft) });
   }
@@ -11094,7 +11154,7 @@ function colLeaders(g) { const best = k => { let b = null; for (const id in g.ps
 // Each recruit has three priorities; every school gets a grade on each one. Interest grows faster where the fit is good.
 // A recruit narrows his list over the season (top 8, top 5, top 3), then commits. Commitments are sticky, but
 // bigger programs chase top recruits and can wear a commitment down; checking in keeps your commits firm.
-const PRIOS = { time: 'Playing time', win: 'Winning', nil: 'NIL money', home: 'Close to home', prestige: 'Prestige', staff: 'The coaching staff', academics: 'Academics' };
+const PRIOS = { time: 'Playing time', win: 'Winning', nil: 'NIL money', home: 'Close to home', prestige: 'Prestige', staff: 'The coaching staff', academics: 'Academics', family: 'Family ties' }; // (family: only a legacy recruit, see 98-college-6c-legacy)
 const PRIO_W = [0.5, 0.3, 0.2];
 const ACAD = { STAN: 98, NW: 96, DUKE: 95, VAN: 94, ND: 93, RICE: 93, CAL: 90, UCLA: 88, MICH: 88, UVA: 88, GT: 86, WAKE: 86, ARMY: 85, NAVY: 85, BC: 84, USC: 84, UNC: 84, AFA: 82, TUL: 80, FLA: 80, TEX: 80, WIS: 80, WASH: 80, ILL: 78, PUR: 78, PSU: 76, OSU: 74, UGA: 74, MIA: 74, MD: 74, BYU: 74, SMU: 72, SYR: 72, RUTG: 72, IND: 72, MINN: 72, PITT: 72, VT: 72, NCST: 72, TAMU: 72, IOWA: 70, CLEM: 70, FSU: 68, COLO: 68, UTAH: 68, ORE: 66, ALA: 64, TENN: 64, LSU: 62, AUB: 62, OU: 64 };
 const REG_ADJ = { Northeast: ['Midwest', 'Southeast'], Southeast: ['Northeast', 'Southwest', 'Midwest'], Midwest: ['Northeast', 'Southeast', 'Southwest', 'West'], Southwest: ['Southeast', 'Midwest', 'West'], West: ['Southwest', 'Midwest'] };
@@ -11164,6 +11224,7 @@ function gradeVal(r, tid, k) {
     case 'staff': { let base = GV_MEMO ? GV_MEMO['st' + tid] : undefined; if (base === undefined) { const cr = ((t.oc ? t.oc.rat : 50) + (t.dc ? t.dc.rat : 50)) / 2; base = (staffRating(tid) * 0.7 + cr * 0.3 - 30) * 1.45; if (GV_MEMO) GV_MEMO['st' + tid] = base; } return clamp(base + schemeFit(r, t) * 12, 5, 100); }
     case 'win': case 'prestige': case 'academics': return gradeTeam(tid, k, G);
     case 'academics': return ACAD[t.key || t.abbr] ?? clamp(40 + t.pres * 0.3, 20, 80);
+    case 'family': return tid === r.legC ? 100 : tid === r.legT ? (r.legC != null ? 70 : 100) : 35;
   }
   return 50;
 }
@@ -11343,6 +11404,7 @@ function commitWeek() {
       if (r.list && r.list.length && wk >= r.tl[3] && n === 3) {
         const best = r.list.map(t => ({ t, v: score(r, t) + gauss(0, 3) })).sort((a, b) => b.v - a.v)[0];
         r.commit = best.t; r.cf = clamp(Math.round(55 + ((r.int[best.t] || 0) - Math.max(0, ...r.list.filter(x => x !== best.t).map(x => r.int[x] || 0))) * 0.6 + (r.stars <= 3 ? 8 : 0)), 40, 90); r.cfW = null;
+        if (r.leg) legacyCommit(r, best.t);
         if (isMe(best.t)) cnews(`${r.stars}-star ${r.pos} ${r.fn} ${r.ln} committed to you!`, true);
         else if (board.has(r.id)) cnews(`${r.stars}-star ${r.pos} ${r.fn} ${r.ln} committed to ${cteam(best.t).name}${r.list.includes(u) ? ' over you' : ''}.`, true);
         else if (r.stars === 5) cnews(`Five-star ${r.pos} ${r.fn} ${r.ln} committed to ${cteam(best.t).name}.`);
@@ -12106,6 +12168,7 @@ function cSpdCode(U, r) {
 function cNum(p) {
   if (!p || p.num != null) return p;
   const used = new Set(croster(p.tid).map(x => x.num).filter(n => n != null)), pool = [];
+  if (p.leg && p.leg.num && !used.has(p.leg.num) && (p.pos === p.leg.pos || (NUM_RANGES[p.pos] || []).some(([a, b]) => p.leg.num >= a && p.leg.num <= b))) { p.num = p.leg.num; return p; } // (his father's number)
   for (const [a, b] of NUM_RANGES[p.pos] || [[1, 99]]) for (let n = a; n <= b; n++) if (!used.has(n)) pool.push(n);
   p.num = pool.length ? pool[Math.floor(rnd() * pool.length)] : randInt(1, 99);
   return p;
@@ -13081,7 +13144,8 @@ function fxRewrite(pairs) {
 }
 // ---------- legacy families, college side: a retired pro's son joins the recruiting class (95c-legacy rolls him) ----------
 // Built like any recruit (genRecruit), a little ahead on talent, and the services know the name. His father's school
-// starts with a head start on his interest. In a college-only game there's no pro league, so no fathers.
+// starts with a head start on his interest, and many weigh family ties as one of their three priorities (r.legT, the
+// father's school; r.legC, the school the career player coaches at). In a college-only game there's no pro league, so no fathers.
 function legacyRecruits() {
   const out = []; if (typeof uniOn !== 'function' || !uniOn() || !S || !S.legacy) return out;
   for (const l of S.legacy) {
@@ -13096,14 +13160,30 @@ function legacyRecruits() {
   if (out.length) touchC();
   return out;
 }
-// after the services rank the class: his father's school gets a head start, and the news
+// the career player's own son, while his father coaches in college
+const legCoachT = l => (l && l.car && !legNeph(l) ? (CS.cc ? CS.cc.tid : CS.me && CS.me.ex && CS.userTid != null ? CS.userTid : null) : null);
+// after the services rank the class: his father's school gets a head start, family ties may be a priority, and the news
 function legacyEdge(list) {
   for (const [r, l] of list) {
-    const t = l.col && CS.teams.find(x => x.name === l.col); if (t) r.int[t.tid] = Math.min(60, (r.int[t.tid] || 0) + 15);
+    const t = l.col && CS.teams.find(x => x.name === l.col), n = legNeph(l), ct = legCoachT(l);
+    if (t) { r.legT = t.tid; r.int[t.tid] = Math.min(60, (r.int[t.tid] || 0) + (n ? 8 : 15)); }
+    if (ct != null) { r.legC = ct; r.int[ct] = Math.min(70, (r.int[ct] || 0) + 20); }
+    if ((t || ct != null) && r.pr && rnd() < (ct != null ? 0.85 : n ? 0.25 : 0.55)) { const i = rnd() < 0.5 ? 0 : 1, rest = r.pr.filter(k => k !== 'family'); rest.splice(i, 0, 'family'); r.pr = rest.slice(0, 3); }
     const mine = isMe(t ? t.tid : -9) || r.int[CS.userTid] != null || !!l.car;
-    cnews(`Legacy recruit: ${r.stars}-star ${r.pos} ${r.fn} ${r.ln}, son of ${legFather(l)}${t ? `, who played at ${t.name}` : ''}.`, mine && (r.stars >= 4 || isMe(t ? t.tid : -9) || !!l.car));
-    if (l.car && S.car) carLog(`Your son ${r.fn} ${r.ln} is a ${r.stars}-star ${r.pos} in the ${CS.season} recruiting class.`, 'fam');
+    cnews(`Legacy recruit: ${r.stars}-star ${r.pos} ${r.fn} ${r.ln}, ${legFather(l)}${t ? `, who played at ${t.name}` : ''}.`, mine && (r.stars >= 4 || isMe(t ? t.tid : -9) || !!l.car));
+    if (l.car && !n && S.car) carLog(`Your son ${r.fn} ${r.ln} is a ${r.stars}-star ${r.pos} in the ${CS.season} recruiting class.`, 'fam');
+    if (ct != null && isMe(ct)) cnews(`Your son ${r.fn} ${r.ln}, a ${r.stars}-star ${r.pos}, is in this year's class. He'd love to play for his dad. Put him on your board.`, true);
+    legFeed(l, 'sonClass', `${r.stars}-star ${r.pos} ${r.fn} ${r.ln}`);
   }
+}
+// a legacy commits: the story writes itself when he follows his father (or plays for him)
+function legacyCommit(r, tid) {
+  const l = legOf(r, true), t = cteam(tid), rel = r.leg.rel === 'nephew' ? 'uncle' : 'father', who = l ? legWho(l) : `${r.leg.fn} ${r.leg.ln}`;
+  const big = isMe(tid) || !!(l && l.car) || r.stars >= 4;
+  if (r.legC === tid) cnews(`${r.stars}-star ${r.pos} ${r.fn} ${r.ln} commits to ${t.name} to play for his father, ${l ? `${l.fn} ${l.ln}` : who}.`, true);
+  else if (r.legT === tid) cnews(`${r.stars}-star ${r.pos} ${r.fn} ${r.ln} commits to ${t.name}, where his ${rel}, ${who}, played. He's the second ${legBase(r.ln)} to play there${r.leg.num ? ` and wants No. ${r.leg.num}, his father's number in the pros` : ''}.`, big);
+  else if (r.legT != null && big) cnews(`${r.stars}-star ${r.pos} ${r.fn} ${r.ln}, ${l ? legFather(l) : 'a legacy recruit'}, commits to ${t.name} instead of his ${rel}'s school, ${cteam(r.legT).name}.`, isMe(tid) || isMe(r.legT) || !!(l && l.car));
+  if (l) legFeed(l, 'sonCommit', `${r.fn} ${r.ln}, a ${r.stars}-star ${r.pos}`, t.name);
 }
 // ---------- coached games: you make the calls, snap by snap ----------
 // The snap engine (98-college-1b-snap) runs the game; this layer stops it whenever a decision belongs to you:
@@ -13883,16 +13963,17 @@ function signingBoard() {
 // there, falls flat when he doesn't care, and backfires when he cares and you're weak (he's done his homework). A pitch
 // that lands, or backfires, tells you what he wants. Shared threads and the reader live in 97v-voices.js.
 function cvxS() { if (!CS.voxV) { CS.voxV = 1; CS.vox = vxNew((CS.season || 1) * 7907 + (CS.userTid || 0) * 113 + 29); } return CS.vox; }
-const PITCH_BTN = { time: 'Playing time', win: 'Winning', nil: 'NIL', home: 'Close to home', prestige: 'Prestige', staff: 'Our staff', academics: 'Academics' };
-const PITCH_LINE = { time: 'You can play right away here. The depth chart is wide open for a guy like you.', win: 'We win here, and we\'re going to win a lot more with you.', nil: 'Our collective takes care of its players. You\'ll be set up here.', home: 'Stay close to home. Your family can be at every game.', prestige: 'This is a program people know everywhere. Play here and the whole country watches.', staff: 'Our staff develops players. We\'ll get you ready for the next level.', academics: 'You\'ll leave here with a degree that opens doors for the rest of your life.' };
-const PITCH_WORDS = { time: /\b(play(ing)? time|start(er|ing|s)?|snaps|depth chart|play (early|right away|as a freshman)|day one|reps|wide open)\b/i, win: /\b(win(s|ning)?|champion(ship)?s?|titles?|playoffs?|contend\w*|bowls?|rings?)\b/i, nil: /\b(nil|money|paid|pay|collective|brand|bag|endorsements?)\b/i, home: /\b(home|family|close by|near|mom|dad|parents|hometown|backyard|local|in-state|in state)\b/i, prestige: /\b(tradition|prestige|blue ?bloods?|history|legacy|storied|exposure|tv|national stage|whole country)\b/i, staff: /\b(coach(es|ing)?|staff|develop(ment|s|ing)?|nfl|pros|next level|drafted|league)\b/i, academics: /\b(degree|academics?|education|class(es|room)?|major|graduat\w*|career after)\b/i };
+const PITCH_BTN = { time: 'Playing time', win: 'Winning', nil: 'NIL', home: 'Close to home', prestige: 'Prestige', staff: 'Our staff', academics: 'Academics', family: 'Family ties' };
+const PITCH_LINE = { time: 'You can play right away here. The depth chart is wide open for a guy like you.', win: 'We win here, and we\'re going to win a lot more with you.', nil: 'Our collective takes care of its players. You\'ll be set up here.', home: 'Stay close to home. Your family can be at every game.', prestige: 'This is a program people know everywhere. Play here and the whole country watches.', staff: 'Our staff develops players. We\'ll get you ready for the next level.', academics: 'You\'ll leave here with a degree that opens doors for the rest of your life.', family: 'Your family is part of this place. Come finish what your dad started here.' };
+const PITCH_WORDS = { time: /\b(play(ing)? time|start(er|ing|s)?|snaps|depth chart|play (early|right away|as a freshman)|day one|reps|wide open)\b/i, win: /\b(win(s|ning)?|champion(ship)?s?|titles?|playoffs?|contend\w*|bowls?|rings?)\b/i, nil: /\b(nil|money|paid|pay|collective|brand|bag|endorsements?)\b/i, home: /\b(home|family|close by|near|mom|dad|parents|hometown|backyard|local|in-state|in state)\b/i, prestige: /\b(tradition|prestige|blue ?bloods?|history|legacy|storied|exposure|tv|national stage|whole country)\b/i, staff: /\b(coach(es|ing)?|staff|develop(ment|s|ing)?|nfl|pros|next level|drafted|league)\b/i, academics: /\b(degree|academics?|education|class(es|room)?|major|graduat\w*|career after)\b/i, family: /\b(your (dad|father|old man|pops|uncle)|family (name|ties|tradition|history)|follow(ing)? in|legacy|bloodlines?|footsteps)\b/i };
 const PITCH_COST = 2;
 function recThread(r) {
   const vx = cvxS(); let th = vx.th.find(x => x.k === 'rec' && x.who.rid === r.id);
   if (!th) {
     th = vxThread(vx, 'rec', { name: `${r.fn} ${r.ln}`, sub: `${r.stars}-star ${r.pos} recruit, ${r.reg}`, rid: r.id });
     const ex = CS.me && CS.me.ex && exPull(CS.me) >= 4 ? CS.me.ex : null; // a famous former player as head coach: recruits grew up watching him
-    vxMsg(vx, th, ex ? `Hey Coach. ${pick(['My dad and I used to watch you play.', 'I grew up watching your highlights.', `Not gonna lie, it's crazy getting a DM from ${CS.me.fn} ${CS.me.ln}.`])} What makes ${cteam(CS.userTid).name} the place for me?` : `Hey Coach. What makes ${cteam(CS.userTid).name} the place for me?`, `You are a ${r.stars}-star recruit and this school is recruiting you.${ex ? ` The head coach is ${CS.me.fn} ${CS.me.ln}, a famous former ${ex.pos} you grew up watching; mention it, a little starstruck.` : ''} Ask the coach, casually, why you should pick his school.`, 0.3);
+    const fam = r.leg && r.legC === CS.userTid ? 'Kind of weird getting recruited by my own dad, not gonna lie.' : r.leg && r.legT === CS.userTid ? `My ${r.leg.rel === 'nephew' ? 'uncle' : 'dad'} played here, so I grew up on this place.` : ''; // (a legacy recruit)
+    vxMsg(vx, th, (ex ? `Hey Coach. ${pick(['My dad and I used to watch you play.', 'I grew up watching your highlights.', `Not gonna lie, it's crazy getting a DM from ${CS.me.fn} ${CS.me.ln}.`])} What makes ${cteam(CS.userTid).name} the place for me?` : `Hey Coach. What makes ${cteam(CS.userTid).name} the place for me?`).replace('What makes', fam ? fam + ' What makes' : 'What makes'), `You are a ${r.stars}-star recruit and this school is recruiting you.${ex ? ` The head coach is ${CS.me.fn} ${CS.me.ln}, a famous former ${ex.pos} you grew up watching; mention it, a little starstruck.` : ''}${fam ? ` ${r.legC === CS.userTid ? 'The head coach is your own father.' : `Your ${r.leg.rel === 'nephew' ? 'uncle' : 'father'} played at this school.`} Mention it.` : ''} Ask the coach, casually, why you should pick his school.`, 0.3);
   }
   return th;
 }
@@ -14137,7 +14218,7 @@ return {
   news: cnews, flipOdds, signingBoard, cfpRankOf, PRIOS, REC_ACTS, BOARD_MAX, recView, recEst, boardOf, boardOpen, homeWeeks, scheduleVisit, stageOf, gradeLetter, setAutoRec: on => { CS.auto = !!on; }, get autoLog() { return CS.autoLog || null; }, get autoTot() { return CS.autoTot && CS.autoTot.s === CS.season ? CS.autoTot : null; }, get autoRec() { return CS.auto !== false; }, poGameName, projectedClass, isMe, RIV, rivalryTable, rivalsOf: rivalsOfC, coachInfo, acceptJob, declineJobs, seatLabel, genCoach: genCoachC, coachChange, TRAIN, setTraining, trainOf, springGame, POS_MOVES: COL_POS_MOVES, posChangePreview, changePos, POS_AWARDS, AA_SLOTS,
   weekBgStep, liveStart, liveState, playTxt: colPlayTxt, liveCall, live4th, liveSim, liveFinish, liveAbandon, liveIce, livePat, liveKick, liveHalf, liveTimeout, liveTempo, liveAuto, userNext, OFF_C, DEF_C, CALL_TIPS, ROUTE_NM: C_ROUTE_NM, COVS: C_COVS, colGame, gameStep: cStep, gameInit: colGameInit, get live() { return LIVE; }, awardsOf: s => (CS.awards || {})[s] || null, confSize,
   programInfo, recordBook, RB_KEYS, OFF_SCH, DEF_SCH, schemeFit, fitWord, hireCoord, fireCoord, coordCands, setPlan, filmStudy, scoutReport, ccOn, ccCoach, ccRank, ccOpenings, ccJob, ccLeave, ccScheme, ccHoldRelease, ccHcTake, carEnd: () => { if (CS) CS.car = null; }, exPull: () => (CS && CS.me ? exPull(CS.me) : 0), get cc() { return CS.cc || null; }, get plan() { return CS.plan || { off: 'bal', def: 'bal' }; }, get film() { return CS.film && CS.film.s === CS.season && CS.film.wk === CS.week ? CS.film : null; }, setDepth: (pos, ids) => { CS.udepth = CS.udepth || {}; if (ids) CS.udepth[pos] = ids.slice(); else delete CS.udepth[pos]; return null; },
-  legacyRecruits, legacyEdge,
+  legacyRecruits, legacyEdge, legacyCommit,
   setFict: () => null, editTeam: editTeamC, renameConf: renameConfC, editPlayer: editPlayerC, packC, applyPackC, rosterCsv: rosterCsvC, importRoster: importRosterC, get edited() { return !!(CS && CS.edited); }, reviews: () => (CS && CS.reviews) || {}, lbl, rivName, rivTrophy, get fict() { return !!(CS && CS.fict); }, carRecruit, gradeVal, recFit, colDepth, COL_START, cplayer: id => CS.players[id], cplayers: () => cplayers(), heisList: () => (CS.hw && CS.hw.list) || [], get front() { return CS.front || null; }, adv: season => ((CS.adv || {})[season ?? CS.season]) || {}, advSeasons: () => Object.keys(CS.adv || {}).map(Number).sort((a, b) => b - a), get asks() { return (CS.asks || []).filter(x => x.s === CS.season); }, answerDemand, nilWant, PERS_C, PERS_TIP, chemWord, teamChem: tid => cteam(tid).chem ?? 60, get fronts() { return CS.fronts || []; },
   playWeek, playCCG, playPlayoffRound, holdSigningDay, portalDay, portalOffer, retainPlayer, talkStay, portalPlayers, portalLog, scholarships, recFitToday, portalAsk, progRep: () => CS.progRep || null, progSeen: () => { if (CS.progRep) CS.progRep.seen = true; }, recHours: tid => recHours(tid ?? CS.userTid), portalOffers: () => (CS.portal ? { ...CS.portal.offers } : {}), portalChance, nextSeason, simToEnd,
   team: cteam, roster: croster, recruits, commitsOf, classNeeds, recAction, nilLeft, nilUsed, colPower, rankOf, confStandings, clsOf, setRedshirt, phaseLabel: colPhase, poPairs: () => (CS.po && CS.phase === 'playoff' ? poPairsC() : []),
@@ -15540,6 +15621,10 @@ const SOC_ABOUT = {
   coachGood: { who: ['beat', 'fan'], sit: 'win', t: { beat: ['Coordinators to watch: {me} at {team}. His {ev}.', '{team}\'s {ev}. {me} will be a head coach somewhere soon.'], fan: ['{me} cooked as a coordinator too 🔥', 'give {me} a raise. his {ev}'] } },
   coachBad: { who: ['beat', 'troll'], sit: 'loss', t: { beat: ['A tough year for {me} at {team}: his {ev}.', '{team}\'s {ev}. Questions for {me} this offseason.'], troll: ['{me} can\'t coach either lmao', 'turns out playing and coaching are different things 🤡'] } },
   coachFired: { who: ['beat', 'troll'], sit: 'sad', t: { beat: ['{team} has fired {ev} {fn} {me}.', '{me} is out as {ev} at {team}.'], troll: ['fired lol. saw that coming', 'back to the broadcast booth {me}'] } },
+  // his son coming up ({ev}: the boy, or where he went)
+  sonClass: { who: ['beat', 'fan'], sit: 'hype', t: { beat: ['Bloodlines: {ev}, son of {fn} {me}, is in this year\'s class.', 'The next {me}? {ev} is on the board, and the name is familiar.'], fan: ['{me}\'s kid can PLAY?? 👀', 'the {me} name is back. {ev}', 'like father like son. can\'t wait'] } },
+  sonCommit: { who: ['beat', 'recfan', 'troll'], sit: 'hype', t: { beat: ['{ev}, son of {fn} {me}, has committed to {school}.', 'Commitment: {ev} picks {school}. His father is {fn} {me}.'], recfan: ['another {me} at {school} 🙌', 'WE GOT {me}\'S SON. let\'s go'], troll: ['only got offered because of his last name lol', 'nepo baby to {school} 🤡'] } },
+  sonDrafted: { who: ['beat', 'fan'], sit: 'hype', t: { beat: ['Draft: {ev}. His father is {fn} {me}.', 'Another {me} in the league: {ev}.'], fan: ['{me} watching his son get drafted 😭🙏', 'proud dad moment for {me} today', 'the {me} family is football royalty'] } },
   released: { who: ['beat', 'troll'], sit: 'sad', t: { beat: ['The {ev} have released {me}.', '{me} has been released by the {ev}.'], troll: ['saw this coming a mile away', 'free agent {me} lmao. who\'s next'] } },
 };
 const SOC_CLAP = {
@@ -15978,7 +16063,7 @@ function carSocPrompt(postId, ids) {
   const so = socS(), post = so.posts.find(x => x.id === +postId); if (!post) return null;
   // a post about the player: the model writes the post itself first
   if (post.by && (ids || []).some(id => +id === 0)) {
-    const ctx = socCtx(), what = { big: 'He just had a big game.', bad: 'He just had a bad game.', commit: `He just committed to ${post.x.school || 'a school'}.`, drafted: `He was just drafted (${post.ev}).`, signed: `He just signed a new contract (${post.ev}).`, traded: 'He was just traded.', released: `He was just released by the ${post.ev}.` }[post.about] || '';
+    const ctx = socCtx(), what = { big: 'He just had a big game.', bad: 'He just had a bad game.', commit: `He just committed to ${post.x.school || 'a school'}.`, drafted: `He was just drafted (${post.ev}).`, signed: `He just signed a new contract (${post.ev}).`, traded: 'He was just traded.', released: `He was just released by the ${post.ev}.`, sonClass: `His son is coming up: ${post.ev}.`, sonCommit: `His son ${post.ev} just committed to ${post.x.school || 'a school'}.`, sonDrafted: `His son was just drafted: ${post.ev}.` }[post.about] || '';
     const user = `Facts:\n${socFacts(ctx, post.x && post.x.school, post.about === 'big' || post.about === 'bad')}\n\nNews: ${what}\nWrite the post that ${socWho({ ...post.by, st: '' }, ctx)} makes about ${ctx.me} right now. One post, under 160 characters, in that person's voice.${post.by.k === 'beat' ? ' Normal capitalization and punctuation, like a news post. Report the news and at most one other fact.' : ' Mention at most one other fact.'}\n\nAnswer with JSON: {"replies": ["the post"]}`;
     return { system: SOC_SYS, user, ids: [0], schema: { type: 'object', properties: { replies: { type: 'array', items: { type: 'string', maxLength: 220 }, minItems: 1, maxItems: 1 } } }, maxTokens: 90 };
   }
@@ -16871,7 +16956,7 @@ return {
   retireTalk, payrollFloor, simSmart, inboxItems, inboxAct, inboxCount, legacy, retireGM, unretireGM, SCENARIOS, startScenario, scenarioCard,
   SITS, callProfile, tendencyReport, TWO_CALLS, TWO_TIPS, tIdx, importCollegeClass, college: COLLEGE, genGenerational, PB_PLAYS, PB_FORMS, pbDiagram, pbTypForm, MP_DROPS, MP_SPOTS, mpCheck, mpEncode: mpEnc, pbPickPlay, mpSave, mpDelete, mpFromStock, mpReg, mpClassify, mpBook, PB_FAM,
   fieldPlay, fxCard, fxUncard, fxDec, FLD_V, FX_DBG, filmRoom, applyFilmFix, filmFixDone, filmPending, filmMark,
-  legacyRoll, legacyProspects, legacyInfo, legacySons,
+  legacyRoll, legacyProspects, legacyInfo, legacySons, legacyTree, legacyFamilies, legacyNum, legacyDrafted, retirePlayer,
 };
 })();
 if (typeof module !== 'undefined') module.exports = HM;
@@ -19281,7 +19366,7 @@ function fvFieldScript(p) {
   if (R.tgt != null) { S.labels.push({ side: 'o', i: R.tgt, name: p.b, t0: th ? S.throwT - 0.06 : 0, t1: 1, ring: true }); S.trail = { side: 'o', i: R.tgt, t0: 0.06, show: S.throwT }; S.route = R.rt[R.tgt]; S.cov = X.cov; S.concept = play ? play.n : null; }
   if (R.k === 'run' || R.k === 'scramble') { const ci = R.car ?? 6; S.hi = { side: 'o', i: ci }; S.trail = { side: 'o', i: ci, t0: got ? T(got.t) : 0.1, show: got ? T(got.t) : 0.1 }; if (ci !== 5) S.labels.push({ side: 'o', i: ci, name: p.a, t0: got ? T(got.t) - 0.05 : 0, t1: 1, ring: true }); }
   else if (R.k === 'int') { S.hi = { side: 'd', i: R.by }; S.labels.push({ side: 'd', i: R.by, name: p.t, t0: S.catchT - 0.02, t1: 1, ring: true }); }
-  else if (R.k === 'sack') { S.hi = { side: 'o', i: 5 }; const hit = rc.ev.find(e => (e.k === 'wrap' || e.k === 'tackle') && e.i === R.by) || rc.ev.find(e => e.k === 'tackle'); S.sackT = hit ? T(hit.t) : rc.end != null ? T(rc.end) : 0.85; if (R.by != null) S.labels.push({ side: 'd', i: R.by, name: p.t, t0: Math.max(0, S.sackT - 0.04), t1: 1, ring: true }); } // (the sacker is named when he gets there, not at the snap)
+  else if (R.k === 'sack') { S.hi = { side: 'o', i: 5 }; if (R.by != null) S.labels.push({ side: 'd', i: R.by, name: p.t, t0: 0.3, t1: 1, ring: true }); }
   else S.hi = { side: 'o', i: R.tgt ?? 5 };
   // (the result shows at the whistle, not before: at the catch it only says he caught it)
   S.capT = rc.end != null ? T(rc.end) : 1; if (R.k === 'comp') S.midCap = 'Pass complete'; else if (R.k === 'int') S.midCap = 'Intercepted'; else if (R.k === 'inc') S.capT = S.catchT ?? S.capT;
@@ -19295,7 +19380,7 @@ function fvFieldScript(p) {
 // him (at least about a yard and a quarter away), eased in and out so there's no jump. The sacker at the hit is allowed
 function fvAvoid(S, p) {
   if (!S.dur || !S.O || !S.O[5] || !['pass', 'inc', 'int', 'sack', 'run', 'fum', 'pen'].includes(p.k)) return;
-  const Q = S.O[5], ring = (S.labels || []).find(x => x.side === 'd' && x.ring), sackT = p.k === 'sack' && ring ? (S.sackT != null ? S.sackT : ring.t0 + 0.08) : null;
+  const Q = S.O[5], ring = (S.labels || []).find(x => x.side === 'd' && x.ring), sackT = p.k === 'sack' && ring ? ring.t0 + 0.08 : null;
   const qbRuns = S.hi && S.hi.side === 'o' && S.hi.i === 5, tLim = sackT != null ? sackT - 0.04 : S.throwT != null ? S.throwT + 0.02 : qbRuns ? (S.trail ? S.trail.show ?? 0.3 : 0.3) : S.trail ? Math.min(0.97, (S.trail.show ?? 0.3) + 0.05) : 0.5;
   const w = Math.min(0.08, 0.5 / S.dur), MIN = 1.25;
   for (let pass = 0; pass < 2; pass++) for (let j = 0; j < S.D.length; j++) {
@@ -20826,7 +20911,7 @@ function hofView() {
   const hof = (s.hof || []).slice().sort((a, b) => b.inducted - a.inducted || b.score - a.score);
   const ballotYears = Object.keys(s.hofBallots || {}).map(Number).sort((a, b) => b - a);
   const pend = (s.hofPending || []).filter(x => x.year > s.season).sort((a, b) => a.year - b.year || b.score - a.score);
-  const tabs = seg('hofTab', tab, [['members', `Inductees (${hof.length})`], ['ballot', 'Voting'], ['soon', `Eligible soon (${pend.length})`], ['watch', 'Active watch list']]);
+  const tabs = seg('hofTab', tab, [['members', `Inductees (${hof.length})`], ['ballot', 'Voting'], ['soon', `Eligible soon (${pend.length})`], ['watch', 'Active watch list'], ['fam', 'Families']]);
   const summ = h => { const c = t => (h.hon || []).filter(x => x.t === t).length; return [c('MVP') && `${c('MVP')}× MVP`, c('FMVP') && `${c('FMVP')}× ${HM.LEAGUE.final} MVP`, (c('OPOY') + c('DPOY')) && `${c('OPOY') + c('DPOY')}× POY`, c('AP') && `${c('AP')}× All-Pro`, c('PB') && `${c('PB')}× Pro Bowl`, c('RING') && `${c('RING')}× champion`].filter(Boolean); };
   let body = '';
   if (tab === 'members') {
@@ -20849,6 +20934,8 @@ function hofView() {
     body = `<section class="panel"><p class="muted" style="margin:0 0 10px;font-size:12.5px">Retired players with Hall of Fame résumés, waiting out the five-year period. Their outlook is based on the same score voters use.</p>${table('hofsoon', [
       { k: 'name', l: 'Player', f: x => retiredById(x.id) ? rlink(x.id, x.name) : E(x.name), v: x => x.name }, { k: 'pos', l: 'Pos' }, { k: 'year', l: 'Eligible', n: 1 },
       { k: 'score', l: 'Outlook', f: x => E(HM.hofOutlook(x.score)), v: x => x.score }, { k: 'h', l: 'Honors', nosort: 1, f: x => `<span style="font-size:12px">${E(summ(x).join(', ') || '—')}</span>` }], pend, { sort: { k: 'year', d: 'asc' }, empty: 'Nobody is waiting on eligibility right now.' })}</section>`;
+  } else if (tab === 'fam') {
+    body = legFamiliesTab();
   } else {
     const w = HM.hofWatch();
     body = `<section class="panel"><p class="muted" style="margin:0 0 10px;font-size:12.5px">Active players building Hall of Fame cases: awards, All-Pro and Pro Bowl selections, titles, longevity and career stats. Only what they've done in this league counts.</p>${table('hofwatch', [
@@ -20866,17 +20953,32 @@ const legB = p => { const i = HM.legacyInfo(p); return i ? ` <span class="legb" 
 function legLine(p) {
   const i = HM.legacyInfo(p); if (!i) return '';
   const who = i.rid != null ? rlink(i.rid, i.name) : E(i.name);
-  return `<p class="legl">Son of ${i.hof ? 'Hall of Famer ' : 'former ' + E(i.pos) + ' '}${who}${i.yrs ? ` <span class="muted">(${E(i.yrs)})</span>` : ''}.</p>`;
+  const kin = (i.kin || []).map(k => k.rel === 'Grandfather' ? `grandson of ${k.hof ? 'Hall of Famer ' : ''}${k.rid != null ? rlink(k.rid, k.name) : E(k.name)}` : `${k.rel.toLowerCase()} of ${E(k.name)} (${E(k.pos)})`);
+  return `<p class="legl">${E(i.rel)} of ${i.hof ? 'Hall of Famer ' : 'former ' + E(i.pos) + ' '}${who}${i.yrs ? ` <span class="muted">(${E(i.yrs)})</span>` : ''}.${kin.length ? ` <span class="muted">Also ${kin.join(', ')}.</span>` : ''}</p>`;
+}
+// one member of a family tree: a retiree (with his own branch), a son still playing, or one still to come
+function legNode(s) {
+  if (s.rid != null) return `<div class="legn"><b>${rlink(s.rid, s.name)}</b>, ${E(s.pos)} <span class="muted">${E(s.yrs)}${s.hof ? ' · Hall of Fame' : ''}</span></div>`;
+  const rel = s.rel === 'nephew' ? 'nephew' : 'son';
+  if (s.due != null && !s.fn) return `<div class="legn muted">A ${rel}, ${s.age ? `${s.age} years old` : 'not born yet'}. He'll be in the ${s.due} recruiting class.</div>`;
+  const tag = s.rel === 'nephew' ? ' <span class="muted">(nephew)</span>' : '';
+  if (s.pro) { const t = s.pro.tid >= 0 ? T(s.pro.tid) : null; return `<div class="legn">${plink({ ...s.pro, leg: null })}, ${E(s.pro.pos)}${tag}: ${t ? `${chip(t)} ${E(t.city + ' ' + t.name)}` : s.pro.tid === -2 ? `${s.pro.cls} draft prospect` : 'free agent'}</div>`; }
+  if (s.col) { const C = HM.college, t = s.col.tid >= 0 ? C.team(s.col.tid) : null; return `<div class="legn">${cplink({ ...s.col, leg: null })}, ${E(s.col.pos)}${tag}: ${t ? E(t.name) : s.col.tid === -2 ? `${s.col.stars ? s.col.stars + '-star ' : ''}recruit, class of ${C.S.season + 1}` : 'in the transfer portal'}</div>`; }
+  return `<div class="legn">${E(s.fn + ' ' + s.ln)}, ${E(s.pos)}${tag} <span class="muted">(no longer playing)</span></div>`;
+}
+function legTree(n, mark) {
+  const kids = n.kids || [];
+  return `<li${n.rid === mark ? ' class="me"' : ''}>${legNode(n)}${kids.length ? `<ul>${kids.map(k => (k.rid != null ? legTree(k, mark) : `<li>${legNode(k)}</li>`)).join('')}</ul>` : ''}</li>`;
 }
 function legFamily(r) {
-  const L = HM.legacySons(r.id); if (!L.length) return '';
-  const row = s => {
-    if (s.due != null && !s.fn) return `<div>A son, ${s.age ? `${s.age} years old` : 'not born yet'}. He'll be in the ${s.due} recruiting class.</div>`;
-    if (s.pro) { const t = s.pro.tid >= 0 ? T(s.pro.tid) : null; return `<div>${plink({ ...s.pro, leg: null })}, ${E(s.pro.pos)}: ${t ? `${chip(t)} ${E(t.city + ' ' + t.name)}` : s.pro.tid === -2 ? `${s.pro.cls} draft prospect` : 'free agent'}</div>`; }
-    if (s.col) { const C = HM.college, t = s.col.tid >= 0 ? C.team(s.col.tid) : null; return `<div>${cplink({ ...s.col, leg: null })}, ${E(s.col.pos)}: ${t ? E(t.name) : s.col.tid === -2 ? `${s.col.stars ? s.col.stars + '-star ' : ''}recruit, class of ${C.S.season + 1}` : 'in the transfer portal'}</div>`; }
-    return `<div>${E(s.fn + ' ' + s.ln)}, ${E(s.pos)} <span class="muted">(no longer playing)</span></div>`;
-  };
-  return `<section class="panel"><h3>Family</h3><div class="stack" style="gap:6px;font-size:13px">${L.map(row).join('')}</div></section>`;
+  const t = HM.legacyTree(r.id); if (!t.kids.length) return '';
+  return `<section class="panel"><h3>Family</h3><ul class="legt">${legTree(t, r.id)}</ul></section>`;
+}
+// the Hall of Fame's Families tab: every football family in the league, the deepest first
+function legFamiliesTab() {
+  const F = HM.legacyFamilies();
+  if (!F.length) return `<section class="panel"><p class="muted" style="margin:0">No football families yet. A notable player can leave a son (or a nephew) who comes up through recruiting or the draft years after he retires.</p></section>`;
+  return `<div class="grid2">${F.map(f => `<section class="panel"><div class="ph"><h3>The ${E(f.ln || f.name)} family</h3><span class="muted" style="font-size:12.5px">${f.gen} generation${f.gen > 1 ? 's' : ''} · ${f.n} player${f.n > 1 ? 's' : ''}</span></div><ul class="legt">${legTree(f)}</ul></section>`).join('')}</div>`;
 }
 // ---------- play diagrams on the play-calling screens (pro and college) ----------
 // HM.pbDiagram lines the play up the way the field engine runs it; this draws it: the line of scrimmage, the offense
@@ -23417,7 +23519,7 @@ function careerStart(saved, modeSeg) {
       <label class="stack" style="gap:4px"><span class="lbl">Hometown region</span><select id="cfReg">${HM.CAR_REG.map(r => opt(r, f.reg, r)).join('')}</select></label></div>
     <p class="muted" style="margin:0;font-size:12.5px">${E(archInfo[1])}${adj ? `: ${E(adj)}` : ': balanced ratings'}.</p>
     <div class="stack" style="gap:6px"><span class="lbl">Recruiting rank</span>${cseg('cfSet', f.stars, [['2', '2 stars'], ['3', '3 stars'], ['4', '4 stars'], ['5', '5 stars']], 'stars')}<span class="muted" style="font-size:12.5px">${E(starTxt[f.stars])}</span></div>
-    <div class="stack" style="gap:6px"><span class="lbl">What matters most in a school (pick three, in order)</span><div class="row" style="gap:6px;flex-wrap:wrap">${Object.entries(HM.college.PRIOS).map(([k, l]) => { const i = f.pr.indexOf(k); return `<button class="btn sm${i >= 0 ? ' primary' : ''}" data-act="cfPr" data-v="${k}">${i >= 0 ? `${i + 1}. ` : ''}${E(l)}</button>`; }).join('')}</div><span class="muted" style="font-size:12.5px">Schools get graded on these for you. A good fit makes the decision easier; it doesn't make it for you.</span></div>
+    <div class="stack" style="gap:6px"><span class="lbl">What matters most in a school (pick three, in order)</span><div class="row" style="gap:6px;flex-wrap:wrap">${Object.entries(HM.college.PRIOS).filter(([k]) => k !== 'family').map(([k, l]) => { const i = f.pr.indexOf(k); return `<button class="btn sm${i >= 0 ? ' primary' : ''}" data-act="cfPr" data-v="${k}">${i >= 0 ? `${i + 1}. ` : ''}${E(l)}</button>`; }).join('')}</div><span class="muted" style="font-size:12.5px">Schools get graded on these for you. A good fit makes the decision easier; it doesn't make it for you.</span></div>
     <div class="stack" style="gap:6px"><span class="lbl">Personality</span>${cseg('cfSet', f.pers, Object.entries(HM.PERS || { leader: 'Leader', grinder: 'Grinder', steady: 'Steady', diva: 'Diva' }), 'pers')}</div>
     <div>${namesBox()}</div>
     <div class="row"><button class="btn primary" data-act="carBegin" ${f.pr.length === 3 ? '' : 'disabled'}>Start my senior year</button>${f.pr.length === 3 ? '' : '<span class="muted" style="font-size:12.5px">Pick three priorities first.</span>'}</div>
@@ -24917,7 +25019,7 @@ function vxThreadBody(th, col) {
     if (live) {
       const v = HC().recView(r), done = v.acts.includes('pitch'), low = s.recPts < HC().PITCH_COST, why = done ? 'You already pitched him this week.' : low ? `Not enough recruiting hours (${HC().PITCH_COST} needed).` : '';
       extra = `<div class="row" style="gap:6px;margin:6px 0;flex-wrap:wrap"><span class="pill">${stars(r.stars)} ${E(r.pos)}</span><span class="pill">Interest ${v.int}</span>${v.stand ? `<span class="pill">You're #${v.stand.pos} of ${v.stand.of}</span>` : ''}<span class="muted" style="font-size:12px">Wants: ${v.prios.map(p => p.known ? `<b class="${gradeCls(p.grade)}">${p.grade}</b> ${E(p.label)}` : '?').join(' · ')}</span></div>`;
-      btns = `<div class="lbl" style="margin-top:6px">Sell him on (${HC().PITCH_COST} hours, once a week)</div><div class="row dmacts" style="flex-wrap:wrap">${Object.entries(HC().PITCH_BTN).map(([k, l]) => `<button class="btn sm" data-act="cPitch" data-id="${r.id}" data-k="${k}"${done || low ? ` disabled title="${E(why)}"` : ''}>${E(l)}</button>`).join('')}</div>`;
+      btns = `<div class="lbl" style="margin-top:6px">Sell him on (${HC().PITCH_COST} hours, once a week)</div><div class="row dmacts" style="flex-wrap:wrap">${Object.entries(HC().PITCH_BTN).filter(([k]) => k !== 'family' || (r.leg && (r.legT === s.userTid || r.legC === s.userTid))).map(([k, l]) => `<button class="btn sm" data-act="cPitch" data-id="${r.id}" data-k="${k}"${done || low ? ` disabled title="${E(why)}"` : ''}>${E(l)}</button>`).join('')}</div>`;
       compose = th.end && done ? '<p class="muted" style="margin:6px 0 0;font-size:12.5px">He isn\'t answering right now. Try again next week.</p>' : `<div class="scompose sm"><textarea id="vxIn" rows="2" maxlength="280" placeholder="Or pitch him in your own words"${done || low ? ' disabled' : ''}>${E(ui.vxDraft || '')}</textarea><div class="row" style="gap:6px"><button class="btn sm primary" data-act="cPitchSay" data-id="${r.id}"${done || low ? ' disabled' : ''}>Send</button><span class="muted" style="font-size:12px">${E(why || 'Sell what he cares about, where your school is strong. He can tell when you\'re stretching.')}</span></div></div>`;
     } else compose = `<p class="muted" style="margin:6px 0 0;font-size:12.5px">${r && r.signed ? 'He signed. Recruiting is over.' : 'He\'s off the board.'}</p>`;
   } else {
