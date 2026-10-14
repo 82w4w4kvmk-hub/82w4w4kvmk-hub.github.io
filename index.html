@@ -647,6 +647,7 @@ select[data-focus]{max-width:210px}
 .ask.call .pbook{display:flex;flex-direction:column;gap:4px}.ask.call .pbook .seg{flex-wrap:wrap;align-self:flex-start}.ask.call .pbook .seg button{font-size:12.5px}
 .ask.call .calls .btn{text-align:left;align-items:flex-start;flex-direction:column;display:flex;white-space:normal;height:auto;padding:7px 10px}
 .ask.call .calls .btn .sub{font-weight:400;font-size:11px;opacity:.8;margin:2px 0 0}
+.ask.call .calls .btn .pdg{width:100%;max-width:170px;height:auto;margin:5px 0 2px;background:var(--panel2);border-radius:4px;display:block}
 .tour{border-left:3px solid var(--mark)}
 .tourlist{margin:0;padding:0 0 0 20px;display:flex;flex-direction:column;gap:8px}
 .tourlist li{display:flex;justify-content:space-between;gap:12px;align-items:center;font-size:13.5px}
@@ -2990,6 +2991,66 @@ function fxDec(s, cards) {
   const pri = {}; [...a[16]].forEach((ch, n) => { pri[6 + n] = parseInt(ch, 36) / 10; });
   const C = []; for (let n = 0; n < 44; n += 2) { const c = cards[parseInt(a[17].slice(n, n + 2), 36)]; if (!c) return null; C.push(fxUncard(c)); }
   return { seed: +a[1], kind: a[2], play: a[3] || null, form: a[4], pkg: a[5], cov: a[6], dc: a[7] || null, fl: +a[8], los: +a[9], tg: +a[10], hurry: a[11] === '1', car: a[12] === '' ? null : +a[12], edge: +a[13], wcp: +a[14] / 1000, wdp: +a[15] / 1000, dn: +a[18] || 1, catchU: a[19] ? +a[19] : null, catchV: a[20] ? +a[20] : null, hang: a[21] ? +a[21] : null, pri, O: C.slice(0, 11), D: C.slice(11) };
+}
+// ---------- play diagrams: the playbook drawn the way the field engine runs it ----------
+// For the play-calling screens: where all eleven line up in the formation (FX_FORMS), the route each receiver runs
+// (fxRoute, with the play's routes assigned the way fxPassRoles does), the quarterback's drop or fake, and on a run the
+// hole (FX_HOLE), the ball carrier's path and the pulling linemen (fxRunRoles). Runs are drawn to the right. Nothing here
+// draws from the game's random numbers: the small random touches the engine adds per snap are left at their middle.
+// Coordinates are yards: u upfield from the line of scrimmage, v across the field (right is positive).
+const PB_TYP_FORM = { sneak: 'uc', toss: 'uc', pa: 'uc' };
+function pbTypForm(id) { const p = PB_PLAYS[id] || {}; return PB_TYP_FORM[p.qb] || PB_TYP_FORM[id] || PB_TYP_FORM[p.fam] || 'gun'; }
+const PB_DPULL = { power: [1], counter: [1, 0], trap: [1], sweep: [1, 3] };
+function pbDiagram(id, form) {
+  const P = PB_PLAYS[id]; if (!P) return null;
+  const formK = FX_FORMS[form] ? form : pbTypForm(id), F = FX_FORMS[formK], ucQ = F[5][0] > -2, run = P.fam === 'inside' || P.fam === 'outside';
+  const pos = ['OL', 'OL', 'OL', 'OL', 'OL', 'QB', 'RB', 'TE', 'WR', 'WR', 'WR'];
+  const O = F.map(([u, v], i) => ({ i, u, v, pos: pos[i], role: i < 5 ? 'block' : null }));
+  const paths = [], mid = () => 0.5;
+  const ext = w => { const n = w.length, a = n > 1 ? w[n - 2] : { u: 0, v: w[0].v }, b = w[n - 1], du = b.u - a.u, dv = b.v - a.v, m = Math.hypot(du, dv) || 1; return { u: b.u + du / m * 4, v: clamp(b.v + dv / m * 4, -26.5, 26.5) }; };
+  if (!run) {
+    const routes = P.routes || { out: [['curl', 12]], in: [['cross', 10]], te: [['seam', 16]], back: [['check', 3]] };
+    const roleOf = a => (a.u < -2 && Math.abs(a.v) < 4 ? 'back' : Math.abs(a.v) >= 17 ? 'out' : a.i === 7 && Math.abs(a.v) < 8 && a.u >= -1.5 ? 'te' : 'in');
+    const n = {};
+    for (const i of [8, 9, 7, 10, 6]) {
+      const a = O[i], ro = roleOf(a), list = routes[ro] || [['block']], k = n[ro] = (n[ro] || 0) + 1, [rt, d0] = list[(k - 1) % list.length];
+      if (rt === 'block') { a.role = 'block'; continue; }
+      if (rt === 'check') { a.role = 'check'; paths.push({ i, k: 'check', w: [{ u: a.u, v: a.v }, { u: a.u + 1, v: a.v + (a.v >= 0 ? 4 : -4) }] }); continue; }
+      const out = Math.abs(a.v) < 3 ? (a.v < 0 ? -1 : 1) : Math.sign(a.v), R = fxRoute(rt, d0 ?? 8, mid);
+      const w = [{ u: a.u, v: a.v }, ...R.w.map(([du, dv]) => ({ u: clamp(du, -9, 40), v: clamp(a.v + dv * out, -26.5, 26.5) }))];
+      if (R.end === 'run') w.push(ext(w));
+      a.role = 'route'; a.rt = rt; paths.push({ i, k: P.fam === 'screen' ? 'screen' : 'route', rt, deep: FX_DEEP.has(rt), w });
+    }
+    // (a screen always has someone to throw to: if the formation left its man blocking, the tight end or the back slips out)
+    if (P.fam === 'screen' && !paths.some(p => p.k === 'screen')) {
+      const a = O[7].role === 'block' && O[7].pos === 'TE' ? O[7] : O[6], rt0 = (routes.te || routes.back || [['screen', 0]])[0][0], rt = rt0 === 'block' ? 'screen' : rt0, R = fxRoute(rt, 0, mid), out = Math.abs(a.v) < 3 ? 1 : Math.sign(a.v);
+      a.role = 'route'; a.rt = rt; paths.push({ i: a.i, k: 'screen', rt, w: [{ u: a.u, v: a.v }, ...R.w.map(([du, dv]) => ({ u: du, v: clamp(a.v + dv * out, -26.5, 26.5) }))] });
+    }
+    // the quarterback: three, five or seven steps; a fake to the back first on play action; a bootleg rolls him out
+    const Q = O[5], back = { quick: ucQ ? 3.5 : 1, drop: ucQ ? 6 : 2, deep: ucQ ? 7.5 : 3, pa: ucQ ? 7 : 2.5, screen: ucQ ? 6 : 3 }[P.fam] ?? 2, boot = id === 'bootflood' ? 1 : 0;
+    const qw = [{ u: Q.u, v: Q.v }]; if (P.fam === 'pa') qw.push({ u: ucQ ? -3.2 : Q.u, v: 1.2 }); qw.push({ u: Q.u - back, v: boot * 6 });
+    paths.push({ i: 5, k: P.fam === 'pa' ? 'fake' : 'drop', w: qw });
+    if (P.fam === 'screen') for (const i of [1, 2, 3]) paths.push({ i, k: 'release', w: [{ u: O[i].u, v: O[i].v }, { u: O[i].u - 1.5, v: O[i].v + 3.5 }] });
+    return { id, form: formK, run: false, fam: P.fam, O, paths };
+  }
+  // runs, drawn to the right: the hole, the carrier's path through it, the pullers leading
+  const scheme = FX_HOLE[id] != null ? id : 'zone', sv = 1, hole = { u: 0.5, v: sv * FX_HOLE[scheme] }, Q = O[5], B = O[6];
+  const wide = scheme === 'toss' || scheme === 'sweep' || scheme === 'ozone';
+  for (const i of [7, 8, 9, 10]) { const a = O[i]; a.role = a.u < -2.5 && Math.abs(a.v) < 4 ? 'lead' : 'block'; }
+  if (scheme === 'sneak') { paths.push({ i: 5, k: 'carry', w: [{ u: Q.u, v: Q.v }, { u: 2.5, v: 0.3 }] }); return { id, form: formK, run: true, fam: P.fam, O, paths, hole }; }
+  const mesh = ucQ ? { u: -3.3, v: sv * 0.9 } : { u: Q.u + 0.2, v: sv * 0.9 };
+  const start = { u: B.u, v: B.v }, cw = [start];
+  if (scheme === 'toss') cw.push({ u: B.u + 0.5, v: B.v + 4 * sv }, { u: -1.5, v: hole.v }, { u: 5, v: hole.v + 2 * sv });
+  else if (wide) cw.push(mesh, { u: -1.2, v: hole.v - 2 * sv }, { u: 1, v: hole.v }, { u: 6, v: hole.v + 1.5 * sv });
+  else cw.push(mesh, hole, { u: 6, v: hole.v + 0.5 * sv });
+  if (scheme === 'draw') paths.push({ i: 5, k: 'drop', w: [{ u: Q.u, v: Q.v }, { u: Q.u - 1.5, v: 0 }] });
+  paths.push({ i: 6, k: 'carry', w: cw });
+  B.role = 'carry';
+  if (scheme === 'read') paths.push({ i: 5, k: 'keep', w: [{ u: Q.u, v: Q.v }, { u: Q.u + 0.5, v: -4 }, { u: 2, v: -8 }, { u: 6, v: -9 }] });
+  for (const i of PB_DPULL[scheme] || []) { const a = O[i]; a.role = 'pull'; paths.push({ i, k: 'pull', w: [{ u: a.u, v: a.v }, { u: -2.6, v: a.v + 1 * sv }, { u: -2.4, v: hole.v - 1 * sv }, { u: 1.2, v: hole.v + 0.3 * sv }] }); }
+  // (a fullback or an offset back leads through the hole)
+  for (const a of O) if (a.role === 'lead' && a.i !== 6) paths.push({ i: a.i, k: 'lead', w: [{ u: a.u, v: a.v }, { u: 0.2, v: hole.v }, { u: 2, v: hole.v + 0.3 * sv }] });
+  return { id, form: formK, run: true, fam: P.fam, O, paths, hole };
 }
 // ---------- game simulation ----------
 // how often a starting defensive tackle comes off for a rotation man on a passing play (on other downs, then on third and long)
@@ -16012,7 +16073,7 @@ return {
   finSummary, upgradeFacilities, setTicketPrice, ticketPreview, finSeason, facilityCost, initFinance, editTeam, editPlayer, createPlayer, calcOvr, SAL_MULT,
   REGIONS, regionOf, scoutState, autoRegion, setScoutRegion, scoutGame, PROMISE, meetingInfo, meetPlayer, dueText, trustOf, captainsOf, isCaptain, lockerRoom, captainScore,
   retireTalk, payrollFloor, simSmart, inboxItems, inboxAct, inboxCount, legacy, retireGM, unretireGM, SCENARIOS, startScenario, scenarioCard,
-  SITS, callProfile, tendencyReport, TWO_CALLS, TWO_TIPS, tIdx, importCollegeClass, college: COLLEGE, genGenerational, PB_PLAYS, PB_FORMS, PB_FAM,
+  SITS, callProfile, tendencyReport, TWO_CALLS, TWO_TIPS, tIdx, importCollegeClass, college: COLLEGE, genGenerational, PB_PLAYS, PB_FORMS, pbDiagram, pbTypForm, PB_FAM,
   fieldPlay, fxCard, fxUncard, fxDec, FLD_V, FX_DBG, filmRoom, applyFilmFix, filmFixDone, filmPending, filmMark,
 };
 })();
@@ -19759,7 +19820,7 @@ function playbookPanel(a, o = {}) {
   const pers = { 10: '4 WR', 11: '3 WR', 12: '2 TE', 13: '3 TE', 21: '2 backs', 22: 'Goal line' };
   const forms = `<div class="lbl" style="margin-top:4px">Formation</div><div class="seg pbforms" style="flex-wrap:wrap"><button data-act="${fAct}" data-v="" aria-pressed="${!form}" title="Your coordinator picks the formation for the play">Coordinator</button>${Object.entries(FM).map(([k, f]) => `<button data-act="${fAct}" data-v="${k}" aria-pressed="${form === k}" title="${E(f.tip)}">${E(f.n)} <span class="muted" style="font-size:11px">${pers[f.pers] || ''}</span></button>`).join('')}</div>`;
   const tabs = `<div class="seg" style="margin-top:6px;flex-wrap:wrap">${PB_TABS.map(([k, l]) => `<button data-act="${tAct}" data-v="${k}" aria-pressed="${tab === k}">${l}${sugg === k ? ' ★' : ''}</button>`).join('')}</div>`;
-  const plays = Object.keys(PL).filter(k => famOf(k) === tab).map(k => { const p = PL[k], dis = tab === 'run' && noRun; return `<button class="btn" data-act="${act}" data-v="${k}@${form}" title="${E(p.tip)}" ${dis ? 'disabled' : ''}>${E(p.n)}<span class="sub">${E(p.tip)}</span></button>`; }).join('');
+  const plays = Object.keys(PL).filter(k => famOf(k) === tab).map(k => { const p = PL[k], dis = tab === 'run' && noRun; return `<button class="btn" data-act="${act}" data-v="${k}@${form}" title="${E(p.tip)}" ${dis ? 'disabled' : ''}>${E(p.n)}${playSvg(HM.pbDiagram(k, form))}<span class="sub">${E(p.tip)}</span></button>`; }).join('');
   return `${forms}${tabs}<div class="calls" style="margin-top:6px"><button class="btn${a.auto ? ' primary' : ''}" data-act="${act}" data-v="${form ? '@' + form : 'auto'}" title="Let your coordinator pick the play">Coordinator's call<span class="sub">${form ? 'Their play, your formation' : 'Their best guess'}</span></button>${plays}</div>${noRun && tab === 'run' ? '<div class="muted" style="font-size:12px">No running back in an empty set: pick another formation to run.</div>' : ''}`;
 }
 function askPanel() {
@@ -19898,6 +19959,30 @@ function hofView() {
 }
 
 
+// ---------- play diagrams on the play-calling screens (pro and college) ----------
+// HM.pbDiagram lines the play up the way the field engine runs it; this draws it: the line of scrimmage, the offense
+// (linemen as squares), each route with an arrow where it keeps going, the quarterback's drop or fake, and on a run the
+// carrier's path, pulling linemen (dashed) and the lead blocker. Runs are drawn going right.
+// three pixels a yard both ways, so a route's shape is true; a diagram is only as tall as the play goes downfield
+const PDG = { px: 3, v0: -25, v1: 25 };
+const r1x = n => Math.round(n * 10) / 10;
+function playSvg(d) {
+  if (!d) return '';
+  const all = [...d.O, ...d.paths.flatMap(p => p.w)], u0 = Math.min(...all.map(p => p.u)) - 1.5, u1 = Math.min(24, Math.max(d.run ? 7 : 12, ...all.map(p => p.u)) + 1.5);
+  // (a run happens in the middle of the field: zoomed in, with the wide receivers drawn at the edges)
+  const px = d.run ? 4.5 : PDG.px, vm = d.run ? 16.5 : PDG.v1, W = r1x(vm * 2 * px), H = r1x((u1 - u0) * px);
+  const pdX = v => r1x((clamp(v, -vm + 0.8, vm - 0.8) + vm) * px), pdY = u => r1x(H - (Math.min(u, u1) - u0) * px);
+  const pts = w => w.map(p => `${pdX(p.v)},${pdY(p.u)}`).join(' ');
+  const col = { route: 'var(--accent)', screen: 'var(--accent)', check: 'var(--accent)', carry: 'var(--win)', keep: 'var(--win)', pull: 'var(--ink)', lead: 'var(--ink)', drop: 'var(--ink2)', fake: 'var(--ink2)', release: 'var(--ink2)' };
+  const dash = { pull: '3 2', drop: '1.5 2', fake: '1.5 2', keep: '3 2', release: '2 2', check: '2 2' };
+  const lines = d.paths.map(p => `<polyline points="${pts(p.w)}" fill="none" stroke="${col[p.k] || 'var(--accent)'}" stroke-width="${p.k === 'carry' ? 2.2 : p.k === 'pull' || p.k === 'lead' ? 1.6 : 1.5}"${dash[p.k] ? ` stroke-dasharray="${dash[p.k]}"` : ''} stroke-linecap="round" stroke-linejoin="round" marker-end="url(#pdA${p.k === 'carry' || p.k === 'keep' ? 'w' : p.k === 'route' || p.k === 'screen' || p.k === 'check' ? 'a' : p.k === 'pull' || p.k === 'lead' ? 'k' : 'i'})"/>`).join('');
+  const men = d.O.map(a => a.pos === 'OL' ? `<rect x="${pdX(a.v) - 2.6}" y="${pdY(a.u) - 2.6}" width="5.2" height="5.2" fill="var(--panel)" stroke="var(--ink)" stroke-width="1"/>`
+    : `<circle cx="${pdX(a.v)}" cy="${pdY(a.u)}" r="2.8" fill="${a.pos === 'QB' ? 'var(--ink)' : 'var(--panel)'}" stroke="var(--ink)" stroke-width="1"/>`).join('');
+  const blk = d.O.filter(a => a.role === 'block' && a.pos !== 'OL').map(a => `<path d="M${pdX(a.v) - 2.5},${pdY(a.u + 1.4)} h5 M${pdX(a.v)},${pdY(a.u + 0.5)} v-3" stroke="var(--ink2)" stroke-width="1.2"/>`).join('');
+  const mk = (id, c) => `<marker id="pdA${id}" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L6,3 L0,6 z" fill="${c}"/></marker>`;
+  return `<svg class="pdg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Diagram of the play from the ${E((HM.PB_FORMS[d.form] || {}).n || d.form)} formation"><defs>${mk('a', 'var(--accent)')}${mk('w', 'var(--win)')}${mk('i', 'var(--ink2)')}${mk('k', 'var(--ink)')}</defs>
+    <line x1="0" x2="${W}" y1="${pdY(0)}" y2="${pdY(0)}" stroke="var(--line)" stroke-width="1"/>${lines}${blk}${men}</svg>`;
+}
 // ---------- player faces (procedural SVG, the same face every time for a given player) ----------
 function faceRng(seed) {
   let h = 2166136261 ^ seed; h = Math.imul(h ^ (h >>> 15), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909);
