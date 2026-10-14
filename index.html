@@ -19366,7 +19366,7 @@ function fvFieldScript(p) {
   if (R.tgt != null) { S.labels.push({ side: 'o', i: R.tgt, name: p.b, t0: th ? S.throwT - 0.06 : 0, t1: 1, ring: true }); S.trail = { side: 'o', i: R.tgt, t0: 0.06, show: S.throwT }; S.route = R.rt[R.tgt]; S.cov = X.cov; S.concept = play ? play.n : null; }
   if (R.k === 'run' || R.k === 'scramble') { const ci = R.car ?? 6; S.hi = { side: 'o', i: ci }; S.trail = { side: 'o', i: ci, t0: got ? T(got.t) : 0.1, show: got ? T(got.t) : 0.1 }; if (ci !== 5) S.labels.push({ side: 'o', i: ci, name: p.a, t0: got ? T(got.t) - 0.05 : 0, t1: 1, ring: true }); }
   else if (R.k === 'int') { S.hi = { side: 'd', i: R.by }; S.labels.push({ side: 'd', i: R.by, name: p.t, t0: S.catchT - 0.02, t1: 1, ring: true }); }
-  else if (R.k === 'sack') { S.hi = { side: 'o', i: 5 }; if (R.by != null) S.labels.push({ side: 'd', i: R.by, name: p.t, t0: 0.3, t1: 1, ring: true }); }
+  else if (R.k === 'sack') { S.hi = { side: 'o', i: 5 }; const hit = rc.ev.find(e => (e.k === 'wrap' || e.k === 'tackle') && e.i === R.by) || rc.ev.find(e => e.k === 'tackle'); S.sackT = hit ? T(hit.t) : rc.end != null ? T(rc.end) : 0.85; if (R.by != null) S.labels.push({ side: 'd', i: R.by, name: p.t, t0: Math.max(0, S.sackT - 0.04), t1: 1, ring: true }); } // (the sacker is named when he gets there, not at the snap)
   else S.hi = { side: 'o', i: R.tgt ?? 5 };
   // (the result shows at the whistle, not before: at the catch it only says he caught it)
   S.capT = rc.end != null ? T(rc.end) : 1; if (R.k === 'comp') S.midCap = 'Pass complete'; else if (R.k === 'int') S.midCap = 'Intercepted'; else if (R.k === 'inc') S.capT = S.catchT ?? S.capT;
@@ -19380,7 +19380,7 @@ function fvFieldScript(p) {
 // him (at least about a yard and a quarter away), eased in and out so there's no jump. The sacker at the hit is allowed
 function fvAvoid(S, p) {
   if (!S.dur || !S.O || !S.O[5] || !['pass', 'inc', 'int', 'sack', 'run', 'fum', 'pen'].includes(p.k)) return;
-  const Q = S.O[5], ring = (S.labels || []).find(x => x.side === 'd' && x.ring), sackT = p.k === 'sack' && ring ? ring.t0 + 0.08 : null;
+  const Q = S.O[5], ring = (S.labels || []).find(x => x.side === 'd' && x.ring), sackT = p.k === 'sack' && ring ? (S.sackT != null ? S.sackT : ring.t0 + 0.08) : null;
   const qbRuns = S.hi && S.hi.side === 'o' && S.hi.i === 5, tLim = sackT != null ? sackT - 0.04 : S.throwT != null ? S.throwT + 0.02 : qbRuns ? (S.trail ? S.trail.show ?? 0.3 : 0.3) : S.trail ? Math.min(0.97, (S.trail.show ?? 0.3) + 0.05) : 0.5;
   const w = Math.min(0.08, 0.5 / S.dur), MIN = 1.25;
   for (let pass = 0; pass < 2; pass++) for (let j = 0; j < S.D.length; j++) {
