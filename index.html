@@ -13636,7 +13636,8 @@ function recThread(r) {
   const vx = cvxS(); let th = vx.th.find(x => x.k === 'rec' && x.who.rid === r.id);
   if (!th) {
     th = vxThread(vx, 'rec', { name: `${r.fn} ${r.ln}`, sub: `${r.stars}-star ${r.pos} recruit, ${r.reg}`, rid: r.id });
-    vxMsg(vx, th, `Hey Coach. What makes ${cteam(CS.userTid).name} the place for me?`, `You are a ${r.stars}-star recruit and this school is recruiting you. Ask the coach, casually, why you should pick his school.`, 0.3);
+    const ex = CS.me && CS.me.ex && exPull(CS.me) >= 4 ? CS.me.ex : null; // a famous former player as head coach: recruits grew up watching him
+    vxMsg(vx, th, ex ? `Hey Coach. ${pick(['My dad and I used to watch you play.', 'I grew up watching your highlights.', `Not gonna lie, it's crazy getting a DM from ${CS.me.fn} ${CS.me.ln}.`])} What makes ${cteam(CS.userTid).name} the place for me?` : `Hey Coach. What makes ${cteam(CS.userTid).name} the place for me?`, `You are a ${r.stars}-star recruit and this school is recruiting you.${ex ? ` The head coach is ${CS.me.fn} ${CS.me.ln}, a famous former ${ex.pos} you grew up watching; mention it, a little starstruck.` : ''} Ask the coach, casually, why you should pick his school.`, 0.3);
   }
   return th;
 }
@@ -14635,6 +14636,7 @@ function carRetire() {
   if (c.stage === 'hs' || c.stage === 'col') return 'Finish your college career first.';
   if (p) { carSnapPro(); const car = careerTotals(p); c.ret = { s: S.season, age: p.age, car, hs: hofScore(p, car), hon: (p.hon || []).slice(), pos: p.pos, why: (() => { const n = Object.keys(p.stats).length; return n ? `Walked away after ${n} pro season${n > 1 ? 's' : ''} and ${car.gp || 0} games.` : 'Walked away before playing a regular-season snap in the pros.'; })() }; retirePlayer(p); }
   c.stage = 'ret'; carLog(`Retired at ${c.ret && c.ret.age ? c.ret.age : 'the end of the season'}.`, 'ret');
+  socAbout('retired', c.ret && c.ret.why || '', null, true);
   carFrontOffice();
   if (!carCanCoach()) { const L = carCoachOffers(); if (L.length) carLog(`${L.map(o => COLLEGE.team(o.tid).name).join(', ')} called about joining ${L.length === 1 ? 'its' : 'their'} staff as ${carCoachSide(c) === 'o' ? 'offensive' : 'defensive'} coordinator.`, 'coach'); }
   return null;
@@ -14795,6 +14797,7 @@ function carTakeCoachJob(i) {
   c.stage = 'coach'; c.ccOff = null; S.uni.fg = 'college';
   const t = COLLEGE.team(o.tid), role = k.side === 'o' ? 'offensive coordinator' : 'defensive coordinator';
   carLog(from != null ? `Left ${COLLEGE.team(from).name} to become ${role} at ${t.name}.` : `Went into coaching: hired as ${role} at ${t.name}${o.alma ? ', where you played' : ''}.`, 'move');
+  socAbout('coachHire', role, null, true);
   return null;
 }
 function carCoachNext() {
@@ -14815,9 +14818,11 @@ function carCoachStep() {
   carLog(`${t.name} went ${L.w}-${L.l}. Your ${off ? 'offense' : 'defense'} ranked ${ccOrd(L.rank)} of ${L.n} in ${off ? 'scoring' : 'scoring defense'} (${L.ppg} points a game${off ? '' : ' allowed'}).`, 'coach');
   const top = L.rank <= L.n * 0.1, good = L.rank <= L.n * 0.35, bad = L.rank > L.n * 0.8;
   carFame(top ? 3 : good ? 1 : bad ? -2 : 0);
+  { const ev = `${off ? 'offense' : 'defense'} finished ${ccOrd(L.rank)} in the country in ${off ? 'scoring' : 'points allowed'}`; if (good && rnd() < (top ? 0.9 : 0.5)) socAbout('coachGood', ev, null, true); else if (bad && rnd() < 0.6) socAbout('coachBad', ev, null, true); }
   // two bad years in a row and the head coach makes a change
   const prev = k.hist.length >= 2 ? k.hist[k.hist.length - 2] : null;
   if (bad && prev && prev.tid === k.tid && prev.rank > prev.n * 0.75) {
+    socAbout('coachFired', `${off ? 'offensive' : 'defensive'} coordinator`, null, true);
     COLLEGE.ccLeave(); k.tid = null; c.ccOff = null;
     carLog(`${t.name} fired you after two bad years. Other programs may still call.`, 'move');
     COLLEGE.news(`${t.name} fired ${off ? 'offensive' : 'defensive'} coordinator ${c.fn} ${c.ln}.`, true);
@@ -14990,7 +14995,8 @@ function socCtx() {
   const o = { me: `${c.fn} ${c.ln}`, fn: c.fn, ln: c.ln, pos: c.pos, stage: c.stage, fame: Math.round(c.fame), trust: Math.round(c.trust), season: carSeason(), names: [] };
   if (c.stage === 'hs') { o.team = `${c.hs.team} High`; o.short = c.hs.team; o.rec = `${c.hs.w}-${c.hs.l}`; o.level = 'high school'; }
   else if (t) { o.team = inCol ? t.name : `${t.city} ${t.name}`; o.short = t.name; o.rec = inCol ? `${t.rec.w}-${t.rec.l}` : `${t.rec.w}-${t.rec.l}${t.rec.t ? '-' + t.rec.t : ''}`; o.level = inCol ? 'college' : 'pro'; o.tid = t.tid; }
-  else { o.team = null; o.short = null; o.rec = null; o.level = c.stage === 'coach' ? (c.coach && c.coach.tid != null ? `${c.coach.side === 'o' ? 'offensive' : 'defensive'} coordinator at ${COLLEGE.team(c.coach.tid).name}` : 'a retired player looking for a coaching job') : c.stage === 'ret' ? 'retired' : c.stage === 'draft' ? 'draft prospect' : 'free agent'; }
+  else if (c.stage === 'coach' && c.coach && c.coach.tid != null) { const ct = COLLEGE.team(c.coach.tid); o.team = ct.name; o.short = ct.name; o.rec = `${ct.rec.w}-${ct.rec.l}`; o.level = 'college'; o.tid = ct.tid; o.role = `${c.coach.side === 'o' ? 'offensive' : 'defensive'} coordinator`; if (ct.coach) o.coach = `${ct.coach.fn} ${ct.coach.ln}`; }
+  else { o.team = null; o.short = null; o.rec = null; o.level = c.stage === 'coach' ? 'a retired player looking for a coaching job' : c.stage === 'ret' ? 'retired' : c.stage === 'draft' ? 'draft prospect' : 'free agent'; }
   // the coach, the depth chart, the teammates the replies can name
   if (t && inCol && t.coach) o.coach = `${t.coach.fn} ${t.coach.ln}`;
   if (t && !inCol) { const hc = coachOf(t.tid, 'HC'); if (hc) o.coach = `${hc.fn} ${hc.ln}`; }
@@ -15213,6 +15219,12 @@ const SOC_ABOUT = {
   drafted: { who: ['beat', 'fan'], sit: 'hype', t: { beat: ['The {team} select {fn} {me}, {pos}, {ev}.', 'Pick is in: {me} to the {team} ({ev}).'], fan: ['welcome to the {team} {me}!!', 'love this pick. {me} 🔥'] } },
   signed: { who: ['beat', 'fan'], sit: 'hype', t: { beat: ['{me} signs with the {team}: {ev}.', 'Done deal: {me} to the {team}, {ev}.'], fan: ['huge signing. welcome {me}', '{me} is a {team} now 🙌'] } },
   traded: { who: ['beat', 'fan'], sit: 'neutral', t: { beat: ['Trade: {me} is headed to the {team}.', '{me} has been traded to the {team}.'], fan: ['wait we got {me}??', 'welcome to the {team} {me}'] } },
+  // after his playing days: retiring, and the coaching life ({ev}: his job, or how his unit did)
+  retired: { who: ['beat', 'fan'], sit: 'sad', t: { beat: ['{fn} {me} has retired. {ev}', '{me} is hanging it up. {ev}'], fan: ['thank you {me} 🙏', 'end of an era. happy retirement {me}'] } },
+  coachHire: { who: ['beat', 'fan', 'troll'], sit: 'hype', t: { beat: ['{team} hires former {pos} {fn} {me} as {ev}.', 'Coaching news: {me} is the new {ev} at {team}.'], fan: ['{me} coaching at {team}?? love this', 'can\'t wait to see what {me} does on the sideline'], troll: ['couldn\'t play so now he coaches lol', '{me} calling plays. what could go wrong 🤡'] } },
+  coachGood: { who: ['beat', 'fan'], sit: 'win', t: { beat: ['Coordinators to watch: {me} at {team}. His {ev}.', '{team}\'s {ev}. {me} will be a head coach somewhere soon.'], fan: ['{me} cooked as a coordinator too 🔥', 'give {me} a raise. his {ev}'] } },
+  coachBad: { who: ['beat', 'troll'], sit: 'loss', t: { beat: ['A tough year for {me} at {team}: his {ev}.', '{team}\'s {ev}. Questions for {me} this offseason.'], troll: ['{me} can\'t coach either lmao', 'turns out playing and coaching are different things 🤡'] } },
+  coachFired: { who: ['beat', 'troll'], sit: 'sad', t: { beat: ['{team} has fired {ev} {fn} {me}.', '{me} is out as {ev} at {team}.'], troll: ['fired lol. saw that coming', 'back to the broadcast booth {me}'] } },
   released: { who: ['beat', 'troll'], sit: 'sad', t: { beat: ['The {ev} have released {me}.', '{me} has been released by the {ev}.'], troll: ['saw this coming a mile away', 'free agent {me} lmao. who\'s next'] } },
 };
 const SOC_CLAP = {
@@ -15226,7 +15238,7 @@ function socFill(tpl, ctx, extra) {
   const x = extra || {};
   const inc = ctx.inc && ctx.inc.length ? ` (${ctx.inc[0].s})` : '';
   return tpl.replace(/\{(\w+)\}/g, (m, k) => {
-    const v = { me: ctx.ln, fn: ctx.fn, team: ctx.short || 'the team', opp: (ctx.last && ctx.last.oppShort) || (ctx.next && ctx.next.oppShort) || 'them', next: (ctx.next && ctx.next.oppShort) || (ctx.last && ctx.last.oppShort) || 'next week', line: (ctx.last && ctx.last.line) || 'nothing', rec: ctx.rec || '0-0', coach: ctx.coach ? 'Coach ' + ctx.coach.split(' ').pop() : 'the coach', mate: x.mate || ((ctx.mates || [])[0] || {}).name || 'his teammate', pos: ctx.pos, school: x.school || (ctx.schools || [])[0] || 'State', inc, ev: x.ev || '' }[k];
+    const v = { me: ctx.ln, fn: ctx.fn, team: ctx.short || 'the team', opp: (ctx.last && ctx.last.oppShort) || (ctx.next && ctx.next.oppShort) || 'them', next: (ctx.next && ctx.next.oppShort) || (ctx.last && ctx.last.oppShort) || 'next week', line: (ctx.last && ctx.last.line) || 'nothing', rec: ctx.rec || '0-0', coach: ctx.coach ? 'Coach ' + ctx.coach.split(' ').pop() : 'the coach', mate: x.mate || ((ctx.mates || [])[0] || {}).name || 'his teammate', pos: ctx.pos, side: ctx.role ? (/^offensive/.test(ctx.role) ? 'offense' : 'defense') : 'team', school: x.school || (ctx.schools || [])[0] || 'State', inc, ev: x.ev || '' }[k];
     return v == null ? m : v;
   });
 }
@@ -15586,7 +15598,7 @@ const SOC_GAME = { A: 'a great game', B: 'a good game', C: 'an ordinary game', D
 function socFame(f) { return f >= 75 ? 'a household name' : f >= 50 ? 'well known around the sport' : f >= 25 ? 'known around his league' : 'not well known yet'; }
 // his stat line only goes in when a reply is meant to talk about it; given the numbers, the model quotes them in every reply
 function socFacts(ctx, school, line) {
-  const L = [`Player: ${ctx.me}, ${ctx.pos}, ${ctx.level}${ctx.team ? ` for ${ctx.team}` : ''}; ${socFame(ctx.fame)}.`];
+  const L = [ctx.role ? `Coach: ${ctx.me}, a former ${ctx.pos} who retired from playing, now the ${ctx.role} at ${ctx.team}; ${socFame(ctx.fame)}.` : `Player: ${ctx.me}, ${ctx.pos}, ${ctx.level}${ctx.team ? ` for ${ctx.team}` : ''}; ${socFame(ctx.fame)}.`];
   if (ctx.status) L.push(ctx.status);
   if (ctx.rec) L.push(`Team record: ${ctx.rec}.`);
   if (ctx.coach) L.push(`Head coach: ${ctx.coach}.`);
@@ -15747,6 +15759,7 @@ const MX_Q1 = {
   drafted: { t: 'Draft night', q: 'What does it mean to be a {team}?', o: [['It\'s a dream come true. I can\'t wait to get to work.', mxL('grateful')], ['They got a steal tonight. I\'m going to show everybody.', mxL('hype', 0, 'none', { ego: 1 })], ['Some teams passed on me. They\'re going to regret it.', mxL('trash', 1, 'opp')]] },
   signed: { t: 'Introductory press conference', q: 'Why did you choose the {team}?', o: [['They believed in me, and I want to repay that.', mxL('grateful')], ['I\'m here to win now. That\'s it.', mxL('hype')], ['They paid me what I\'m worth. Simple as that.', mxL('neutral', 0, 'none', { ego: 1 })]] },
   traded: { t: 'Introductory press conference', q: 'How did you take the news of the trade?', o: [['I\'m thankful for my time there. Now I\'m ready to work here.', mxL('grateful')], ['It\'s a business. You learn that fast.', mxL('neutral')], ['Circle that game on the calendar. They\'ll see me twice.', mxL('trash', 1, 'opp')]] },
+  coachHire: { t: 'Introductory press conference', q: 'You never coached a down before this. Why coaching, and why {team}?', o: [['I love this game, and I want to give back what it gave me. {team} gave me the chance.', mxL('grateful')], ['I know what it takes to win at the highest level. Now I get to teach it.', mxL('hype')], ['I played the game better than most people coaching it. This is easy.', mxL('hype', 0, 'none', { ego: 1 })]] },
   opener: { t: 'Media day', q: 'What are your goals this season?', o: [['Get better every day and help us win games.', mxL('humble')], ['Championship or bust.', mxL('hype')], ['Be the best {pos} in the country. Nothing less.', mxL('hype', 0, 'none', { ego: 1 })]] },
 };
 // the second and third questions: whatever the room wants to know about
@@ -15771,6 +15784,7 @@ const MX_POOL2 = {
   drafted: [{ q: 'Where do you see yourself fitting in?', o: [['Wherever they need me. I\'m here to learn.', mxL('humble')], ['I\'m coming to compete for a starting job right away.', mxL('hype')], ['I\'m the best {pos} in this class, and it isn\'t close.', mxL('hype', 0, 'none', { ego: 1 })]] }, { q: 'Did you expect to go higher?', o: [['I\'m just blessed to be here.', mxL('grateful')], ['It doesn\'t matter where you start. It matters where you finish.', mxL('neutral')], ['Yeah. And I won\'t forget it.', mxL('trash', 1, 'opp')]] }],
   signed: [{ q: 'What do you bring to this team?', o: [['Whatever they ask of me. I\'m a team guy.', mxL('humble')], ['A winner. That\'s what I bring.', mxL('hype')], ['They\'re getting the best player on the field.', mxL('hype', 0, 'none', { ego: 1 })]] }, { q: 'What\'s your message to the fans here?', o: [['I can\'t wait to play for you. Let\'s go win.', mxL('grateful')], ['Come early and be loud.', mxL('hype')], ['Buy my jersey now, before it sells out.', mxL('joke', 0, 'none', { ego: 1 })]] }],
 };
+MX_POOL2.coachHire = [{ q: 'What will your {side} look like?', o: [['Whatever fits our players. We\'ll build it around them.', mxL('humble')], ['Fast and physical. People are going to notice.', mxL('hype')], ['Like mine did when I played: the best in the country.', mxL('hype', 0, 'none', { ego: 1 })]] }, { q: 'How do you get through to players who never saw you play?', o: [['Respect has to be earned in the meeting room, not on a highlight tape.', mxL('humble')], ['I show them the film. Then I show them how.', mxL('neutral')], ['Look it up. They\'ll figure it out fast.', mxL('hype', 0, 'none', { ego: 1 })]] }];
 MX_POOL2.traded = MX_POOL2.signed;
 // a follow-up when an answer gave the room something
 const MX_FOLLOW = [
@@ -16011,7 +16025,7 @@ function mxStep() {
   const ctx = socCtx(), CS = carC();
   if (mx.pend.length) {
     const L = mx.pend; mx.pend = [];
-    const order = ['drafted', 'signed', 'traded', 'commit', 'game'], x = L.slice().sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind))[0];
+    const order = ['coachHire', 'drafted', 'signed', 'traded', 'commit', 'game'], x = L.slice().sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind))[0];
     mxPressMake(x.kind, x.ev, x.x);
   }
   // media day: the first week of each season
