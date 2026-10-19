@@ -1495,7 +1495,7 @@ function openingCap(t, limit) {
 const OPEN_SETTLE = { QB: 2.8, RB: 1, WR: 2.1, TE: 2.5, OL: 3.6, DL: 4.2, LB: 1.9, CB: 2.6, S: 2.2 };
 function newLeague() {
   PAR_P.clear();
-  S = { v: 1, gtdFixV: 1, colScaleV: 1, fieldDefV: 1, myPbV: 1, myPb: { seq: 1, plays: {} }, season: 2026, phase: 'regular', week: 1, userTid: null, teams: [], players: {}, nextPid: 1, nextGid: 1,
+  S = { v: 1, gtdFixV: 1, ringRosterV: 1, colScaleV: 1, fieldDefV: 1, myPbV: 1, myPb: { seq: 1, plays: {} }, season: 2026, phase: 'regular', week: 1, userTid: null, teams: [], players: {}, nextPid: 1, nextGid: 1,
     schedule: [], games: {}, po: null, draft: null, faDay: 0, news: [], history: [], awards: {}, retired: [], cap: 301.2, capScale: 1.181, picks: [], nextPickId: 1, dead: [], coaches: {}, nextCid: 1, offers: [], honors: {}, recs: {}, hof: [], hofPending: [], waivers: [], claims: [], comp: [], potw: {}, recaps: {}, hofBallots: {}, hofV: 2, ratV: 2, stories: [], mocks: [], block: [], pressLog: [], visits: 10 };
   initAgents(); mpReg();
   TEAMS.forEach(([city, name, abbr, color], i) => {
@@ -4317,6 +4317,7 @@ function endSeason() {
   gmSeasonEnd();
   considerRelocation();
   for (const p of roster(po.champ)) addHonor(p, 'RING');
+  S.history[S.history.length - 1].ring = roster(po.champ).map(p => ringRec(p)); // the photo keeps everyone, even a backup who later leaves no record
   judgeSeason();
   scenarioCheck('season');
   buildRecap();
@@ -10252,19 +10253,38 @@ function musRings(tid) {
   return out.reverse();
 }
 
+// a ring holder as the title photo remembers him
+function ringRec(p, y) {
+  y = y ?? S.season; const st = (p.stats || {})[y] || {}, now = S.players[p.id] ? S.season : p.s || S.season;
+  return { id: p.id, fn: p.fn, ln: p.ln, pos: p.pos, num: p.num, faceSeed: p.faceSeed, age: (p.age || 27) - (now - y), gp: st.gp || 0, gs: st.gs || 0, ovr: y === S.season && S.players[p.id] ? p.ovr : musOvrAt(p, y) };
+}
+// older saves: keep the title rosters from whoever is still on record
+function ringMigrate() {
+  if (S.ringRosterV) return; S.ringRosterV = 1;
+  const people = musPeople();
+  for (const h of S.history || []) { if (h.ring || h.champ == null) continue;
+    h.ring = [...people.values()].filter(p => (p.hon || []).some(x => x.t === 'RING' && x.s === h.s && x.tid === h.champ)).map(p => ringRec(p, h.s)); }
+}
 // the title team photo and where they are now
 function musTitleTeams(tid) {
   const titles = (S.history || []).filter(h => h.champ === tid).map(h => h.s); if (!titles.length) return [];
   const people = musPeople(), out = [];
   for (const y of titles.reverse()) {
     const aw = ((S.history || []).find(h => h.s === y) || {}).awards || {};
-    const roster = [];
+    const roster = [], seen = new Set();
     for (const p of people.values()) {
       if (!(p.hon || []).some(h => h.t === 'RING' && h.s === y && h.tid === tid)) continue;
       const st = (p.stats || {})[y] || {}, ap = (p.hon || []).some(h => h.s === y && (h.t === 'AP' || h.t === 'MVP'));
       const age = (p.age || 27) - ((S.players[p.id] ? S.season : p.s || S.season) - y);
       roster.push({ id: p.id, act: !!S.players[p.id], name: musName(p), pos: p.pos, num: p.num, gp: st.gp || 0, gs: st.gs || 0, ovr: musOvrAt(p, y), face: { id: p.id, faceSeed: p.faceSeed, pos: p.pos, age, fn: p.fn, ln: p.ln },
         star: aw.fmvp?.pid === p.id ? 'Final MVP' : aw.mvp?.pid === p.id ? 'MVP' : ap ? 'All-Pro' : '', now: musNow(p, tid) });
+      seen.add(p.id);
+    }
+    // the ones who left the league without a record are kept on the title itself
+    for (const r of ((S.history || []).find(h => h.s === y) || {}).ring || []) {
+      if (seen.has(r.id) || people.has(r.id)) continue;
+      roster.push({ id: r.id, act: false, gone: true, name: `${r.fn} ${r.ln}`, pos: r.pos, num: r.num, gp: r.gp, gs: r.gs, ovr: r.ovr, face: { id: r.id, faceSeed: r.faceSeed, pos: r.pos, age: r.age, fn: r.fn, ln: r.ln },
+        star: aw.fmvp?.pid === r.id ? 'Final MVP' : aw.mvp?.pid === r.id ? 'MVP' : '', now: { k: 'ret', txt: 'Left the league' } });
     }
     const rk = x => (x.star ? 1000 : 0) + (x.gp >= 6 ? 100 : x.gp * 10) + x.ovr; // the stars, then the regulars by how good they were
     roster.sort((a, b) => rk(b) - rk(a));
@@ -16972,7 +16992,7 @@ function load(json) { const d = typeof json === 'string' ? JSON.parse(json) : js
   for (const k of ['potw', 'recaps']) if (!S[k]) S[k] = {};
   if (!S.hofBallots) S.hofBallots = {};
   upgradeRatings();
-  fixCollegeRookies(); fixGuarantees(); fieldDefault(); socMigrate(); mxMigrate(); stMigrate(); mpMigrate(S); if (S.col) mpMigrate(S.col); mpReg();
+  fixCollegeRookies(); fixGuarantees(); ringMigrate(); fieldDefault(); socMigrate(); mxMigrate(); stMigrate(); mpMigrate(S); if (S.col) mpMigrate(S.col); mpReg();
   initH2H(); S.set = { ...SET_DEFAULT, ...(S.set || {}) };
   for (const p of allPlayers()) if (p.disc == null) p.disc = rollDisc(p.pers);
   for (const c of [...Object.values(S.coaches || {}), ...Object.values(S.coachArc || {})]) if (c.mentors && c.role && ['SC', 'TR', 'HC'].includes(c.role) && !(c.stops || []).some(x => ['OC', 'DC', 'ST'].includes(x.role))) c.mentors = [];
