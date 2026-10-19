@@ -4395,7 +4395,7 @@ function signPlayer(pid, tid, terms, quiet) {
   const t = team(tid); if (!t.depth[p.pos]) t.depth[p.pos] = []; t.depth[p.pos].push(p.id);
   if (tid === S.userTid) news(`Signed ${fullName(p)} (${p.pos}, ${dispR(p.ovr)} OVR): ${terms.yrs} yr${terms.yrs > 1 ? 's' : ''}, $${terms.sal}M per year.`, true);
   if (p.ovr >= 80) fanEvent(tid, 3, `Signing ${fullName(p)} has the fan base buzzing.`);
-  if (p.ovr >= 76 && S.phase !== 'regular') post(p, 'signed');
+  if (p.ovr >= 76 && S.phase !== 'regular') post(p, 'signed', null, `He just signed with the ${t.city} ${t.name} as a free agent: ${terms.yrs} year${terms.yrs > 1 ? 's' : ''}, $${terms.sal}M a year.`);
   else if (!quiet || p.ovr >= 72) news(`${t.abbr} signed ${p.pos} ${fullName(p)} (${terms.yrs} yrs, $${terms.sal}M).`);
   return null;
 }
@@ -4850,7 +4850,7 @@ function executeTrade(otherTid, give, get, givePk = [], getPk = []) {
   ensureDepth(team(otherTid), true); ensureDepth(team(S.userTid));
   if (get.some(id => S.players[id].ovr >= 85)) unlock('blockbuster');
   promisesTick('deal');
-  for (const id of [...give, ...get]) { const p = S.players[id]; if (p && p.ovr >= 68) post(p, 'traded'); }
+  for (const id of [...give, ...get]) { const p = S.players[id], fr = team(give.includes(id) ? S.userTid : otherTid); if (p && p.ovr >= 68) post(p, 'traded', null, `The ${fr.city} ${fr.name} just traded him to the ${team(p.tid).city} ${team(p.tid).name}.`); }
   news(msg, true);
   return ev;
 }
@@ -8371,13 +8371,18 @@ const QUOTES = {
   prime: { leader: ['Love playing on the big stage.', 'Whole country watching. Let\'s handle business.'], diva: ['Primetime. My time.', 'Lights on. Watch this.', 'Bring the cameras.'], grinder: ['Same game, bigger lights.', 'Doesn\'t matter what night it is.'], steady: ['Fun night.', 'Good to play in front of everybody.'] },
 };
 const handle = p => '@' + (p.fn + p.ln).replace(/[^A-Za-z]/g, '') + (p.num || '');
-function post(p, kind, extra) {
+// ev: what happened, in plain words, for the AI model; the post keeps those facts until the model has written it (feedWrite)
+function post(p, kind, extra, ev) {
   if (!p || !QUOTES[kind]) return;
   const bank = QUOTES[kind][p.pers || 'steady'] || QUOTES[kind].steady;
-  const recent = new Set((S.feed || []).slice(0, 30).map(f => f.text)), fresh = bank.filter(t => !recent.has((extra ? extra + ' ' : '') + t));
-  const text = (extra ? extra + ' ' : '') + pick(fresh.length ? fresh : bank);
-  (S.feed || (S.feed = [])).unshift({ s: S.season, wk: S.phase === 'regular' && S.week <= S.schedule.length ? S.week : null, ph: S.phase, pid: p.id, name: fullName(p), h: handle(p), tid: p.tid, text, likes: Math.round((p.ovr - 55) * (80 + rnd() * 160) * (p.pers === 'diva' ? 1.6 : 1)) });
+  const pre = extra ? extra + ' ' : '', recent = (S.feed || []).slice(0, 30).map(f => f.text), fresh = bank.filter(t => !recent.includes(pre + t));
+  // every line already in the recent feed: the one used longest ago, so a post never repeats the one before it
+  const old = fresh.length ? fresh : [bank.reduce((a, t) => recent.indexOf(pre + t) > recent.indexOf(pre + a) ? t : a)];
+  const text = pre + pick(old);
+  (S.feed || (S.feed = [])).unshift({ s: S.season, wk: S.phase === 'regular' && S.week <= S.schedule.length ? S.week : null, ph: S.phase, pid: p.id, name: fullName(p), h: handle(p), tid: p.tid, text, likes: Math.round((p.ovr - 55) * (80 + rnd() * 160) * (p.pers === 'diva' ? 1.6 : 1)), id: (S.feedSeq = (S.feedSeq || 0) + 1), ai: 0, x: feedFacts(p, kind, ev) });
   if (S.feed.length > 120) S.feed.length = 120;
+  // only the newest posts wait for the model; older ones keep the game's line
+  for (const f of S.feed.slice(12)) if (f.x) delete f.x;
 }
 function feedAfterWeek(games) {
   for (const g of games) {
@@ -8386,10 +8391,54 @@ function feedAfterWeek(games) {
     for (const side of [0, 1]) {
       const tid = side ? g.away : g.home, won = g.score[side] > g.score[1 - side], lost = g.score[side] < g.score[1 - side];
       let best = null, bv = 3; for (const pid in g.ps) if (g.pt[pid] === side) { const p = S.players[pid]; const v = perfScore(p, g.ps[pid]); if (p && v > bv) { bv = v; best = p; } }
-      if (won && best && (tid === S.userTid || tv)) post(best, tv && rnd() < 0.5 ? 'prime' : 'win');
-      if (lost && tid === S.userTid && rnd() < 0.6) { const d = roster(tid).filter(p => p.pers === 'diva' && p.ovr >= 70); post(d.length ? pick(d) : best, 'loss'); }
+      if (won && best && (tid === S.userTid || tv)) { const k = tv && rnd() < 0.5 ? 'prime' : 'win'; post(best, k, null, feedGameEv(g, side, best, k === 'prime')); }
+      if (lost && tid === S.userTid && rnd() < 0.6) { const d = roster(tid).filter(p => p.pers === 'diva' && p.ovr >= 70); const who = d.length ? pick(d) : best; if (who) post(who, 'loss', null, feedGameEv(g, side, who)); }
     }
   }
+}
+// in the desktop app the built-in AI model rewrites each new post from the facts saved with it (the UI asks, 90-gms-camp-mgmt-presentation.js);
+// every answer is checked here, and the canned line stays when it fails or the model is off. Nothing here touches the game's dice.
+const FEED_PERS = { leader: 'a team leader: upbeat, gives credit to the group, talks about the team', diva: 'a showman: cocky, all about himself, a little petty, loves the attention', grinder: 'a quiet worker: few words, all business, no flash', steady: 'even-keeled: polite and measured, never too high or too low' };
+const FEED_ANGLE = ['how he feels about it', 'a short punchy reaction', 'what it means for his team', 'a message to the fans', 'a confident one-liner', 'what comes next for him'];
+const FEED_LEN = ['a few words', 'one short line', 'one short line', 'one or two sentences'];
+const FEED_SYS = 'You write posts on a sports social media app for a football video game, as the player himself. Write like a real pro football player posting right after the news: short, his own voice and attitude, casual capitalization, an emoji only sometimes. The post reacts to what happened in the facts, and nothing in it may contradict them. Never invent stats, scores, injuries, quotes, people or news; numbers only from the facts, and most posts use none. Never mention ratings, grades or anything about the video game. No slurs, no threats, nothing about anyone\'s family, race, religion, sexuality or looks. No hashtags, no em dashes, no quotation marks around the post.';
+function feedFacts(p, kind, ev) {
+  const t = p.tid >= 0 ? team(p.tid) : null, st = p.stats && p.stats[S.season], r = t && t.rec;
+  const L = [`Player: ${fullName(p)}, ${p.pos}, age ${Math.round(p.age)}${t ? `, plays for the ${t.city} ${t.name}` : ''}.`, `When: ${S.phase === 'regular' ? S.week <= S.schedule.length ? `week ${S.week} of the ${S.season} season` : `the end of the ${S.season} regular season` : `the ${S.season} ${S.phase === 'playoffs' ? 'playoffs' : 'offseason'}`}.`];
+  if (r && r.w + r.l + (r.t || 0) > 0) L.push(`Team record: ${r.w}-${r.l}${r.t ? '-' + r.t : ''}.`);
+  if (st && st.gp) L.push(`His season so far: ${st.gp} games, ${p.pos === 'P' ? `${st.pn || 0} punts` : statLine(p.pos, st)}.`);
+  const what = ev || { traded: `He was just traded${t ? ` to the ${t.city} ${t.name}` : ''}.`, signed: `He just signed${t ? ` with the ${t.city} ${t.name}` : ''}.`, snub: 'He was left off the Pro Bowl this season.', win: 'His team just won.', prime: 'His team just won a national TV game.', loss: 'His team just lost.' }[kind];
+  L.push(`News: ${what}`);
+  return L.join('\n');
+}
+function feedQueue() { return (S.feed || []).slice(0, 8).filter(f => f.ai === 0 && f.x).map(f => f.id); }
+function feedPrompt(id) {
+  const f = (S.feed || []).find(x => x.id === +id), p = f && S.players[f.pid]; if (!f || !f.x || !p) return null;
+  const h = Math.imul(f.id + 7, 2654435761) >>> 0, recent = S.feed.filter(x => x !== f).slice(0, 6).map(x => x.text);
+  const user = `Facts:\n${f.x}\n\nHis personality: ${FEED_PERS[p.pers] || FEED_PERS.steady}.\n${recent.length ? `Recent posts in the feed. Say something different and don't start the same way:\n${recent.map(t => '- ' + t).join('\n')}\n` : ''}\nWrite the post ${fullName(p)} makes right now. Angle: ${FEED_ANGLE[h % FEED_ANGLE.length]}. Length: ${FEED_LEN[(h >>> 8) % FEED_LEN.length]}, under 140 characters.${(h >>> 12) % 2 ? ' Bring up one real detail from the facts by name or number: the opponent, the score, his line, his season or the record.' : ''}\n\nAnswer with JSON: {"text": "the post"}`;
+  return { system: FEED_SYS, user, schema: { type: 'object', properties: { text: { type: 'string', maxLength: 200 } }, required: ['text'] }, maxTokens: 80, temperature: 0.9 };
+}
+const feedKey = t => String(t).toLowerCase().replace(/[^a-z0-9]/g, '');
+// "3 sacks" has to be his sacks in the facts, not some other 3 there
+const FEED_UNIT = [[/^(yards?|yds?)$/, 'yd'], [/^(tds?|touchdowns?)$/, 'td'], [/^(ints?|interceptions?|picks?)$/, 'int'], [/^(catches|receptions|recs?)$/, 'rec'], [/^carries$/, 'car'], [/^sacks?$/, 'sck'], [/^tackles?$/, 'tkl'], [/^punts?$/, 'pn'], [/^games?$/, 'gp']];
+function feedPairs(t) {
+  const out = new Set();
+  for (const m of String(t).toLowerCase().matchAll(/(\d+)\s*(?:rush(?:ing)?\s+)?([a-z]+)/g)) { const u = FEED_UNIT.find(([re]) => re.test(m[2])); if (u) out.add(m[1] + u[1]); }
+  return out;
+}
+function feedWrite(id, text) {
+  const f = (S.feed || []).find(x => x.id === +id); if (!f || f.ai !== 0) return 0;
+  const nums = new Set(String(f.x || '').match(/\d+/g) || []), t = typeof text === 'string' ? socCheck(text, { nums }) : null, fp = feedPairs(f.x);
+  delete f.x;
+  // every number has to come from the facts, and no post repeats one already in the feed
+  const ok = t && t.length <= 200 && (t.match(/\d+/g) || []).every(n => nums.has(n)) && [...feedPairs(t)].every(x => fp.has(x)) && !S.feed.slice(0, 31).some(y => y !== f && feedKey(y.text) === feedKey(t));
+  if (!ok) { f.ai = -1; return 0; }
+  f.text = t; f.ai = 1; return 1;
+}
+// a game post's facts: the score from his side, and his own line when he played
+function feedGameEv(g, side, p, tv) {
+  const o = team(side ? g.home : g.away), won = g.score[side] > g.score[1 - side], l = g.ps && g.ps[p.id];
+  return `His team ${won ? 'beat' : 'lost to'} the ${o.city} ${o.name} ${Math.max(...g.score)}-${Math.min(...g.score)}${tv ? ' in a primetime game on national TV' : ''}. ${l ? `His line: ${carGameLine(p.pos, l).replace(/(\d)-(-\d)/g, '$1 for $2')}.` : 'He did not play in it.'}`;
 }
 function feedSnubs() {
   const s = S.season, pb = new Set(allPlayers().filter(p => (p.hon || []).some(h => h.s === s && (h.t === 'PB' || h.t === 'AP'))).map(p => p.id));
@@ -16974,7 +17023,7 @@ return {
   careerRecords, franchiseLeaders, REC_KEYS, REC_LABEL, hofScore, hofOutlook, hofWatch, LEAD_KEYS, mainTeam,
   weekBegin, weekEnd, watchWeek, uniBgStep, weekRestStep, weekFlush, weekPending: () => !!(S && S.weekLazy), poBegin, poEnd, poPairs, coachStart, coachFinish, runGen, scoutingReport, setGamePlan, OFF_PLANS, DEF_PLANS, gamePlanFor,
   vxView, vxSeen, vxAct, vxSend, vxCall, vxPrompt, vxWrite, vxQueuePro, vxBadgePro, vxSync,
-  optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carWatchable, carWatchStart, carWatchFinish, carStoryPrompt, carStoryWrite, carStoryQueue, carStoryView, carStorySeen, stForce, stStep, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carCoachView, carTakeCoachJob, carCoachScheme, carCanCoach, CC_SCH, carTakeHcJob, carStayCoord, exCarView, CC_HC_RAT, carCoachHcOffers, carHcPending, carTakeFrontOffice, carFrontOffice, carSeasons, carGameLine, carHofStatus, carDraftProjection, carSocPost, carSocReply, carSocBlock, carSocMute, carSocIdeas, socCharPen, socAbout, carSocDelete, carSocMore, carSocPrompt, carSocLabelPrompt, carSocWrite, carSocQueue, carSocView, gmAsk, gmAskPrompt, gmPitchPrompt, gmPitchCheck, asstParse, carSocSeen, socShowAt, socRead, socCtx, socCheck, SOC_MAX, carPcView, carPcAnswer, carDmView, carDmSend, carDmAct, carDmBlock, carDmSeen, carDmQueue, carDmPrompt, carDmWrite, carMxBadges, mxPressMake, mxDmStart, mxStep, mxAgMul, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
+  optionPrice, optionEligible, exerciseOption, declineOption, onWaivers, toggleClaim, waiverOrder, effAge, bodyAge, AGE_SHIFT, aiTradeOnce, isContender, teamAdvanced, epValue, faPrio, faAppeal, faPrioText, FA_KEYS, taxOf, GREC_KEYS, GREC_LABEL, TREC_LABEL, recordWatchList, newUniverse, colToProOvr, aiBlocks, onAiBlock, leagueBlock, newCareer, carView, carNext, carWatchable, carWatchStart, carWatchFinish, carStoryPrompt, carStoryWrite, carStoryQueue, carStoryView, carStorySeen, stForce, stStep, carSim, carBlocker, carSetFocus, carSpend, carSkillView, carSetAutoSp, carSpCost, carCommit, carDecommit, carVisit, carDecide, carEventChoose, carPortalPick, carDraftStep, carResign, carExtend, carSignFA, carTradeRequest, carRetire, carSimToHof, carHofStep, carCoachView, carTakeCoachJob, carCoachScheme, carCanCoach, CC_SCH, carTakeHcJob, carStayCoord, exCarView, CC_HC_RAT, carCoachHcOffers, carHcPending, carTakeFrontOffice, carFrontOffice, carSeasons, carGameLine, carHofStatus, carDraftProjection, carSocPost, carSocReply, carSocBlock, carSocMute, carSocIdeas, socCharPen, socAbout, carSocDelete, carSocMore, carSocPrompt, carSocLabelPrompt, carSocWrite, feedQueue, feedPrompt, feedWrite, carSocQueue, carSocView, gmAsk, gmAskPrompt, gmPitchPrompt, gmPitchCheck, asstParse, carSocSeen, socShowAt, socRead, socCtx, socCheck, SOC_MAX, carPcView, carPcAnswer, carDmView, carDmSend, carDmAct, carDmBlock, carDmSeen, carDmQueue, carDmPrompt, carDmWrite, carMxBadges, mxPressMake, mxDmStart, mxStep, mxAgMul, CAR_ARCH, CAR_FOCUS, CAR_FOCUS_TIP, CAR_REG, carPlayer, injDecisionOpen, tradeFinder, capPreview, draftCost, healthSnap, leagueHealth, uniInfo, uniOn, uniProjectClass, futureClasses, projRanks, depthLock, depthMove, gameLine, lineText, mlText, lineResult, atsRecord, honB, DEC_MULT, rookieScale, vetMin, injType, injLabel, devBase, genPlayer, posRank, MKT, INJURIES, PERS, teamChem,
   injStatus, injuryReport, toggleRest, gameKey, pkgFor, setPackage, marketComps, positionMarket, hotSeat, hotSeatHeat,
   PROTECT_N, defaultProtect, ACHIEVEMENTS, RULES_DEFAULT, PROPOSALS, castVote, expandLeague: (n, pr) => { const r = expandLeague(n, pr); topUpProspects(); return r; }, MILESTONES, MS_NAME, stadiumTag, tradeDeadline,
   TRAITS, traitsKnown, POS_MOVES, positionPreview, changePosition, AGENT_STYLES, agentOf, capHit, voidCapHit, toggleBlock, shopPlayer, tradeAsk, mockDraft, visitProspect, VISITS_PER_YEAR,
@@ -22331,11 +22380,28 @@ function reviewsTab() {
 }
 
 // ---------- social feed ----------
-function feedList(n) {
-  const f = (S().feed || []).slice(0, n);
+// in the desktop app the built-in AI model writes each new post from the game's facts (93-presentation.js checks every answer);
+// a post waits for it up to half a minute, then shows the game's own line
+const FEED_SEEN = new Map(), FEED_H = {};
+const feedPro = () => ui.mode !== 'career' && ui.mode !== 'college' && !!(S() && S().feed && !S().car);
+const feedShown = (x, now) => { if (x.ai !== 0 || !x.x || !socAiOn()) return true; if (!FEED_SEEN.has(x.id)) FEED_SEEN.set(x.id, now); return now - FEED_SEEN.get(x.id) > 30000; };
+function feedItems(n) {
+  const now = Date.now(), f = (S().feed || []).filter(x => feedShown(x, now)).slice(0, n);
   if (!f.length) return '<p class="muted" style="margin:0;font-size:12.5px">Quiet so far. Players post after big wins, losses, trades, signings and awards snubs.</p>';
-  return `<div class="feed">${f.map(x => { const p = P(x.pid), t = T(x.tid); return `<div class="post">${p ? faceOf(p, 34) : ''}<div><div class="row" style="gap:6px"><b>${p ? plink(p) : E(x.name)}</b><span class="muted">${E(x.h)}</span>${t ? chip(t) : ''}<span class="muted" style="font-size:11.5px">${x.wk ? 'Wk ' + x.wk : E(x.ph || '')} ${x.s}</span></div><div>${LN(x.text)}</div><div class="muted row" style="font-size:11.5px;gap:4px">${ico('heart')} ${x.likes.toLocaleString()}</div></div></div>`; }).join('')}</div>`;
+  return `${f.map(x => { const p = P(x.pid), t = T(x.tid); return `<div class="post">${p ? faceOf(p, 34) : ''}<div><div class="row" style="gap:6px"><b>${p ? plink(p) : E(x.name)}</b><span class="muted">${E(x.h)}</span>${t ? chip(t) : ''}<span class="muted" style="font-size:11.5px">${x.wk ? 'Wk ' + x.wk : E(x.ph || '')} ${x.s}</span></div><div>${LN(x.text)}</div><div class="muted row" style="font-size:11.5px;gap:4px">${ico('heart')} ${x.likes.toLocaleString()}</div></div></div>`; }).join('')}`;
 }
+function feedList(n) { const h = FEED_H[n] = feedItems(n); return `<div class="feed" data-n="${n}">${h}</div>`; }
+function feedRefresh() { for (const el of document.querySelectorAll('.feed[data-n]')) { const n = +el.dataset.n, h = feedItems(n); if (FEED_H[n] !== h) { FEED_H[n] = h; el.innerHTML = h; } } }
+async function feedWriter() {
+  if (SOC_AI.busy || !socAiOn() || !feedPro()) return;
+  const s0 = S(), id = HM.feedQueue()[0]; if (id == null) return;
+  const req = HM.feedPrompt(id); if (!req) return;
+  SOC_AI.busy = true;
+  try { const r = await DESKTOP.ai.generate({ ...req, timeout: 30000 }), t = r && r.ok && r.json && typeof r.json.text === 'string' ? r.json.text : null; if (!t) socAiFail(); else SOC_AI.fails = 0; if (S() === s0) { HM.feedWrite(id, t); socSaveSoon(); } }
+  catch (e) { socAiFail(); } finally { SOC_AI.busy = false; }
+  feedRefresh(); setTimeout(feedWriter, 50);
+}
+setInterval(() => { try { if (!feedPro()) return; if (socAiPref() && HM.feedQueue().length) socAiInit(); feedRefresh(); if (socAiOn() && !SOC_AI.busy) feedWriter(); } catch (e) { /* the feed never breaks the page */ } }, 1500);
 const feedCard = () => `<section class="panel"><div class="ph"><h3>The feed</h3><button class="btn sm" data-act="feedAll">All posts</button></div>${feedList(4)}</section>`;
 const socialTab = () => `<section class="panel"><h3>Social</h3>${feedList(60)}</section>`;
 
