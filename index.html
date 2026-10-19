@@ -6753,17 +6753,48 @@ function shopTake(o) { return executeTrade(o.tid, o.pids || [], o.get, o.pks || 
 // what it would take to get another team's player
 function tradeAsk(targetPid) {
   const t = S.players[targetPid]; if (!t || t.tid < 0 || t.tid === S.userTid) return { ok: false, msg: 'Pick a player on another team.' };
-  const vOut = tradeValue(t);
-  for (const starters of [false, true]) {
-    const assets = assetsOf(S.userTid, { starters });
+  const u = S.userTid, o = t.tid, vOut = tradeValue(t), sum = ids => ids.reduce((a, id) => a + capHit(S.players[id]), 0);
+  const startersOf = tid => { const L = lineup(team(tid)); return new Set(POS_ORDER.flatMap(pos => L[pos].slice(0, POS[pos].start).map(x => x.id))); };
+  // one side can't fit the salary: that side adds contracts until it does (the contract that just covers the gap, the one they value least among the close fits, else the biggest and keep going)
+  const pad = (tid, other, mine, over, ok, val) => {
+    const out = mine.slice(), pool = active(tid).filter(x => !out.includes(x.id) && x.id !== t.id && !x.inj && capHit(x) > 0 && !ntcBlocks(x, other) && ok(x));
+    for (let i = 0; over > 0 && i < 3; i++) {
+      const left = pool.filter(x => !out.includes(x.id)); if (!left.length) return null;
+      const fits = left.filter(x => capHit(x) >= over).sort((a, b) => capHit(a) - capHit(b)), x = fits.filter(x => capHit(x) <= capHit(fits[0]) + 2).sort((a, b) => val(a) - val(b))[0] || left.sort((a, b) => capHit(b) - capHit(a))[0];
+      out.push(x.id); over -= capHit(x);
+    }
+    return over > 0 ? null : out;
+  };
+  // a roster that would go over the limit sends its cheapest backups the other way
+  const bodies = (tid, mine, n, st) => { const out = mine.slice(), add = active(tid).filter(x => !out.includes(x.id) && x.id !== t.id && !x.inj && !st.has(x.id) && x.pos !== 'K' && x.pos !== 'P' && !ntcBlocks(x, tid === u ? o : u)).sort((a, b) => capHit(a) - capHit(b)).slice(0, n); return add.length < n ? null : [...out, ...add.map(x => x.id)]; };
+  let why = null;
+  // backups first, then starters too, then picks alone (no salary, for a team that's capped out)
+  for (const pass of [0, 1, 2]) {
+    const starters = pass > 0, stU = startersOf(u), stO = startersOf(o), assets = assetsOf(u, { starters }).filter(a => pass < 2 || a.k === 'pk');
     for (let n = 1; n <= 4; n++) {
       const extra = Math.max(0, n - 1) * 0.8, need = vOut * 1.1 + extra + 0.3;
       const pkg = pickPackage(assets, need, need * 1.25, n); if (!pkg) continue;
-      const ids = pkgToIds(pkg), ev = evaluateTrade(t.tid, ids.give, [t.id], ids.givePk, []);
-      if (ev.ok) return { ok: true, tid: t.tid, give: ids.give, givePk: ids.givePk, v: ids.v, starters, msg: `${team(t.tid).abbr} would do it for this package.` };
-      if (/cap|limit/.test(ev.reason)) return { ok: false, msg: ev.reason };
+      const ids = pkgToIds(pkg); let give = ids.give, get = [t.id], ev = evaluateTrade(o, give, get, ids.givePk, []), salU = false, salO = false;
+      // you send salary back, or they do (their bench contracts they value least), until both fit or it stops helping
+      for (let round = 0; round < 4 && !ev.ok && /cap|-man limit/.test(ev.reason); round++) {
+        const lim = ev.reason.match(/would have (\d+) players/), over = lim ? +lim[1] - rosterMax() : 0;
+        if (lim && /^You/.test(ev.reason)) { const g2 = bodies(u, give, over, stU); if (!g2) break; give = g2; }
+        else if (lim) { const g2 = bodies(o, get, over, stO); if (!g2) break; get = g2; }
+        else if (/put you over the salary cap/.test(ev.reason)) {
+          const g2 = pad(u, o, give, payroll(u) - sum(give) + sum(get) - S.cap, x => starters || !stU.has(x.id), x => tradeValue(x)); if (!g2) break; give = g2; salU = true;
+        } else {
+          const g2 = pad(o, u, get, payroll(o) + sum(give) - sum(get) - S.cap, x => !stO.has(x.id), x => gmValue(o, x)); if (!g2) break; get = g2; salO = true;
+        }
+        ev = evaluateTrade(o, give, get, ids.givePk, []);
+      }
+      if (ev.ok) {
+        const back = get.slice(1).map(id => fullName(S.players[id])).join(' and ');
+        return { ok: true, tid: o, give, get, givePk: ids.givePk, v: ids.v, starters, back: get.slice(1), msg: `${team(o).abbr} would do it for this package.${salU ? ' It sends salary back so you stay under the cap.' : ''}${back ? ` They send ${back} back too, ${salO ? 'to fit your salary under their cap' : `to stay at ${rosterMax()} players`}.` : ''}` };
+      }
+      if (/cap|limit/.test(ev.reason)) why = why || ev.reason;
     }
   }
+  if (why) return { ok: false, msg: /over the salary cap/.test(why) ? `You can't fit ${fullName(t)}'s contract, and there isn't enough salary on your roster ${team(o).abbr} would take back. Clear cap room first.` : /can't fit/.test(why) ? `${team(o).abbr} can't fit the salary you'd send, and they don't have bench contracts to send back that make it work.` : why };
   return { ok: false, msg: `You don't have enough tradeable value for ${fullName(t)}.` };
 }
 function blockOffers() {
@@ -10682,9 +10713,9 @@ function vxCall(pid) {
   const r = tradeAsk(pid), th = vxThread(vx, 'gm', vxGmWho(p.tid)); th.callKey = key; vx.did[key] = 1;
   vxMine(vx, th, `What would it take to get ${p.fn} ${p.ln}?`);
   if (!r.ok) { vxMsg(vx, th, r.msg, `You were asked about trading ${p.fn} ${p.ln}. Say no, for this reason: ${r.msg}`); th.end = true; return { th: th.id }; }
-  const give = vxPieces(r.give, r.givePk); th.call = { tid: r.tid, give: r.give, givePk: r.givePk, get: [pid] };
+  const give = vxPieces(r.give, r.givePk); th.call = { tid: r.tid, give: r.give, givePk: r.givePk, get: r.get || [pid] }; const back = (r.back || []).map(id => S.players[id]).filter(Boolean);
   th.act = { kind: 'call', opts: [['Open it in the trade builder', 'tb'], ['Too rich for me', 'no']] };
-  vxMsg(vx, th, `For ${p.ln}? I'd need ${vxList(give)}.${r.starters ? ' I know that includes a starter. That\'s the price.' : ''}`, `You were asked what it would take to trade for your player ${p.fn} ${p.ln}. Name your price exactly: ${vxList(give)}.`);
+  vxMsg(vx, th, `For ${p.ln}? I'd need ${vxList(give)}.${r.starters ? ' I know that includes a starter. That\'s the price.' : ''}${back.length ? ` I can't fit your salary, so ${back.map(x => x.ln).join(' and ')} comes back to you.` : ''}`, `You were asked what it would take to trade for your player ${p.fn} ${p.ln}. Name your price exactly: ${vxList(give)}.${back.length ? ` To fit the salary under your cap, you also send back ${back.map(x => `${x.pos} ${x.fn} ${x.ln}`).join(' and ')}.` : ''}`);
   th.must = [p.ln, ...r.give.map(id => S.players[id]).filter(Boolean).map(x => x.ln)];
   return { th: th.id };
 }
@@ -10912,7 +10943,7 @@ function gmAsk(text, prev, modelQ) {
     if (t.tid === -1) return { text, q: prev, ask: { pid: t.id, fa: true, msg: `${t.fn} ${t.ln} is a free agent: no trade needed. He's asking $${t.ask ? t.ask.sal : '?'}M a year. Open negotiations to see what he'll take.` } };
     const r = tradeAsk(t.id); if (!r.ok) return { text, q: prev, ask: { pid: t.id, msg: r.msg } };
     const give = r.give.map(id => S.players[id]).filter(Boolean).map(x => `${x.pos} ${x.fn} ${x.ln}`), pk = r.givePk.map(id => (S.picks || []).find(x => x.id === id)).filter(Boolean).map(x => `your ${pickLabel(x)} pick`);
-    return { text, q: prev, ask: { pid: t.id, ok: true, give: r.give, givePk: r.givePk, tid: r.tid, msg: `${team(r.tid).abbr} would do ${t.ln} for ${[...give, ...pk].join(', ') || 'what you have'}.${r.starters ? ' It includes a starter of yours.' : ''}` } };
+    return { text, q: prev, ask: { pid: t.id, ok: true, give: r.give, givePk: r.givePk, tid: r.tid, msg: `${team(r.tid).abbr} would do ${t.ln} for ${[...give, ...pk].join(', ') || 'what you have'}.${r.starters ? ' It includes a starter of yours.' : ''}${r.back && r.back.length ? ` They'd send ${r.back.map(id => fullName(S.players[id])).join(' and ')} back to fit your salary under their cap.` : ''}` } };
   }
   if (!q.pos && !prev && !Object.keys(q).length) return { text, q, read: [], rows: [], none: 'Tell me a position or what you need, like "a cheap startable corner" or "a young pass rusher on a rookie deal".' };
   // the draft: prospects on your scouts' board, and whether they'll last to your pick
@@ -17206,7 +17237,7 @@ const actions = {
   shopTake: d => { const sh = ui.sh, o = sh && sh.res && sh.res.offers[+d.i]; if (!o) return; const r = HM.shopTake({ ...o, pids: sh.pids.filter(x => x != null), pks: sh.pk ? [+sh.pk] : [] }); if (!r.ok) { toast(r.reason); return; } ui.sh = { pids: [], pk: '', want: sh.want, res: null }; persist(); toast('Trade completed.'); },
   shopEdit: d => { const sh = ui.sh, o = sh && sh.res && sh.res.offers[+d.i]; if (!o) return; ui.tradeTid = o.tid; ui.give = new Set(sh.pids.filter(x => x != null)); ui.givePk = new Set(sh.pk ? [+sh.pk] : []); ui.get = new Set(o.get); ui.getPk = new Set(o.getPk); ui.tradeMsg = null; ui.tradeTab = 'build'; window.scrollTo(0, 0); },
   shopAccept: d => { const pid = +d.id, o = (ui.shop || {})[pid]?.[+d.i]; if (!o) return; const r = HM.executeTrade(o.tid, [pid], o.get, [], o.getPk); if (!r.ok) toast(r.reason); else { delete ui.shop[pid]; persist(); toast('Trade completed.'); } },
-  tradeAsk: d => { const r = HM.tradeAsk(+d.id); if (!r.ok) { toast(r.msg); return; } ui.tradeTid = r.tid; ui.get = new Set([+d.id]); ui.give = new Set(r.give); ui.getPk = new Set(); ui.givePk = new Set(r.givePk); ui.tradeMsg = { ok: true, reason: `${r.msg}${r.starters ? ' It includes a starter.' : ''} Adjust it or press Propose.` }; ui.view = 'trade'; ui.tradeTab = 'build'; ui.modal = null; window.scrollTo(0, 0); },
+  tradeAsk: d => { const r = HM.tradeAsk(+d.id); if (!r.ok) { toast(r.msg); return; } ui.tradeTid = r.tid; ui.get = new Set(r.get || [+d.id]); ui.give = new Set(r.give); ui.getPk = new Set(); ui.givePk = new Set(r.givePk); ui.tradeMsg = { ok: true, reason: `${r.msg}${r.starters ? ' It includes a starter.' : ''} Adjust it or press Propose.` }; ui.view = 'trade'; ui.tradeTab = 'build'; ui.modal = null; window.scrollTo(0, 0); },
   visit: d => { const err = HM.visitProspect(+d.id); if (err) toast(err); else { persist(); toast('Visit done. His traits and character are on his card.'); } },
   press: d => { const r = HM.answerPresser(d.v); persist(); toast(r); },
   stadium: () => { const err = HM.startStadium(); if (err) toast(err); else { persist(); toast('Construction has begun.'); } },
