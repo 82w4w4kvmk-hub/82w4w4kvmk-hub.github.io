@@ -1837,7 +1837,7 @@ function pbMatch(pkg, form) {
 // v across the field (the sidelines at about +-26.7). Field spots: offense 0-4 the line (left to right), 5 quarterback,
 // 6 back, 7 tight end, 8 and 9 wide receivers, 10 the third receiver (or second tight end, or fullback); defense 0-3 the
 // line, 4-6 linebackers (or nickel and dime backs), 7 and 8 corners, 9 and 10 safeties.
-let FX_EDGE = 0.18, FX_HELP_PRS = 0.03, FX_PSLOPE = 14, FX_HALF = 2.4, FX_BRK = 0.3, FX_SPREAD = 0.6, FX_RSHED = 0.15, FX_SY_SHED = 2, FX_SY_PUSH = 0.4; const fxH = (x, y) => Math.sqrt(x * x + y * y); const FLD_V = 26, FX_DT = 0.1, FX_SIDE = 26.6, FX_DBG = {};
+let FX_EDGE = 0.18, FX_HELP_PRS = 0.03, FX_PSLOPE = 14, FX_HALF = 2.4, FX_BRK = 0.3, FX_SPREAD = 0.6, FX_RSHED = 0.15, FX_SY_SHED = 2, FX_SY_PUSH = 0.4; const fxH = (x, y) => Math.sqrt(x * x + y * y); const FLD_V = 27, FX_DT = 0.1, FX_SIDE = 26.6, FX_DBG = {};
 function fxRng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 const fxGauss = r => { let u = 0; while (!u) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); };
 
@@ -2377,7 +2377,11 @@ function fxDrill(W, Q) {
   for (const R of W.O) {
     if (!moves(R)) continue;
     const d = R.u - L, p = { u: d > 11 ? R.u - 4 : Math.max(R.u + 3, L + 5), v: clamp(R.v + side * 6, -22, 22) };
-    for (let k = 0; k < 4 && took.some(e => fxH(e.u - p.u, e.v - p.v) < 4.5); k++) p.u = Math.max(p.u + (k % 2 ? -9 : 5), L + 2);
+    // (deeper or shallower first; near a sideline or the goal line that may not clear him, so then the nearest clear
+    // grass around the spot, or failing that the spot farthest from everyone)
+    const near = q => took.reduce((m, e) => Math.min(m, fxH(e.u - q.u, e.v - q.v)), 99), u0 = p.u, v0 = p.v;
+    for (let k = 0; k < 4 && near(p) < 4.5; k++) p.u = clamp(p.u + (k % 2 ? -9 : 5), L + 2, 109.5);
+    if (near(p) < 4.5) { let best = p, bd = near(p); grass: for (const du of [0, 5, -4, 9, -8]) for (const dv of [5, -5, 10, -10, 0, 15, -15]) { const q = { u: clamp(u0 + du, L + 2, 109.5), v: clamp(v0 + dv, -22, 22) }, dq = near(q); if (dq > bd) { bd = dq; best = q; } if (dq >= 4.5) break grass; } p.u = best.u; p.v = best.v; }
     took.push(p); R.wp = [p]; R.wi = 0; R.end = 'sit'; R.deep = false;
   }
 }
@@ -5534,7 +5538,10 @@ function franchiseLeaders(tid) {
   for (const k of REC_KEYS) out[k] = list.filter(e => e.t[k]).sort((a, b) => b.t[k] - a.t[k]).slice(0, 5).map(e => ({ name: e.name, pos: e.pos, pid: e.pid, rid: e.rid, v: e.t[k] }));
   return out;
 }
-function byTeamTotals(p) { const out = {}; for (const y in p.stats) { const s = p.stats[y], t = out[s.tid] || (out[s.tid] = {}); for (const k in s) if (k !== 'tid' && typeof s[k] === 'number') t[k] = (t[k] || 0) + s[k]; } return out; }
+function byTeamTotals(p) { const out = {}; for (const y in p.stats) { const s = p.stats[y], t = out[s.tid] || (out[s.tid] = {}); for (const k in s) if (k !== 'tid' && typeof s[k] === 'number' && BY_TEAM_K.has(k)) t[k] = (t[k] || 0) + s[k]; } return out; }
+const BY_TEAM_K = new Set(['gs', ...'gp pa pc py ptd pint sk ra ry rtd rl rec tg rcy rctd rcl fum tkl sck dint fgm fga fgl xpm xpa pn pny kr kry krtd pr pry prtd'.split(' ')]); // (the counting stats: a retired player keeps these for every team he played for, not the coverage and charting numbers)
+// older saves kept every stat in those totals: trim them once
+function byTeamTrim() { if (S.byTeamV) return; S.byTeamV = 1; for (const r of S.retired || []) for (const t of Object.values(r.byTeam || {})) for (const k in t) if (!BY_TEAM_K.has(k)) delete t[k]; }
 function hofScore(p, car) {
   const h = p.hon || [], cnt = t => h.filter(x => x.t === t).length;
   let s = cnt('AP') * 6 + cnt('PB') * 1.5 + cnt('MVP') * 10 + (cnt('OPOY') + cnt('DPOY')) * 5 + cnt('ROY') + cnt('RING') * 1.5 + cnt('FMVP') * 3 + Math.min(12, cnt('LEAD') * 1.5) + Object.keys(p.stats).length * 0.6;
@@ -8717,6 +8724,15 @@ const ST_ARCH_PRO = 'tid gp pa pc py ptd pint sk ra ry rtd rl rec tg rcy rctd rc
 function stArchivePro(p) {
   if (!p || !p.stats) return; const A = S.stArch || (S.stArch = {});
   for (const y in p.stats) { const x = p.stats[y]; if (!x || !x.gp || x.tid == null || x.tid < 0 || !stQualifies(x)) continue; const L = A[y] || (A[y] = []); if (!L.some(e => e.pid === p.id)) { const st = {}; for (const k of ST_ARCH_PRO) if (x[k] || (k === 'tid' && x[k] != null)) st[k] = x[k]; L.push({ pid: p.id, fn: p.fn, ln: p.ln, pos: p.pos, st }); } }
+  if (S.stArchT !== S.season) { S.stArchT = S.season; stArchTrim(A); }
+}
+// seasons more than five back keep only their leaders (the top ten in each main stat), so the archive stops growing by a full
+// season of lines every year; an old season's leader boards stay right, since anyone still in the league has his own stats
+const ST_LEAD_PRO = 'py ptd ry rtd rec rcy rctd tkl sck dint fgm pn kry pry'.split(' ');
+function stArchTrim(A) {
+  for (const y in A) { if (+y >= S.season - 5 || A[y].length <= 40) continue; const keep = new Set();
+    for (const k of ST_LEAD_PRO) A[y].filter(e => e.st[k]).sort((a, b) => b.st[k] - a.st[k]).slice(0, 10).forEach(e => keep.add(e));
+    A[y] = A[y].filter(e => keep.has(e)); }
 }
 // lines for one season from players no longer in the league: the kept retired records first, then the archive
 function formerStatRows(season) {
@@ -13656,7 +13672,8 @@ function stArchive(p, ticked) { // (ticked: his eligibility already counted down
 }
 function rbLeave(p, ticked) {
   stArchive(p, ticked);
-  const R = rbInit(); if (!p || R.alum.some(a => a.pid === p.id)) return;
+  const R = rbInit(); if (!R.alumV) { R.alumV = 1; R.alum = R.alum.filter(a => a.hof || a.score >= 6); } // (older saves kept every departing player)
+  if (!p || R.alum.some(a => a.pid === p.id)) return;
   const byTid = {}; for (const y in p.st || {}) { const st = p.st[y], t = st.tid ?? p.tid; const a = byTid[t] || (byTid[t] = { gp: 0 }); for (const k in st) if (k !== 'tid') a[k] = (a[k] || 0) + (st[k] || 0); }
   const tids = Object.keys(byTid).map(Number); if (!tids.length) return;
   const main = tids.sort((a, b) => (byTid[b].gp || 0) - (byTid[a].gp || 0))[0], tot = {};
@@ -13666,6 +13683,7 @@ function rbLeave(p, ticked) {
   const hon = p.hon || [], heis = honCount(hon, /^(Heisman|Golden Helmet)$/), aa1 = honCount(hon, /^All-American$/), aa2 = honCount(hon, /^All-American \(2nd/), awd = honCount(hon, /Award|Trophy/), conf = honCount(hon, /^All-Conference/);
   const stat = (tot.py >= 10000 ? 4 : 0) + (tot.ry >= 4000 ? 4 : 0) + (tot.rcy >= 3500 ? 4 : 0) + (tot.tkl >= 380 ? 3 : 0) + (tot.sck >= 32 ? 3 : 0) + (tot.dint >= 15 ? 3 : 0);
   const score = heis * 12 + aa1 * 6 + aa2 * 3 + awd * 4 + conf + stat;
+  if (score < 6) return; // (only the ones the Hall of Fame could ever look at: everyone else used to pile up until a cap of 3000)
   R.alum.push({ pid: p.id, name: `${p.fn} ${p.ln}`, pos: p.pos, tid: main, left: CS.season, score, aa1, heis, hon: hon.map(h => h.t + ' ' + h.s), car: tot, gp: tot.gp || 0 });
   if (R.alum.length > 3000) R.alum = R.alum.filter(a => a.hof || a.score >= 6).slice(-3000);
   if (heis || aa1 >= 2) {
@@ -16992,7 +17010,7 @@ function load(json) { const d = typeof json === 'string' ? JSON.parse(json) : js
   for (const k of ['potw', 'recaps']) if (!S[k]) S[k] = {};
   if (!S.hofBallots) S.hofBallots = {};
   upgradeRatings();
-  fixCollegeRookies(); fixGuarantees(); ringMigrate(); fieldDefault(); socMigrate(); mxMigrate(); stMigrate(); mpMigrate(S); if (S.col) mpMigrate(S.col); mpReg();
+  fixCollegeRookies(); fixGuarantees(); ringMigrate(); byTeamTrim(); fieldDefault(); socMigrate(); mxMigrate(); stMigrate(); mpMigrate(S); if (S.col) mpMigrate(S.col); mpReg();
   initH2H(); S.set = { ...SET_DEFAULT, ...(S.set || {}) };
   for (const p of allPlayers()) if (p.disc == null) p.disc = rollDisc(p.pers);
   for (const c of [...Object.values(S.coaches || {}), ...Object.values(S.coachArc || {})]) if (c.mentors && c.role && ['SC', 'TR', 'HC'].includes(c.role) && !(c.stops || []).some(x => ['OC', 'DC', 'ST'].includes(x.role))) c.mentors = [];
