@@ -3454,10 +3454,13 @@ function* gameGen(ht, at, opt = {}) {
     const Lo = LU[o], Ld = LU[d], away = o === 1 && !opt.neutral ? 1.3 : 1, r = rnd() / R0.pen, yl0 = st.yl;
     let acc = 0; const hit = p => (acc += p) > r;
     let desc = null, pre = false;
-    if (hit(0.024 * DM[o] * away)) { pre = true; const c = rnd() < 0.72 ? wDisc(Lo.OL.slice(0, 5)) : wDisc([Lo.TE[0], Lo.WR[0], Lo.WR[1], Lo.WR[2]]); desc = flag(o, c, 'False start', 5); }
-    else if (hit(0.012 * DM[d])) { pre = true; const c = rnd() < 0.7 ? wDisc(Ld.DL.slice(0, 4)) : wDisc(Ld.LB); desc = flag(d, c, rnd() < 0.5 ? 'Encroachment' : 'Neutral zone infraction', 5); } // dead-ball fouls: the play never starts
-    else if (hit(0.03 * DM[o])) { const k = kind === 'pass' ? 'PBK' : 'RBK', c = rnd() < 0.85 ? wDisc(Lo.OL.slice(0, 5), p => Math.pow(Math.max(20, 100 - (p.a[k] ?? 60)) / 35, 1.5)) : wDisc([Lo.TE[0], Lo.WR[0], Lo.WR[1]]); desc = `${kind === 'pass' ? 'Pass' : 'Run'} play wiped out. ` + flag(o, c, 'Holding', 10); }
-    else if (kind === 'pass' && hit(0.009 * DM[d])) { const c = wDisc([Ld.CB[0], Ld.CB[1], Ld.S[0], Ld.S[1], Ld.LB[0]]); desc = flag(d, c, 'Defensive holding', 5, true); }
+    // per-snap chances, tuned to NFL rates per team per game: false starts about 1.0, the defense jumping about 0.6, offensive
+    // holding about 1.1, defensive holding about 0.45, delay of game about 0.25 (about 5 accepted flags a team on scrimmage plays)
+    if (hit(0.0155 * DM[o] * away)) { pre = true; const c = rnd() < 0.72 ? wDisc(Lo.OL.slice(0, 5)) : wDisc([Lo.TE[0], Lo.WR[0], Lo.WR[1], Lo.WR[2]]); desc = flag(o, c, 'False start', 5); }
+    else if (hit(0.0042 * DM[o] * away)) { pre = true; desc = flag(o, Lo.QB[0], 'Delay of game', 5); }
+    else if (hit(0.0095 * DM[d])) { pre = true; const c = rnd() < 0.7 ? wDisc(Ld.DL.slice(0, 4)) : wDisc(Ld.LB), x = rnd(); desc = flag(d, c, x < 0.55 ? 'Offside' : x < 0.9 ? 'Neutral zone infraction' : 'Encroachment', 5); } // dead-ball fouls: the play never starts
+    else if (hit(0.019 * DM[o])) { const k = kind === 'pass' ? 'PBK' : 'RBK', c = rnd() < 0.85 ? wDisc(Lo.OL.slice(0, 5), p => Math.pow(Math.max(20, 100 - (p.a[k] ?? 60)) / 35, 1.5)) : wDisc([Lo.TE[0], Lo.WR[0], Lo.WR[1]]); desc = `${kind === 'pass' ? 'Pass' : 'Run'} play wiped out. ` + flag(o, c, 'Holding', 10); }
+    else if (kind === 'pass' && hit(0.0145 * DM[d])) { const c = wDisc([Ld.CB[0], Ld.CB[1], Ld.S[0], Ld.S[1], Ld.LB[0]]); desc = flag(d, c, 'Defensive holding', 5, true); }
     else if (kind === 'pass' && hit(0.013 * DM[d])) { const c = wDisc([Ld.CB[0], Ld.CB[1], Ld.CB[2], Ld.S[0], Ld.S[1]], p => Math.pow(Math.max(20, 100 - (p.a.COV ?? p.a.ZON ?? 55)) / 35, 1.5)); desc = flag(d, c, 'Pass interference', randInt(6, 38), true, true); }
     else if (kind === 'pass' && hit(0.0025 * DM[d])) { desc = flag(d, wDisc(Ld.DL.slice(0, 4)), 'Roughing the passer', 15, true); }
     else if (hit(0.003 * DM[d])) { desc = flag(d, wDisc([...Ld.LB, Ld.S[0], Ld.S[1]]), rnd() < 0.5 ? 'Unnecessary roughness' : 'Face mask', 15, true); }
@@ -4763,8 +4766,13 @@ function startSeason() {
   for (const t of S.teams) {
     t.rec = blankRec();
     if (t.tid === S.userTid) { ensureDepth(t); continue; }
-    // get under the cap first (never cutting a position to fewer than its starters), then fill the holes cheaply
-    while (payroll(t.tid) > S.cap) { const n = {}; for (const q of active(t.tid)) n[q.pos] = (n[q.pos] || 0) + 1; const r = roster(t.tid).filter(p => p.contract.sal > 3 && (p.ps || p.ir || n[p.pos] > POS[p.pos].start)).sort((a, b) => tradeValue(a) / a.contract.sal - tradeValue(b) / b.contract.sal)[0]; if (!r) break; release(r.id); }
+    // get under the cap first, then fill the holes cheaply. Only depth goes: never a starter (his position's best by rating,
+    // so an expensive starting quarterback isn't cut while his backups stay), and only a cut that frees real room after dead money
+    while (payroll(t.tid) > S.cap) {
+      const act = roster(t.tid).filter(q => !q.ps), st = new Set(); /* (injured starters too) */ for (const pos of POS_ORDER) act.filter(q => q.pos === pos).sort((a, b) => b.ovr - a.ovr).slice(0, POS[pos].start).forEach(q => st.add(q.id));
+      const save = p => p.contract.sal - deadIfCut(p);
+      const r = roster(t.tid).filter(p => p.contract.sal > 3 && !st.has(p.id) && save(p) > 1).sort((a, b) => tradeValue(a) / save(a) - tradeValue(b) / save(b))[0]; if (!r) break; release(r.id);
+    }
     for (const pos of POS_ORDER) {
       let have = active(t.tid).filter(p => p.pos === pos).length;
       while (have < POS[pos].start + (pos === 'K' || pos === 'P' ? 0 : 1)) {
