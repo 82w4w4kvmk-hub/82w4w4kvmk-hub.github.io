@@ -1837,7 +1837,7 @@ function pbMatch(pkg, form) {
 // v across the field (the sidelines at about +-26.7). Field spots: offense 0-4 the line (left to right), 5 quarterback,
 // 6 back, 7 tight end, 8 and 9 wide receivers, 10 the third receiver (or second tight end, or fullback); defense 0-3 the
 // line, 4-6 linebackers (or nickel and dime backs), 7 and 8 corners, 9 and 10 safeties.
-let FX_EDGE = 0.18, FX_HELP_PRS = 0.03, FX_PSLOPE = 14, FX_HALF = 2.4, FX_BRK = 0.3, FX_SPREAD = 0.6, FX_RSHED = 0.15, FX_SY_SHED = 2, FX_SY_PUSH = 0.4; const fxH = (x, y) => Math.sqrt(x * x + y * y); const FLD_V = 27, FX_DT = 0.1, FX_SIDE = 26.6, FX_DBG = {};
+let FX_EDGE = 0.18, FX_HELP_PRS = 0.03, FX_PSLOPE = 14, FX_HALF = 2.4, FX_BRK = 0.3, FX_SPREAD = 0.6, FX_RSHED = 0.15, FX_SY_SHED = 2, FX_SY_PUSH = 0.4; const fxH = (x, y) => Math.sqrt(x * x + y * y); const FLD_V = 28, FX_DT = 0.1, FX_SIDE = 26.6, FX_DBG = {};
 function fxRng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 const fxGauss = r => { let u = 0; while (!u) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); };
 
@@ -2223,10 +2223,10 @@ function fxCarrier(W, c) {
   for (let k = -6; k <= 7; k++) {
     const ang = k === 7 ? cur : base + k * (Math.PI / 12.5), hu = Math.cos(ang), hv = Math.sin(ang);
     if (k !== 7 && hu * s < -0.2) continue;
-    let alive = 1, exp = 0, g = 0, out = false;
+    let alive = 1, exp = 0, g = 0, out = false, pvE = c.v;
     for (let n = 0; n < 5; n++) {
       const tk = FX_TK[n]; let pu = c.u + hu * sp0 * tk, pv = c.v + hv * sp0 * tk;
-      if (Math.abs(pv) > FX_SIDE) { out = true; pv = Math.sign(pv) * FX_SIDE; }
+      if (Math.abs(pv) > FX_SIDE) { out = true; pv = Math.sign(pv) * FX_SIDE; } pvE = pv;
       g = (pu - c.u) * s; let p = 0;
       for (let q = 0; q < nt; q++) {
         const du = TU[q] - pu, dv = TV[q] - pv, r2 = TR[q * 5 + n]; if (r2 < 0 || du * du + dv * dv >= r2) continue;
@@ -2237,7 +2237,10 @@ function fxCarrier(W, c) {
       exp += alive * p * (g + 0.8); alive *= 1 - p;
       if (out) break;
     }
-    let sc = exp + alive * (g + (out ? (hurryOut ? 1 : 0) : 2.5));
+    // (racing the clock, getting out of bounds is worth more than a clean path that stays in, and he leans toward the near
+    // sideline; otherwise a clean path in bounds is worth the most)
+    let sc = exp + alive * (g + (out ? (hurryOut ? 5.5 : 0) : hurryOut ? 0.5 : 2.5));
+    if (hurryOut) sc += (Math.abs(pvE) - Math.abs(c.v)) * 0.3;
     if (pre) sc -= Math.abs(c.v + hv * 3 - W.hole.v) * (c === W.qb && W.readOpt ? 0.7 : clamp(0.45 - (c.c.VIS - 60) * 0.012, 0.12, 0.55));
     if (W.kick && c.side === 'o' && (c.u - W.L) < 14) sc -= Math.abs(hv - clamp((W.rv - c.v) / 8, -0.7, 0.7)) * 6;
     if (k === 7) sc += 0.3;
@@ -2431,12 +2434,14 @@ function fxReads(W) {
   const dep = a => { const w = a.wp && a.wp[a.wp.length - 1], d = w ? w.u - W.L : 5; return d < 3 ? 0.7 : d <= 16 ? 1.2 : d <= 22 ? 0.95 : 0.75; };
   // (on third down he looks first to the routes that get past the sticks)
   const sticks = a => { if (!(W.X.dn >= 3)) return 1; const w = a.wp && a.wp[a.wp.length - 1], d = w ? w.u - W.L : 3; return d >= (W.X.tg || 10) - 0.5 ? 1.7 : 0.6; };
+  // (racing the clock he looks to the boundary first: a catch near the sideline can be taken out of bounds)
+  const bound = a => { if (!W.X.hurry) return 1; const w = a.wp && a.wp[a.wp.length - 1], v = Math.abs(w ? w.v : a.v); return v >= 17 ? 1.5 : v >= 11 ? 1.1 : 0.75; };
   // (the coverage he read before the snap: which routes beat it. A smart quarterback reads the shell right more often; a
   // wrong read sends his eyes to the wrong side first. Against man he goes to the matchup he likes)
   if (W.prd == null) { const Q = W.qb, ok = W.r() < clamp(0.62 + (Q.c.AWR - 68) * 0.015 + (Q.c.VIS - 68) * 0.008, 0.3, 0.93), alt = ['c1', 'c2', 'c3', 'c4'].filter(k => k !== W.cov); W.prd = ok ? W.cov : alt[Math.floor(W.r() * alt.length)]; fxCv(W, ok ? 'readOk' : 'readBad'); }
   const CR = FX_BEAT[W.prd] || {}, man = W.prd === 'c0' || W.prd === 'c1';
   const fit = a => { let k = CR[a.rt] || 1; if (man) { const d = W.D.find(x => x.role === 'man' && x.man === a.i); if (d) k *= clamp(1 + (a.c.RTE - d.c.COV) * 0.01 + (a.top - d.top) * 0.12, 0.75, 1.35); } return k; };
-  return rs.map(a => [a, (pri[a.i] ?? 1) * dep(a) * sticks(a) * fit(a) * (0.7 + W.r() * 0.6) * (a.i === 6 ? 0.85 : 1)]).sort((x, y) => y[1] - x[1]).map(x => x[0]);
+  return rs.map(a => [a, (pri[a.i] ?? 1) * dep(a) * sticks(a) * fit(a) * bound(a) * (0.7 + W.r() * 0.6) * (a.i === 6 ? 0.85 : 1)]).sort((x, y) => y[1] - x[1]).map(x => x[0]);
 }
 // how open a man will be when the ball gets there: where he'll be when it arrives, against how close any defender can
 // get to that spot by then (a defender keeps doing what he's doing until he reacts to the throw)
@@ -3438,7 +3443,7 @@ function* gameGen(ht, at, opt = {}) {
   for (let i = 0; i < 2; i++) for (const p of [RET[i].kr, RET[i].pr]) if (p && p.id != null) sl(p, i).gp = 1;
   // a flag: offense (side 0) or defense (side 1) commits it; yards, automatic first down, spot foul (pass interference)
   const flag = (ti, culprit, name, yds, auto1, spot) => {
-    const o = st.poss, off = ti === o; let y;
+    const o = st.poss, off = ti === o; let y; st.flagD = !off;
     if (off) { y = Math.min(yds, Math.floor(st.yl / 2)); st.yl -= y; st.togo += y; }
     else {
       y = spot ? Math.min(yds, 99 - st.yl) : Math.min(yds, Math.floor((100 - st.yl) / 2)); st.yl += y;
@@ -3468,7 +3473,10 @@ function* gameGen(ht, at, opt = {}) {
     if (!desc) return null;
     drv.pl--; g.ts[o].pl--;
     note('pen', `Flag: ${desc}.`, st.yl - yl0); // yards: the net change in field position for the offense, so a replay can walk off the spot
-    return { ev: tick(pre ? 0 : 5, pre ? 0 : 0) };
+    const ev = tick(pre ? 0 : 5, pre ? 0 : 0);
+    // a half can't end on a defensive foul: the offense gets one untimed down
+    if ((ev === 'half' || ev === 'end' || ev === 'otend') && st.flagD && !pre) { st.clock = 0; later('adj', 'The half cannot end on a defensive penalty: one untimed down.'.replace('half', st.qtr >= 4 ? 'game' : 'half')); return { ev: null }; }
+    return { ev };
   }
   // the snap: the play and formation (the user's when coaching, the AI's otherwise), the personnel it puts on the field and the
   // package the defense answers with. The playbook's edges come from these; a replay draws them (lastLook)
@@ -3578,7 +3586,7 @@ function* gameGen(ht, at, opt = {}) {
     const inRange = fgd <= maxFG;
     const fgWins = st.qtr >= 4 && diff <= 0 && diff >= -2;
     const milk = st.qtr === 4 && inRange && fgWins && st.clock <= 130;       // run clock down, then kick to win
-    const offHurry = !milk && ((st.qtr === 4 && diff <= 0 && st.clock <= 150) || (st.qtr === 4 && diff < 0 && diff >= -8 && st.clock <= 240) || (st.qtr === 2 && st.clock <= 110 && st.yl >= 30) || (st.qtr >= 5 && st.clock <= 120 && !inRange));
+    const offHurry = !milk && ((st.qtr === 4 && diff <= 0 && st.clock <= 150) || (st.qtr === 4 && diff < 0 && diff >= -8 && st.clock <= 240) || (st.qtr === 4 && diff < -8 && diff >= -16 && st.clock <= 330) || (st.qtr === 4 && diff < -16 && st.clock <= 480) || (st.qtr === 2 && st.clock <= 110 && st.yl >= 30) || (st.qtr >= 5 && st.clock <= 120 && !inRange));
     const protect = st.qtr === 4 && diff > 0 && st.clock < 330;
     return { o, d, diff, fgd, maxFG, inRange, fgWins, milk, offHurry, protect };
   };
@@ -3962,7 +3970,10 @@ function* gameGen(ht, at, opt = {}) {
     if (GP[o].off === 'run') passP -= 0.07; else if (GP[o].off === 'quick') passP += 0.03;
     if (dist <= 3) passP = 0.4;
     passP += WE.passLean + HCT[o].lean;
-    if (hurry) passP = 0.86; if (protect) passP = s.milk ? 0.05 : 0.22;
+    // racing the clock: a run keeps the clock moving, so the less time and the fewer timeouts, the fewer runs (one at the
+    // goal line is still fine with time to line up again)
+    if (hurry) { const tos = st.to[o], c = st.clock, near = dist <= 3 && (c > 25 || tos > 0); passP = near ? 0.6 : c <= 35 ? 0.985 : c <= 75 ? (tos ? 0.94 : 0.975) : c <= 130 ? (tos >= 2 ? 0.88 : tos ? 0.91 : 0.95) : 0.84; }
+    if (protect) passP = s.milk ? 0.05 : 0.22;
     const oc = CL.o, isPass = oc && oc !== 'auto' ? !['inside', 'outside'].includes(oc) : rnd() < passP;
     // expected points added: the value of the situation after the play minus the value before it
     const pre = { dn: st.down, tg: st.togo, yl: st.yl, s0: g.score[o], s1: g.score[d] }; EPX = { qb: null, rec: null, car: null, cov: null };
@@ -19030,6 +19041,14 @@ function logRows(g, evs, newestFirst, cur) {
 }
 // rep: a replay of a game already played (or its highlights): the whole play-by-play is there to scroll, and any play on it
 // can be picked to watch again
+// the game clock while a play is on: from the snap down by the time the ball was live (the play's own drawn length, never
+// more than the clock the sim took off before the next snap), so it stops where the play ended
+function liveClk(g, L, t) {
+  const e = LEV(g.pbp[L.i]); if (!isPlay(e.t) || t <= 0) return e.c;
+  let j = L.i + 1, n = null; while (j < g.pbp.length) { const x = LEV(g.pbp[j]); if (isPlay(x.t) || x.t === 'qtr' || x.t === 'final' || x.t === 'ko') { n = x; break; } j++; }
+  const gap = n && n.q === e.q && n.c <= e.c ? e.c - n.c : e.c, live = Math.min(gap, Math.max(1, Math.round(((L.durI === L.i ? L.dur : 0) || 4000) / 1000)));
+  return Math.max(0, e.c - Math.round(live * clamp(t, 0, 1)));
+}
 function liveStart(gid, hl, pre, rep) {
   const g = S().games[gid];
   if (!g || !g.pbp) { ui.modal = { type: 'box', id: gid }; return; }
@@ -19110,7 +19129,7 @@ function liveUpdate(instant) {
   const ak = L.ask && !inProg && !willAnim ? L.ask : null;
   const tos = n => `<span class="tos" aria-label="${n} timeouts left">${[0, 1, 2].map(i => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</span>`;
   $('lvBug').innerHTML = `<div class="bt ${!L.done && e.p === 1 && e.t !== 'qtr' ? 'pos' : ''}">${teamHelmet(A, 58, false)}<span class="tn"><span>${E(A.city)}</span><b>${E(A.name)}</b>${tos(e.to[1])}</span><span class="sc">${score[1]}</span></div>
-    <div class="mid"><b>${L.done ? 'Final' + (g.ot ? ' / OT' : '') : ak ? qLabel(ak.qtr) : e.t === 'qtr' ? (e.q === 2 ? 'Half' : 'End') : qLabel(e.q)}</b><span class="num">${L.done ? '&nbsp;' : ak ? fmtClock(ak.clock) : e.t === 'qtr' ? '&nbsp;' : fmtClock(e.c)}</span></div>
+    <div class="mid"><b>${L.done ? 'Final' + (g.ot ? ' / OT' : '') : ak ? qLabel(ak.qtr) : e.t === 'qtr' ? (e.q === 2 ? 'Half' : 'End') : qLabel(e.q)}</b><span class="num" id="lvClk">${L.done ? '&nbsp;' : ak ? fmtClock(ak.clock) : e.t === 'qtr' ? '&nbsp;' : fmtClock(liveClk(g, L, L.ph === 1 && isPlay(e.t) && !inProg && !willAnim ? 1 : 0))}</span></div>
     <div class="bt r ${!L.done && e.p === 0 && e.t !== 'qtr' ? 'pos' : ''}"><span class="sc">${score[0]}</span><span class="tn"><span>${E(H.city)}</span><b>${E(H.name)}</b>${tos(e.to[0])}</span>${teamHelmet(H, 58, true, g.riv >= 60)}</div>`;
   // the field: formations at the snap, then the play drawn out on the canvas
   const cv = $('lvCv'), offT = T(e.p === 0 ? g.home : g.away), defT = T(e.p === 0 ? g.away : g.home), dir = e.p === 1 ? 1 : -1;
@@ -19141,7 +19160,7 @@ function liveUpdate(instant) {
     L.dur = fvPlayMs(pl); L.durI = L.i;
     const idx = L.i; fvFlash('lvCv', null);
     if (L.ph === 0) { fvStop(); fvDraw(cv, { ...Sx, p: pl, t: 0, pre: true }); }
-    else if (willAnim) fvRun(L.dur / L.speed, t => fvDraw(document.getElementById('lvCv'), { ...Sx, p: pl, t }), () => { if (ui.live !== L || L.anim !== idx) return; L.anim = null; liveUpdate(true); });
+    else if (willAnim) fvRun(L.dur / L.speed, t => { fvDraw(document.getElementById('lvCv'), { ...Sx, p: pl, t }); const k = document.getElementById('lvClk'); if (k) k.textContent = fmtClock(liveClk(g, L, t)); }, () => { if (ui.live !== L || L.anim !== idx) return; L.anim = null; liveUpdate(true); });
     else if (!inProg) fvRun(0, t => fvDraw(cv, { ...Sx, p: pl, t }), () => fvFlash('lvCv', msg, fc));
   } else { fvStop(); fvDraw(cv, Sx); fvFlash('lvCv', msg, fc); }
   // situation
@@ -23155,7 +23174,7 @@ function cfvPaint(st, tl, cur) {
   const H = CT(st.h), A = CT(st.a), n = V.n, all = n >= tl.length && !cur;
   const last = n > 0 ? tl[n - 1] : null, ref = cur || last;
   const score = all ? st.score : last && last.e.s ? last.e.s : [0, 0], tos = all ? st.to : ref && (ref.e.tos || Array.isArray(ref.e.to)) ? ref.e.tos || ref.e.to : [3, 3];
-  const clk = all ? st.clock : ref ? { q: ref.e.q, c: ref.e.q > 4 ? '' : `${Math.floor(ref.e.c / 60)}:${String(Math.round(ref.e.c) % 60).padStart(2, '0')}` } : n < tl.length ? { q: 1, c: '15:00' } : st.clock, done = st.done && all;
+  const clk = all ? st.clock : ref ? { q: ref.e.q, c: ref.e.q > 4 ? '' : cfvMmss(cur ? ref.e.c : cfvClk(st, ref, 1)) } : n < tl.length ? { q: 1, c: '15:00' } : st.clock, done = st.done && all;
   const poss = all ? (st.sit ? st.sit.o : -1) : ref ? (ref.e.k === 'xp' || ref.e.k === 'two' ? ref.e.side : ref.d.o) : -1;
   const qn = q => (q > 4 ? (q > 5 ? `${q - 4}OT` : 'OT') : ['1st', '2nd', '3rd', '4th'][q - 1]);
   $('cfvBug').innerHTML = `<div class="bt ${poss === 1 && !done ? 'pos' : ''}">${teamHelmet(A, 58, false)}<span class="tn"><span>${E(A.mascot || '')}</span><b>${E(A.name)}</b>${cfvTos(tos[1])}</span><span class="sc">${score[1]}</span></div>
@@ -23190,6 +23209,15 @@ function cfvPaint(st, tl, cur) {
   if ($('cfvLog')) $('cfvLog').innerHTML = cfvDlog(st, doneD) || '<li class="muted">No drives yet.</li>';
   const cp = $('cCalls'); if (cp) cp.classList.toggle('dim', !!V.run);
 }
+// the game clock while a play is on: from the snap down by the time the ball was live (the play's drawn length, never
+// more than the clock taken off before the next snap), so it stops where the play ended
+const cfvMmss = c => `${Math.floor(c / 60)}:${String(Math.round(c) % 60).padStart(2, '0')}`;
+function cfvClk(st, it, t) {
+  const e = it.e; if (!CFV_ANIM.has(e.k) || t <= 0) return e.c;
+  let nx = null, seen = false; for (const d of st.drives) { for (const x of d.pl || []) { if (seen && x.c != null) { nx = x; break; } if (x === e) seen = true; } if (nx) break; }
+  const gap = nx && nx.q === e.q && nx.c <= e.c ? e.c - nx.c : e.c, live = Math.min(gap, Math.max(1, Math.round(fvPlayMs(cfvItemPlay(it).p) / 1000)));
+  return Math.max(0, e.c - Math.round(live * clamp(t, 0, 1)));
+}
 function cfvStep() {
   const V = ui.cfv, st = HC().liveState(); if (!V || !st || !document.getElementById('cfvCv')) { if (V) V.run = false; return; }
   const tl = cfvTL(st);
@@ -23202,7 +23230,7 @@ function cfvStep() {
   const dur = fvPlayMs(P.p) / V.speed;
   setTimeout(() => {
     if (V.tok !== tok) return;
-    fvRun(dur, t => fvDraw(document.getElementById('cfvCv'), { ...S, p: P.p, t }), () => {
+    fvRun(dur, t => { fvDraw(document.getElementById('cfvCv'), { ...S, p: P.p, t }); const k = document.querySelector('#cfvBug .mid .num'); if (k && e.q <= 4) k.textContent = cfvMmss(cfvClk(st, it, t)); }, () => {
       if (V.tok !== tok) return;
       const msg = e.td || (e.k === 'two' && e.good) ? (e.k === 'two' ? 'Two points' : 'Touchdown') : e.rettd ? 'Touchdown' : e.k === 'int' ? 'Intercepted' : e.lost ? 'Fumble' : e.k === 'fg' ? (e.blocked ? 'Blocked' : e.good ? 'Field goal' : 'No good') : e.safety ? 'Safety' : e.fail ? 'Stopped' : e.k === 'ko' && e.onside ? (e.rec ? 'Recovered' : null) : e.k === 'ko' && e.td ? 'Touchdown' : null;
       const scorer = e.td || e.k === 'fg' || e.k === 'two' || (e.k === 'ko' && e.td) ? off : def;
